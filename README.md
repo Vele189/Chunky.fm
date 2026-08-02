@@ -2,6 +2,27 @@
 
 A single, permanent radio station. See [PLAN.md](PLAN.md) for the design.
 
+## Running it
+
+Two processes in development — the server, and Vite for the client:
+
+```bash
+cd server && npm install && cp .env.example .env && npm run dev   # :3000
+cd client && npm install && npm run dev                           # :5173
+```
+
+Vite proxies `/api` and `/ws` through to the server, so the client only ever
+talks to its own origin.
+
+Put something on the decks (there is no admin UI yet — task #1453):
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_PASSWORD" -F "file=@track.mp3" \
+     http://localhost:3000/api/upload
+curl -H "Authorization: Bearer $ADMIN_PASSWORD" -H 'content-type: application/json' \
+     -d '{"action":"play","trackId":1}' http://localhost:3000/api/playback
+```
+
 ## Server
 
 ```bash
@@ -101,3 +122,20 @@ so the measured offset applies directly.
 
 Connections are anonymous and read-only: nothing a listener can send changes
 playback. Admin control over the socket will need its own gate.
+
+### `POST /api/playback` — admin
+
+The minimum needed to drive the decks: `{action: 'play'|'pause'|'resume'|'seek'
+|'stop', trackId?, positionMs?}`, admin-only, returns the new state. Every
+command broadcasts over `/ws` before the HTTP response returns. The queue and
+the full admin surface are tasks #1451 and #1454.
+
+## Client
+
+React + Vite, one page. The listener taps **Tune in** — which is also the user
+gesture browsers require before audio may start — and from then on the page
+follows the station.
+
+- `lib/position.ts` — where the needle should be, given the tuple and a server time.
+- `lib/station.ts` — the websocket, with reconnect and backoff.
+- `hooks/useSyncedAudio.ts` — aligns the audio element on every broadcast.
