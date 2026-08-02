@@ -2,6 +2,27 @@
 
 A single, permanent radio station. See [PLAN.md](PLAN.md) for the design.
 
+## Running it
+
+Two processes in development — the server, and Vite for the client:
+
+```bash
+cd server && npm install && cp .env.example .env && npm run dev   # :3000
+cd client && npm install && npm run dev                           # :5173
+```
+
+Vite proxies `/api` and `/ws` through to the server, so the client only ever
+talks to its own origin.
+
+Put something on the decks (there is no admin UI yet — task #1453):
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_PASSWORD" -F "file=@track.mp3" \
+     http://localhost:3000/api/upload
+curl -H "Authorization: Bearer $ADMIN_PASSWORD" -H 'content-type: application/json' \
+     -d '{"action":"play","trackId":1}' http://localhost:3000/api/playback
+```
+
 ## Server
 
 ```bash
@@ -53,6 +74,18 @@ which makes re-uploading the same track a no-op rather than a second copy.
 
 Supported containers: MP3, FLAC, Ogg/Opus, WAV, MP4/M4A, AIFF.
 
+### Serving the library
+
+| Route | What |
+|---|---|
+| `GET /api/tracks` | The library, as JSON. |
+| `GET /api/audio/:filename` | The audio, with `Range` support. |
+| `GET /api/artwork/:filename` | Artwork extracted at upload time. |
+
+Range support is load-bearing: a listener joining at 2:14 has to fetch that byte
+range before it can play, and without it the browser pulls the file from 0:00
+first. URLs are content hashes, so responses are `immutable`.
+
 ### `GET /ws` — the station clock
 
 The server owns playback and holds it entirely in memory:
@@ -89,3 +122,69 @@ so the measured offset applies directly.
 
 Connections are anonymous and read-only: nothing a listener can send changes
 playback. Admin control over the socket will need its own gate.
+
+### `POST /api/playback` — admin
+
+The minimum needed to drive the decks: `{action: 'play'|'pause'|'resume'|'seek'
+|'stop', trackId?, positionMs?}`, admin-only, returns the new state. Every
+command broadcasts over `/ws` before the HTTP response returns. The queue and
+the full admin surface are tasks #1451 and #1454.
+
+## Client
+
+React + Vite, one page. The listener taps **Tune in** — which is also the user
+gesture browsers require before audio may start — and from then on the page
+follows the station.
+
+- `lib/position.ts` — where the needle should be, given the tuple and a server time.
+- `lib/station.ts` — the websocket, with reconnect and backoff.
+- `lib/clock.ts` — clock offset estimation from ping/pong samples.
+- `lib/drift.ts` — what to do about an error of a given size.
+- `hooks/useServerClock.ts` — runs the handshake, exposes `serverNow()`.
+- `hooks/useSyncedAudio.ts` — aligns on every broadcast, and every 2s in between.
+
+### Staying in sync
+
+Two separate problems, solved separately.
+
+**The browser's clock is wrong.** Every decision is made against `startedAt`, a
+server timestamp, so the client first measures how far its own clock sits from
+the server's: send `t0`, get back `t1`, note `t2`, then `rtt = t2 - t0` and
+`offset = t1 - (t0 + rtt/2)`. Five probes, 150ms apart — spaced rather than
+fired in one burst, because five packets sent at once share a queueing delay,
+which is exactly the contamination that taking the lowest RTT is meant to
+avoid. Samples live in a rolling window, so one slow round trip can never
+briefly become the estimate; a bad offset would be audible as a hard seek.
+Re-measured every 30s.
+
+**Audio clocks drift from system clocks.** Being aligned once is not staying
+aligned, so every 2s:
+
+| Error | Response |
+|---|---|
+| > 1s | Seek. A nudge would take a minute to close that. |
+| > 50ms | Nudge `playbackRate` by up to ±2%. |
+| ≤ 50ms | Leave it alone. |
+
+Correcting with rate rather than seeking is the whole trick: a seek is an
+audible glitch, a 2% rate change is not. `preservesPitch` defaults to true, so
+it time-stretches instead of pitch-shifting.
+
+One note on the constants, which come from PLAN.md: since the smallest error
+that escapes the 50ms dead zone already exceeds the ±2% cap once multiplied by
+the 0.5 gain, the clamp always binds and correction is effectively bang-bang.
+That converges from the worst non-seeking case in under a minute and is
+inaudible, so it is left as specified — but the proportional term only starts
+doing anything if the dead zone drops below 40ms.
+
+### Verifying it
+
+```bash
+cd client && npm run verify:sync
+```
+
+Drives two real Chrome browser contexts against a running server: one joins at
+the start, the other five seconds in, and both must land on the same instant.
+It then knocks one listener 0.4s out to prove the rate nudge engages and
+converges, and 3s out to prove the hard seek does. Needs a server, a Vite dev
+server, and a track playing — see the top of this file.

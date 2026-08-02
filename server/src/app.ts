@@ -5,6 +5,8 @@ import type { Db } from './db.js'
 import { ensureStorageDirs } from './lib/storage.js'
 import { PlaybackState } from './playback.js'
 import { type RealtimeHandle, attachRealtime } from './realtime.js'
+import { mediaRoutes } from './routes/media.js'
+import { playbackRoutes } from './routes/playback.js'
 import { uploadRoutes } from './routes/upload.js'
 
 declare module 'fastify' {
@@ -47,6 +49,8 @@ export async function buildApp({
   app.get('/health', async () => ({ ok: true }))
 
   await app.register(uploadRoutes({ config, db }))
+  await app.register(mediaRoutes({ config, db }))
+  await app.register(playbackRoutes({ config, db, playback }))
 
   const realtime = attachRealtime({
     server: app.server,
