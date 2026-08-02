@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+.vite/
+
+# secrets — admin password lives here
+.env
+.env.*
+!.env.example
+
+# Railway volume mount: uploaded audio + artwork + sqlite.
+# Never commit the music library.
+data/
+uploads/
+
+# sqlite
+*.sqlite
+*.sqlite3
+*.db
+*-wal
+*-shm
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/
+*.swp
