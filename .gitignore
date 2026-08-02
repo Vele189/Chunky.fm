@@ -15,6 +15,7 @@ build/
 # Never commit the music library.
 data/
 uploads/
+audio_storage/
 
 # sqlite
 *.sqlite
