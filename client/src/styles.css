@@ -109,6 +109,33 @@ body {
   color: var(--accent);
 }
 
+.sync {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin: 2rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid #26232e;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.sync div {
+  text-align: center;
+}
+
+.sync dt {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+}
+
+.sync dd {
+  margin: 0.25rem 0 0;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
 .off-air {
   padding: 4rem 0;
   text-align: center;

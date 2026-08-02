@@ -138,4 +138,53 @@ follows the station.
 
 - `lib/position.ts` — where the needle should be, given the tuple and a server time.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
-- `hooks/useSyncedAudio.ts` — aligns the audio element on every broadcast.
+- `lib/clock.ts` — clock offset estimation from ping/pong samples.
+- `lib/drift.ts` — what to do about an error of a given size.
+- `hooks/useServerClock.ts` — runs the handshake, exposes `serverNow()`.
+- `hooks/useSyncedAudio.ts` — aligns on every broadcast, and every 2s in between.
+
+### Staying in sync
+
+Two separate problems, solved separately.
+
+**The browser's clock is wrong.** Every decision is made against `startedAt`, a
+server timestamp, so the client first measures how far its own clock sits from
+the server's: send `t0`, get back `t1`, note `t2`, then `rtt = t2 - t0` and
+`offset = t1 - (t0 + rtt/2)`. Five probes, 150ms apart — spaced rather than
+fired in one burst, because five packets sent at once share a queueing delay,
+which is exactly the contamination that taking the lowest RTT is meant to
+avoid. Samples live in a rolling window, so one slow round trip can never
+briefly become the estimate; a bad offset would be audible as a hard seek.
+Re-measured every 30s.
+
+**Audio clocks drift from system clocks.** Being aligned once is not staying
+aligned, so every 2s:
+
+| Error | Response |
+|---|---|
+| > 1s | Seek. A nudge would take a minute to close that. |
+| > 50ms | Nudge `playbackRate` by up to ±2%. |
+| ≤ 50ms | Leave it alone. |
+
+Correcting with rate rather than seeking is the whole trick: a seek is an
+audible glitch, a 2% rate change is not. `preservesPitch` defaults to true, so
+it time-stretches instead of pitch-shifting.
+
+One note on the constants, which come from PLAN.md: since the smallest error
+that escapes the 50ms dead zone already exceeds the ±2% cap once multiplied by
+the 0.5 gain, the clamp always binds and correction is effectively bang-bang.
+That converges from the worst non-seeking case in under a minute and is
+inaudible, so it is left as specified — but the proportional term only starts
+doing anything if the dead zone drops below 40ms.
+
+### Verifying it
+
+```bash
+cd client && npm run verify:sync
+```
+
+Drives two real Chrome browser contexts against a running server: one joins at
+the start, the other five seconds in, and both must land on the same instant.
+It then knocks one listener 0.4s out to prove the rate nudge engages and
+converges, and 3s out to prove the hard seek does. Needs a server, a Vite dev
+server, and a track playing — see the top of this file.
