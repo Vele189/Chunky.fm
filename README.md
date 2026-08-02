@@ -53,6 +53,18 @@ which makes re-uploading the same track a no-op rather than a second copy.
 
 Supported containers: MP3, FLAC, Ogg/Opus, WAV, MP4/M4A, AIFF.
 
+### Serving the library
+
+| Route | What |
+|---|---|
+| `GET /api/tracks` | The library, as JSON. |
+| `GET /api/audio/:filename` | The audio, with `Range` support. |
+| `GET /api/artwork/:filename` | Artwork extracted at upload time. |
+
+Range support is load-bearing: a listener joining at 2:14 has to fetch that byte
+range before it can play, and without it the browser pulls the file from 0:00
+first. URLs are content hashes, so responses are `immutable`.
+
 ### `GET /ws` — the station clock
 
 The server owns playback and holds it entirely in memory:
