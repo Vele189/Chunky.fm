@@ -11,7 +11,9 @@ cp .env.example .env      # set ADMIN_PASSWORD
 npm run dev
 ```
 
-Scripts: `npm run dev`, `npm run build`, `npm start`, `npm run typecheck`, `npm test`.
+Scripts: `npm run dev`, `npm run build`, `npm start`, `npm run typecheck`, `npm test`,
+`npm run sync-check` (joins two listeners at different times and checks they land
+on the same instant of the same song).
 
 ### Storage layout
 
@@ -50,3 +52,40 @@ which makes re-uploading the same track a no-op rather than a second copy.
 | `415` | Not audio, or a container we don't serve. |
 
 Supported containers: MP3, FLAC, Ogg/Opus, WAV, MP4/M4A, AIFF.
+
+### `GET /ws` — the station clock
+
+The server owns playback and holds it entirely in memory:
+
+```ts
+{ track, startedAt, pausedAt }
+```
+
+Position is `pausedAt ?? (serverNow - startedAt)`. Nothing is streamed and there
+is no per-listener state — listeners are handed the tuple and align themselves
+to it. Because `startedAt` is a point in the past, joining at 2:14 is the same
+code path as joining at 0:00.
+
+**Server → client**
+
+| Message | When |
+|---|---|
+| `{ type: 'state', track, startedAt, pausedAt, serverTime }` | On connect, and on every playback change. |
+| `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
+| `{ type: 'error', message }` | Unrecognised frame; the connection stays open. |
+
+**Client → server**
+
+| Message | Purpose |
+|---|---|
+| `{ type: 'ping', t0 }` | Clock offset probe. |
+
+Browser clocks are wrong by seconds, so a client measures the offset NTP-style:
+send `t0`, receive `t1`, note `t2` on arrival, then
+`rtt = t2 - t0` and `offset = t1 - (t0 + rtt / 2)`. Run ~5 probes and keep **the
+sample with the lowest RTT** — the fastest round trip is the least contaminated
+by queueing delay. `t1` and `startedAt` are stamped from the same server clock,
+so the measured offset applies directly.
+
+Connections are anonymous and read-only: nothing a listener can send changes
+playback. Admin control over the socket will need its own gate.

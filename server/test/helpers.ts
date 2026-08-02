@@ -2,10 +2,13 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import type { Config } from '../src/config.js'
 import { type Db, openDb } from '../src/db.js'
+import type { Track } from '../src/lib/track.js'
+import { PlaybackState } from '../src/playback.js'
 
 export const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
 export const ADMIN_PASSWORD = 'hunter2-for-tests'
@@ -14,10 +17,23 @@ export interface Harness {
   app: FastifyInstance
   db: Db
   config: Config
+  playback: PlaybackState
+  /** Only set when the harness was started with `listen: true`. */
+  wsUrl: string
   cleanup(): Promise<void>
 }
 
-export async function startHarness(overrides: Partial<Config> = {}): Promise<Harness> {
+export interface HarnessOptions {
+  playback?: PlaybackState
+  heartbeatIntervalMs?: number
+  /** Bind a real port — required for anything that opens a websocket. */
+  listen?: boolean
+}
+
+export async function startHarness(
+  overrides: Partial<Config> = {},
+  { playback = new PlaybackState(), heartbeatIntervalMs, listen = false }: HarnessOptions = {},
+): Promise<Harness> {
   const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'chunky-test-'))
   const config: Config = {
     host: '127.0.0.1',
@@ -33,16 +49,58 @@ export async function startHarness(overrides: Partial<Config> = {}): Promise<Har
   }
 
   const db = openDb(config.dbPath)
-  const app = await buildApp({ config, db, logger: false })
+  const app = await buildApp({ config, db, logger: false, playback, heartbeatIntervalMs })
+
+  let wsUrl = ''
+  if (listen) {
+    await app.listen({ host: config.host, port: 0 })
+    const { port } = app.server.address() as AddressInfo
+    wsUrl = `ws://${config.host}:${port}/ws`
+  }
 
   return {
     app,
     db,
     config,
+    playback,
+    wsUrl,
     async cleanup() {
       await app.close()
       db.close()
       await fs.rm(storageDir, { recursive: true, force: true })
+    },
+  }
+}
+
+let nextTrackId = 1
+
+export function makeTrack(overrides: Partial<Track> = {}): Track {
+  const id = overrides.id ?? nextTrackId++
+  return {
+    id,
+    title: `Track ${id}`,
+    artist: 'Test Artist',
+    album: 'Test Album',
+    durationMs: 240_000,
+    filename: `${'a'.repeat(64)}.mp3`,
+    artworkPath: null,
+    contentHash: 'a'.repeat(64),
+    gainDb: 0,
+    uploadedAt: 1_700_000_000_000,
+    ...overrides,
+  }
+}
+
+/** A clock the test drives by hand, so nothing depends on wall time. */
+export function fakeClock(start = 1_700_000_000_000) {
+  let current = start
+  return {
+    now: () => current,
+    advance(ms: number) {
+      current += ms
+    },
+    set(value: number) {
+      current = value
     },
   }
 }

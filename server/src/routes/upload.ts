@@ -10,34 +10,7 @@ import type { Db, TrackRow } from '../db.js'
 import { UnsupportedAudioError, extractMetadata, looksLikeAudioUpload } from '../lib/audio.js'
 import { requireAdmin } from '../lib/auth.js'
 import { artworkFilePath, discard, trackFilePath } from '../lib/storage.js'
-
-export interface Track {
-  id: number
-  title: string
-  artist: string | null
-  album: string | null
-  durationMs: number
-  filename: string
-  artworkPath: string | null
-  contentHash: string
-  gainDb: number
-  uploadedAt: number
-}
-
-export function toTrack(row: TrackRow): Track {
-  return {
-    id: row.id,
-    title: row.title,
-    artist: row.artist,
-    album: row.album,
-    durationMs: row.duration_ms,
-    filename: row.filename,
-    artworkPath: row.artwork_path,
-    contentHash: row.content_hash,
-    gainDb: row.gain_db,
-    uploadedAt: row.uploaded_at,
-  }
-}
+import { toTrack } from '../lib/track.js'
 
 const TOO_LARGE_CODES = new Set(['FST_REQ_FILE_TOO_LARGE', 'FST_FILE_TOO_LARGE'])
 const BAD_MULTIPART_CODES = new Set([
