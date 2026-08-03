@@ -119,6 +119,12 @@ default has to be defined once, not per call.
   ±2% cap, so correction is bang-bang. It converges from the worst
   non-seeking case in well under a minute and is inaudible. Changing it means
   changing numbers the plan specifies.
+- **Admin commands go over HTTP, not the websocket**, even though #1454 is
+  phrased as "via WebSocket/API". The socket carries state outward and clock
+  probes inward. A command wants a status code and, for upload, a body in
+  megabytes; a second authenticated channel over the socket would duplicate the
+  surface and add a gate to get wrong for no gain. A socket that cannot mutate
+  anything cannot be abused into mutating something.
 - **Admin auth is a shared secret, not the signed cookie** PLAN.md describes.
   The client holds the password and presents it on every request. That is task
   #1452, and nothing above `AdminApi` knows the difference.

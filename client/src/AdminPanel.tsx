@@ -1,13 +1,18 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useAdminSession } from './hooks/useAdminSession.js'
-import { AdminError, type AdminApi } from './lib/admin.js'
+import { AdminError, type AdminApi, type PlaybackCommand } from './lib/admin.js'
 import { formatClock } from './lib/position.js'
-import type { QueueEntry, StateMessage, Track } from './lib/protocol.js'
+import type { PlaybackSnapshot, QueueEntry, StateMessage, Track } from './lib/protocol.js'
+import type { StationStatus } from './lib/station.js'
 
 export interface AdminPanelProps {
   /** The station's own broadcast — the panel never keeps its own copy. */
   state: StateMessage | null
   queue: QueueEntry[] | null
+  status: StationStatus
+  /** Fold a command's own answer straight in; see useStation. */
+  applyState(snapshot: PlaybackSnapshot): void
+  applyQueue(entries: QueueEntry[]): void
 }
 
 /**
@@ -21,10 +26,10 @@ export interface AdminPanelProps {
  * the listener already has open, so a command issued from another tab, or a
  * track ending on its own, moves this panel too.
  */
-export function AdminPanel({ state, queue }: AdminPanelProps) {
-  const { status, api, error: sessionError, signIn, signOut } = useAdminSession()
+export function AdminPanel({ state, queue, status, applyState, applyQueue }: AdminPanelProps) {
+  const { status: session, api, error: sessionError, signIn, signOut } = useAdminSession()
 
-  if (status === 'checking') {
+  if (session === 'checking') {
     return (
       <section className="admin" data-testid="admin-panel">
         <p className="admin__note">checking credentials…</p>
@@ -32,11 +37,21 @@ export function AdminPanel({ state, queue }: AdminPanelProps) {
     )
   }
 
-  if (status !== 'signed-in' || !api) {
+  if (session !== 'signed-in' || !api) {
     return <SignIn onSubmit={signIn} error={sessionError} />
   }
 
-  return <Controls api={api} state={state} queue={queue} onSignOut={signOut} />
+  return (
+    <Controls
+      api={api}
+      state={state}
+      queue={queue}
+      connected={status === 'connected'}
+      applyState={applyState}
+      applyQueue={applyQueue}
+      onSignOut={signOut}
+    />
+  )
 }
 
 function SignIn({
@@ -87,10 +102,21 @@ interface ControlsProps {
   api: AdminApi
   state: StateMessage | null
   queue: QueueEntry[] | null
+  connected: boolean
+  applyState(snapshot: PlaybackSnapshot): void
+  applyQueue(entries: QueueEntry[]): void
   onSignOut: () => void
 }
 
-function Controls({ api, state, queue, onSignOut }: ControlsProps) {
+function Controls({
+  api,
+  state,
+  queue,
+  connected,
+  applyState,
+  applyQueue,
+  onSignOut,
+}: ControlsProps) {
   const [tracks, setTracks] = useState<Track[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -133,6 +159,18 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
     [onSignOut],
   )
 
+  // Both fold the server's answer straight into the station's state, so a
+  // control responds to the click rather than to the broadcast that follows it.
+  const command = useCallback(
+    (body: PlaybackCommand) => run(async () => applyState(await api.command(body))),
+    [api, applyState, run],
+  )
+  const queueAction = useCallback(
+    (act: () => Promise<{ entries: QueueEntry[] }>) =>
+      run(async () => applyQueue((await act()).entries)),
+    [applyQueue, run],
+  )
+
   const report = (line: string) => setUploads((seen) => [...seen, { id: seen.length, line }])
 
   async function upload(files: File[]) {
@@ -170,13 +208,22 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
         </p>
       )}
 
+      {/* Commands go over HTTP and still land while the socket is down, but
+          what the panel shows arrives on the socket — so say so rather than
+          quietly showing a queue that may have moved on. */}
+      {!connected && (
+        <p className="admin__note" data-testid="admin-offline">
+          reconnecting — what's shown here may be out of date
+        </p>
+      )}
+
       <div className="admin__transport">
         <button
           type="button"
           className="admin__button"
           disabled={busy || !track}
           data-testid="admin-playpause"
-          onClick={() => run(() => api.command({ action: paused ? 'resume' : 'pause' }))}
+          onClick={() => command({ action: paused ? 'resume' : 'pause' })}
         >
           {paused ? 'Resume' : 'Pause'}
         </button>
@@ -185,7 +232,7 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
           className="admin__button"
           disabled={busy || (!track && entries.length === 0)}
           data-testid="admin-skip"
-          onClick={() => run(() => api.command({ action: 'skip' }))}
+          onClick={() => command({ action: 'skip' })}
         >
           Skip
         </button>
@@ -194,7 +241,7 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
           className="admin__button admin__button--quiet"
           disabled={busy || !track}
           data-testid="admin-stop"
-          onClick={() => run(() => api.command({ action: 'stop' }))}
+          onClick={() => command({ action: 'stop' })}
         >
           Stop
         </button>
@@ -211,7 +258,7 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
             className="admin__link"
             disabled={busy}
             data-testid="admin-queue-clear"
-            onClick={() => run(() => api.clearQueue())}
+            onClick={() => queueAction(() => api.clearQueue())}
           >
             Clear
           </button>
@@ -234,7 +281,7 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
                 className="admin__icon"
                 aria-label={`Move ${entry.track.title} up`}
                 disabled={busy || index === 0}
-                onClick={() => run(() => api.move(entry.id, index - 1))}
+                onClick={() => queueAction(() => api.move(entry.id, index - 1))}
               >
                 ↑
               </button>
@@ -243,7 +290,7 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
                 className="admin__icon"
                 aria-label={`Move ${entry.track.title} down`}
                 disabled={busy || index === entries.length - 1}
-                onClick={() => run(() => api.move(entry.id, index + 1))}
+                onClick={() => queueAction(() => api.move(entry.id, index + 1))}
               >
                 ↓
               </button>
@@ -252,7 +299,7 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
                 className="admin__icon admin__icon--remove"
                 aria-label={`Remove ${entry.track.title}`}
                 disabled={busy}
-                onClick={() => run(() => api.remove(entry.id))}
+                onClick={() => queueAction(() => api.remove(entry.id))}
               >
                 ✕
               </button>
@@ -302,7 +349,7 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
                 type="button"
                 className="admin__link"
                 disabled={busy}
-                onClick={() => run(() => api.enqueue(libraryTrack.id))}
+                onClick={() => queueAction(() => api.enqueue(libraryTrack.id))}
               >
                 Queue
               </button>
@@ -310,7 +357,7 @@ function Controls({ api, state, queue, onSignOut }: ControlsProps) {
                 type="button"
                 className="admin__link"
                 disabled={busy}
-                onClick={() => run(() => api.command({ action: 'play', trackId: libraryTrack.id }))}
+                onClick={() => command({ action: 'play', trackId: libraryTrack.id })}
               >
                 Play now
               </button>

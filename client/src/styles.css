@@ -142,6 +142,35 @@ body {
   color: var(--muted);
 }
 
+.up-next {
+  border-top: 1px solid #26232e;
+  padding-top: 1rem;
+}
+
+.up-next__heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.up-next__list {
+  margin: 0;
+  padding: 0 0 0 1.25rem;
+  font-size: 0.9rem;
+}
+
+.up-next__list li {
+  padding: 0.2rem 0;
+}
+
+.up-next__artist {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-left: 0.5rem;
+}
+
 /* --- admin ---------------------------------------------------------------- */
 
 .admin {

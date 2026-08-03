@@ -6,7 +6,7 @@ import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { isAdminRoute } from './lib/admin.js'
 import type { Correction } from './lib/drift.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
-import { artworkUrl, type ServerMessage } from './lib/protocol.js'
+import { artworkUrl, type QueueEntry, type ServerMessage } from './lib/protocol.js'
 
 const STATUS_LABEL = {
   connecting: 'tuning in…',
@@ -21,8 +21,9 @@ export function App() {
   // The clock needs to see pongs but the station owns the socket, so the
   // handler goes through a ref to break what would otherwise be a cycle.
   const routeToClock = useRef<(message: ServerMessage) => void>(() => undefined)
-  const { status, state, queue, connection } = useStation(undefined, (message) =>
-    routeToClock.current(message),
+  const { status, state, queue, connection, applyState, applyQueue } = useStation(
+    undefined,
+    (message) => routeToClock.current(message),
   )
   const admin = useAdminRoute()
   const clock = useServerClock(connection, { connected: status === 'connected' })
@@ -117,13 +118,48 @@ export function App() {
         </section>
       )}
 
+      {joined && !admin && <UpNext queue={queue} />}
+
       {/* Owned imperatively — React never sets currentTime or calls play(). */}
       <audio ref={audioRef} preload="auto" />
 
       {/* The listener page ships no controls at all: off this route, none of
           this renders, and the server would refuse it anyway. */}
-      {admin && <AdminPanel state={state} queue={queue} />}
+      {admin && (
+        <AdminPanel
+          state={state}
+          queue={queue}
+          status={status}
+          applyState={applyState}
+          applyQueue={applyQueue}
+        />
+      )}
     </main>
+  )
+}
+
+/**
+ * What's coming up, for listeners.
+ *
+ * The queue reaches every client, not just the admin — a station that has
+ * decided what comes next may as well say so. Read-only: this is the same frame
+ * the panel reorders, seen from the other side.
+ */
+function UpNext({ queue }: { queue: QueueEntry[] | null }) {
+  if (!queue || queue.length === 0) return null
+
+  return (
+    <section className="up-next" data-testid="up-next">
+      <h2 className="up-next__heading">Up next</h2>
+      <ol className="up-next__list">
+        {queue.map((entry) => (
+          <li key={entry.id} data-entry={entry.id}>
+            <span className="up-next__title">{entry.track.title}</span>
+            <span className="up-next__artist">{entry.track.artist ?? 'Unknown artist'}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }
 

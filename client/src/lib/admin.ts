@@ -1,4 +1,4 @@
-import type { QueueEntry, StateMessage, Track } from './protocol.js'
+import type { PlaybackSnapshot, QueueEntry, Track } from './protocol.js'
 
 /** Where the admin controls live. PLAN.md's /admin arrives with #1452. */
 export const ADMIN_HASH = '#admin'
@@ -109,8 +109,9 @@ export class AdminApi {
     return { track: stored.track, duplicate: false }
   }
 
-  command(command: PlaybackCommand): Promise<StateMessage> {
-    return this.#json<StateMessage>('POST', '/api/playback', command)
+  /** Answers with the state the command produced — a snapshot, not a frame. */
+  command(command: PlaybackCommand): Promise<PlaybackSnapshot> {
+    return this.#json<PlaybackSnapshot>('POST', '/api/playback', command)
   }
 
   async queue(): Promise<QueueEntry[]> {

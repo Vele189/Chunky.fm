@@ -23,6 +23,12 @@ export interface StateMessage {
   serverTime: number
 }
 
+/**
+ * The same tuple as it comes back from `POST /api/playback` — the broadcast's
+ * payload without the frame around it.
+ */
+export type PlaybackSnapshot = Omit<StateMessage, 'type'>
+
 /** A track waiting its turn. The id is the entry's, not the track's. */
 export interface QueueEntry {
   id: number

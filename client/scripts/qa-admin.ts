@@ -36,6 +36,12 @@ const queueIds = (page: Page): Promise<string[]> =>
     rows.map((row) => row.getAttribute('data-entry') ?? ''),
   )
 
+/** The same queue as a listener sees it — read-only, no controls. */
+const upNextIds = (page: Page): Promise<string[]> =>
+  page.$$eval('[data-testid="up-next"] li', (rows) =>
+    rows.map((row) => row.getAttribute('data-entry') ?? ''),
+  )
+
 const nowPlaying = (page: Page) =>
   page.locator('[data-testid="admin-now"]').textContent().then((text) => text ?? '')
 
@@ -169,6 +175,33 @@ try {
     `${after.join(',')} → ${remaining.join(',')}`,
   )
 
+  // --- every client agrees, in real time -------------------------------------
+  // A second listener that was not there when the queue was built: it should
+  // arrive already knowing about it, from the frame sent on connect.
+  const latecomer = await openPage(browser, CLIENT_URL)
+  await latecomer.getByRole('button', { name: 'Tune in' }).click()
+  await wait(1_500)
+
+  checks.run(
+    'a listener joining late is handed the queue as it stands',
+    (await upNextIds(latecomer)).join(',') === remaining.join(','),
+    `listener ${(await upNextIds(latecomer)).join(',')} vs admin ${remaining.join(',')}`,
+  )
+
+  // Now change it, and watch both listeners follow without touching them.
+  await admin.getByRole('button', { name: 'Queue' }).first().click()
+  await wait(1_200)
+
+  const adminQueue = await queueIds(admin)
+  const seenByListener = await upNextIds(listener)
+  const seenByLatecomer = await upNextIds(latecomer)
+  checks.run(
+    'a queue change reaches every client without a reload',
+    seenByListener.join(',') === adminQueue.join(',') &&
+      seenByLatecomer.join(',') === adminQueue.join(','),
+    `admin ${adminQueue.join(',')} | listeners ${seenByListener.join(',')} / ${seenByLatecomer.join(',')}`,
+  )
+
   // --- transport -------------------------------------------------------------
   const audioOf = (page: Page) => page.evaluate<AudioState>(AUDIO)
 
@@ -187,6 +220,7 @@ try {
 
   const playingBefore = await nowPlaying(admin)
   const srcBefore = (await audioOf(listener)).src
+  const queuedBefore = await queueIds(admin)
   await admin.click('[data-testid="admin-skip"]')
   await wait(2_000)
   const playingAfter = await nowPlaying(admin)
@@ -197,16 +231,26 @@ try {
   )
   checks.run(
     'the queue shrinks by one on skip',
-    (await queueIds(admin)).length === remaining.length - 1,
+    (await queueIds(admin)).length === queuedBefore.length - 1,
     `${(await queueIds(admin)).length} left`,
   )
-
-  // --- the listener still sees nothing it shouldn't --------------------------
   checks.run(
-    'listener never grew admin controls',
-    !(await present(listener, 'admin-panel')) && !(await present(listener, 'admin-signin')),
-    'still just a listener',
+    'both listeners land on the same track as each other',
+    (await audioOf(listener)).src === (await audioOf(latecomer)).src,
+    (await audioOf(listener)).src ?? 'no source',
   )
+
+  // --- the listeners still see nothing they shouldn't ------------------------
+  for (const [name, page] of [
+    ['listener', listener],
+    ['late listener', latecomer],
+  ] as const) {
+    checks.run(
+      `${name} never grew admin controls`,
+      !(await present(page, 'admin-panel')) && !(await present(page, 'admin-signin')),
+      'still just a listener',
+    )
+  }
 
   // --- signing out -----------------------------------------------------------
   await admin.getByRole('button', { name: 'Sign out' }).click()

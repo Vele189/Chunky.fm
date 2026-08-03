@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import type { QueueEntry, ServerMessage, StateMessage } from '../lib/protocol.js'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { PlaybackSnapshot, QueueEntry, ServerMessage, StateMessage } from '../lib/protocol.js'
 import { StationConnection, type StationStatus } from '../lib/station.js'
 
 export function defaultStationUrl(): string {
@@ -13,6 +13,17 @@ export interface Station {
   /** What's coming up. Null until the first queue frame arrives. */
   queue: QueueEntry[] | null
   connection: StationConnection | null
+  /**
+   * Fold in state the server just handed back over HTTP.
+   *
+   * An admin command answers with the state it produced, which is the same
+   * thing the broadcast is about to carry — so applying it here costs nothing
+   * and means the panel doesn't sit unchanged for a round trip, or, if the
+   * socket happens to be reconnecting, until it comes back. The broadcast still
+   * arrives and overwrites it with the identical value.
+   */
+  applyState(snapshot: PlaybackSnapshot): void
+  applyQueue(entries: QueueEntry[]): void
 }
 
 /** Holds the websocket open and tracks the station's broadcast state. */
@@ -47,5 +58,11 @@ export function useStation(
     }
   }, [url])
 
-  return { status, state, queue, connection }
+  const applyState = useCallback(
+    (snapshot: PlaybackSnapshot) => setState({ type: 'state', ...snapshot }),
+    [],
+  )
+  const applyQueue = useCallback((entries: QueueEntry[]) => setQueue(entries), [])
+
+  return { status, state, queue, connection, applyState, applyQueue }
 }

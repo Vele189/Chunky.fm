@@ -135,7 +135,20 @@ by queueing delay. `t1` and `startedAt` are stamped from the same server clock,
 so the measured offset applies directly.
 
 Connections are anonymous and read-only: nothing a listener can send changes
-playback. Admin control over the socket will need its own gate.
+playback.
+
+**Commands go over HTTP, not the socket** — deliberately. The socket carries
+state outward and clock probes inward, and nothing else. An admin action wants
+exactly what HTTP already gives it: a request/response pair, a status code that
+says whether it worked, and — for upload — a body measured in megabytes. Adding
+a second, authenticated command channel over the socket would duplicate that
+surface and add an auth gate to get wrong, in exchange for nothing a `POST`
+doesn't already do. A socket that cannot mutate anything is a socket that cannot
+be abused into mutating something.
+
+So the loop is: admin `POST`s, the server changes its state, and the change goes
+out to every client — including the admin's own page — on the socket they all
+already have open.
 
 ### `POST /api/playback` — admin
 
@@ -217,6 +230,16 @@ The panel keeps no playback or queue state of its own. Both arrive on the
 websocket the listener already has open, so a track ending by itself — or a
 command issued from another tab — moves the panel too.
 
+A command's own response carries the state it produced, which is the same thing
+the broadcast is about to say, so the panel folds it in immediately
+(`useStation`'s `applyState` / `applyQueue`) rather than sitting unchanged for a
+round trip. If the socket happens to be reconnecting, the command still lands —
+it went over HTTP — and the panel says so instead of quietly showing a queue
+that has moved on.
+
+Listeners see the queue too, as a read-only **Up next** list. It is the same
+frame the panel reorders, seen from the other side.
+
 | Control | What it does |
 |---|---|
 | Upload | One request per file; reports stored / already in the library / why not. |
@@ -281,8 +304,10 @@ They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
 `OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect` also
 starts and stops the server itself, so build it first (`cd server && npm run
 build`). `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
-point it at something a few minutes long) and checks a second, unauthenticated
-tab both hears the commands and never grows a control.
+point it at something a few minutes long) and drives three tabs at once: an
+admin, a listener, and a second listener that joins after the queue was built.
+It checks that both listeners hear every command, show the same queue as the
+admin without a reload, and never grow a control.
 
 Between them these caught five bugs that every unit test passed straight
 through — see `docs/qa-notes.md`.
