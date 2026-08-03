@@ -15,6 +15,7 @@ import {
   normalizeMessageText,
 } from './lib/chat.js'
 import type { Correction } from './lib/drift.js'
+import { playedEarlier, playedLabel } from './lib/history.js'
 import {
   isValidNickname,
   loadNickname,
@@ -26,6 +27,7 @@ import {
   artworkUrl,
   type ChatMessage,
   type Listener,
+  type Play,
   type QueueEntry,
   type ServerMessage,
   type SocketRefusal,
@@ -73,6 +75,7 @@ export function App() {
     listeners,
     messages,
     myWishes,
+    history,
     skips,
     socketError,
     clearSocketError,
@@ -233,6 +236,9 @@ export function App() {
       )}
 
       {joined && !admin && <UpNext queue={queue} />}
+      {/* Directly under what's coming, because it is the same question pointed
+          the other way: what is about to be on, and what already was. */}
+      {joined && !admin && <Earlier plays={history} currentTrackId={track?.id ?? null} />}
       {/* Shown on the admin route too: the panel has the queue covered, but
           nothing in it says who is out there or what they are saying. */}
       {joined && <Listeners listeners={listeners} />}
@@ -295,6 +301,40 @@ function UpNext({ queue }: { queue: QueueEntry[] | null }) {
           <li key={entry.id} data-entry={entry.id}>
             <span className="up-next__title">{entry.track.title}</span>
             <span className="up-next__artist">{entry.track.artist ?? 'Unknown artist'}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+/**
+ * What has already been on.
+ *
+ * PLAN.md's now-playing history, from the listener's side: the evening so far,
+ * newest first, so somebody who walked in on the end of something can see what
+ * it was. The station writes a play down when the track starts, which makes the
+ * newest row whatever is on right now — already shown in full at the top of the
+ * page — so `playedEarlier` drops it and this list is only what was missed.
+ *
+ * Written down rather than held on the socket, so unlike the roster and the skip
+ * tally it survives a reload and covers an outage: whatever went on while a
+ * listener was reconnecting arrives in the replay, merged by id.
+ */
+function Earlier({ plays, currentTrackId }: { plays: Play[]; currentTrackId: number | null }) {
+  const earlier = playedEarlier(plays, currentTrackId)
+  if (earlier.length === 0) return null
+
+  return (
+    <section className="earlier" data-testid="earlier">
+      <h2 className="earlier__heading">Earlier</h2>
+      <ol className="earlier__list">
+        {earlier.map((play) => (
+          <li key={play.id} className="earlier__line" data-play={play.id} data-track={play.track.id}>
+            <time className="earlier__at" dateTime={new Date(play.at).toISOString()}>
+              {formatTime(play.at)}
+            </time>
+            <span className="earlier__title">{playedLabel(play)}</span>
           </li>
         ))}
       </ol>

@@ -50,6 +50,18 @@ export interface WishRow {
   status: 'new' | 'handled'
 }
 
+/**
+ * A track going on air. PLAN.md's now-playing history, one row per time a track
+ * started — so a track played twice in an evening is two rows, not one.
+ */
+export interface PlayRow {
+  id: number
+  session_id: number
+  track_id: number
+  /** Server epoch ms at which the track went on. */
+  played_at: number
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tracks (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,6 +108,28 @@ CREATE TABLE IF NOT EXISTS wishes (
 -- Read as "this session's wishes, oldest first", which is the order they were
 -- asked in and the order they are worked through.
 CREATE INDEX IF NOT EXISTS wishes_session_id ON wishes (session_id, id);
+
+CREATE TABLE IF NOT EXISTS plays (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  INTEGER NOT NULL REFERENCES sessions(id),
+  -- A reference rather than a copy of the title, unlike a message's nickname:
+  -- nothing deletes a track, and a retagged one should read correctly in the
+  -- history as well as in the library.
+  --
+  -- Deliberately *not* a foreign key, though, which is the one place this table
+  -- differs from the others. A play is written from inside playback's change
+  -- event, so a constraint that could refuse the insert would throw into
+  -- whatever put the track on — an admin command answering 500 after the track
+  -- already changed, or the end-of-track timer dying mid-set. A note about what
+  -- happened must never be able to break the thing it is a note about, and the
+  -- read below drops a row it cannot name rather than failing.
+  track_id    INTEGER NOT NULL,
+  played_at   INTEGER NOT NULL
+);
+
+-- Read as "the last N of this session", newest first — the same shape the chat
+-- is read in, and for the same reason.
+CREATE INDEX IF NOT EXISTS plays_session_id ON plays (session_id, id);
 `
 
 /**

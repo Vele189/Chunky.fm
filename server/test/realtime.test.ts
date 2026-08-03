@@ -508,6 +508,168 @@ describe('chat', () => {
 })
 
 /**
+ * The acceptance test for now-playing history, at the socket: what has been on
+ * reaches everyone as it happens, and is still there for whoever turns up next.
+ *
+ * The tracks are put in the library first, because the history joins onto it —
+ * the rest of this file plays tracks the station has never seen, which is fine
+ * for a broadcast and is not a play anybody could name.
+ */
+describe('now-playing history', () => {
+  beforeEach(() => {
+    for (const row of [track, nextTrack]) {
+      harness.db
+        .prepare(
+          `INSERT INTO tracks (id, title, artist, album, duration_ms, filename, artwork_path,
+                               content_hash, gain_db, uploaded_at)
+           VALUES (@id, @title, @artist, @album, @durationMs, @filename, @artworkPath,
+                   @contentHash, @gainDb, @uploadedAt)`,
+        )
+        .run({ ...row, filename: `${row.id}.mp3`, contentHash: `hash-${row.id}` })
+    }
+  })
+
+  it('sends an empty history to the first listener of a quiet session', async () => {
+    const [client] = await connect()
+
+    expect((await client!.nextHistory()).plays).toEqual([])
+  })
+
+  it('writes a track down when it goes on, and tells the room', async () => {
+    const connected = await connect(2)
+    await Promise.all(connected.map((client) => client.nextHistory()))
+
+    harness.playback.play(track)
+
+    for (const client of connected) {
+      const { plays } = await client.nextHistory()
+      expect(plays).toHaveLength(1)
+      expect(plays[0]).toMatchObject({ at: clock.now() })
+      expect(plays[0]!.track.title).toBe('Opening Number')
+    }
+    expect(harness.plays.count()).toBe(1)
+  })
+
+  it('adds the next track as it starts, in the order they were on', async () => {
+    const [client] = await connect()
+    await client!.nextHistory()
+
+    harness.playback.play(track)
+    await client!.nextHistory()
+    clock.advance(200_000)
+    harness.playback.play(nextTrack)
+
+    expect((await client!.nextHistory()).plays[0]).toMatchObject({ at: clock.now() })
+    expect(harness.plays.recent().map((play) => play.track.title)).toEqual([
+      'Opening Number',
+      'The Follow Up',
+    ])
+  })
+
+  /**
+   * The failure mode this is here to catch: the history is driven by the same
+   * `change` event the state broadcast is, and most of those changes are not a
+   * track starting. Unfiltered, an evening of one song would be forty rows.
+   */
+  it('says nothing when a track is paused, sought or resumed', async () => {
+    const [client] = await connect()
+    await client!.nextHistory()
+    harness.playback.play(track)
+    await client!.nextHistory()
+
+    harness.playback.pause()
+    harness.playback.seek(30_000)
+    harness.playback.resume()
+    for (let i = 0; i < 3; i++) await client!.nextState()
+
+    await expect(client!.nextHistory(150)).rejects.toThrow(/timed out/)
+    expect(harness.plays.count()).toBe(1)
+  })
+
+  it('records a track that ended and one that started by itself', async () => {
+    harness.station.enqueue(track)
+    harness.station.enqueue(nextTrack)
+    const [client] = await connect()
+    await client!.nextHistory()
+
+    harness.station.advance()
+
+    expect((await client!.nextHistory()).plays[0]!.track.title).toBe('The Follow Up')
+    expect(harness.plays.recent().map((play) => play.track.title)).toEqual([
+      'Opening Number',
+      'The Follow Up',
+    ])
+  })
+
+  it('records nothing for going off air', async () => {
+    const [client] = await connect()
+    await client!.nextHistory()
+    harness.playback.play(track)
+    await client!.nextHistory()
+
+    harness.playback.stop()
+
+    expect((await client!.nextState()).track).toBeNull()
+    await expect(client!.nextHistory(150)).rejects.toThrow(/timed out/)
+    expect(harness.plays.count()).toBe(1)
+  })
+
+  it('hands the evening so far to whoever turns up next', async () => {
+    const [early] = await connect()
+    await early!.nextHistory()
+    harness.playback.play(track)
+    harness.playback.play(nextTrack)
+    await early!.nextHistory()
+
+    const [late] = await connect()
+
+    expect((await late!.nextHistory()).plays.map((play) => play.track.title)).toEqual([
+      'Opening Number',
+      'The Follow Up',
+    ])
+  })
+
+  /**
+   * The persistence half of the acceptance: unlike the roster and the skip
+   * tally, this is written down, so it outlives the socket that watched it
+   * happen. A reload starts a new socket and gets the whole evening back.
+   */
+  it('is still there for a listener who reloads, missing nothing', async () => {
+    const [before] = await connect()
+    await before!.nextHistory()
+    harness.playback.play(track)
+    await before!.nextHistory()
+
+    await before!.close()
+    await expect.poll(() => harness.app.realtime.clientCount()).toBe(0)
+    // Played while nobody at all was listening, which is still a play.
+    harness.playback.play(nextTrack)
+
+    const [back] = await connect()
+    expect((await back!.nextHistory()).plays.map((play) => play.track.title)).toEqual([
+      'Opening Number',
+      'The Follow Up',
+    ])
+  })
+
+  it('carries plays with their own ids, so a client can merge on them', async () => {
+    const [client] = await connect()
+    await client!.nextHistory()
+
+    harness.playback.play(track)
+    const first = (await client!.nextHistory()).plays[0]!
+    harness.playback.play(nextTrack)
+    const second = (await client!.nextHistory()).plays[0]!
+    harness.playback.play(track)
+    const third = (await client!.nextHistory()).plays[0]!
+
+    // The same track twice is two plays, and the ids are the plays' own.
+    expect(third.track.id).toBe(first.track.id)
+    expect(new Set([first.id, second.id, third.id]).size).toBe(3)
+  })
+})
+
+/**
  * The acceptance test for skip voting, at the socket: several listeners vote on
  * what is on, everyone sees the tally, and the next track starts from nothing.
  */

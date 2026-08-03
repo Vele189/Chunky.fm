@@ -109,8 +109,9 @@ audio_storage/
 ```
 
 The database holds `tracks` (the library), and `sessions` + `messages` +
-`wishes` (the chat and the requests — see below). Playback and the queue are not
-in it: they are session-scoped and die with the process by design.
+`wishes` + `plays` (the chat, the requests and what has been on — see below).
+Playback, the queue, the roster and the skip tally are not in it: they are true
+only while the process (or the socket) is up, by design.
 
 ### `POST /api/upload`
 
@@ -172,6 +173,7 @@ code path as joining at 0:00.
 | `{ type: 'presence', listeners }` | On connect, and whenever someone joins, leaves or renames. |
 | `{ type: 'chat', messages }` | On connect (the tail of the conversation), and one per new message. |
 | `{ type: 'wished', wish }` | To the socket that made a wish, and to nobody else. |
+| `{ type: 'history', plays }` | On connect (the evening so far), and one per track going on. |
 | `{ type: 'skips', trackId, votes, voted }` | On connect, on every skip vote, and whenever a track change clears the tally. |
 | `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
 | `{ type: 'error', code, message, about? }` | Anything the socket refused; the connection stays open. |
@@ -420,6 +422,50 @@ a script could open sockets and vote from each without ever appearing in it.
 Voting with nothing on the decks is refused by code (`nothing_playing`) rather
 than counted against whatever comes on next.
 
+### Now-playing history
+
+The other thing PLAN.md puts in SQLite, and the second list that outlives a
+socket:
+
+```sql
+plays  (id, session_id, track_id, played_at)
+```
+
+A play is `{id, track, at}` on the wire, in batches like the chat: the evening
+so far on connect, and a batch of one each time a track starts. Ids are the
+play's, not the track's — the same track twice in an evening is two plays — so a
+client that merges on id replays a reconnect without duplicating a line and
+fills in whatever went on while it was away.
+
+**A play is written when a track starts, and only then.** The history hangs off
+the same `change` event the state broadcast does, because that is the one place
+that sees every way a track can go on: the end-of-track timer, the admin
+pressing play, a queue advancing by itself. But most of those changes are not a
+track starting — a pause, a seek and a resume all leave the same song on — so
+the track id is compared against what the log last saw, and only a different one
+is a play. Unfiltered, an evening of one song would be forty rows. Going off air
+writes nothing and resets that memory, so the same track starting after a stop
+is a new play of it.
+
+`played_at` is stamped from the station clock, not `Date.now()` — a play and the
+`startedAt` of the same track describe one instant, and two timebases would
+disagree about it.
+
+**The row stores a track id, not a copy of the title** — the opposite of what a
+message does with a nickname. A nickname is copied because a person can rename
+themselves and what they said keeps the name it was said under; a track that
+gets retagged was mislabelled all along, so the history should read correctly
+rather than preserve the typo. It is *not* a foreign key even so, which is the
+one place this table is looser than the others: the insert happens inside the
+playback change event, so a constraint that could refuse it would throw into
+whatever put the track on — an admin command answering 500 after the track
+already changed, or the end-of-track timer dying mid-set. A note about what
+happened must not be able to break the thing it is a note about. The read is an
+inner join, so a play it cannot name is left out rather than rendered blank.
+
+Scoped to a session, like the chat and the wishes: a restarted station starts a
+new list, and the old rows stay where they are.
+
 ### `POST /api/playback` — admin
 
 Driving the decks by hand: `{action: 'play'|'pause'|'resume'|'seek'|'stop'
@@ -524,6 +570,7 @@ from then on the page follows the station.
 - `lib/chat.ts` — what is worth sending, and folding a batch into what is shown.
 - `lib/wishes.ts` — what is worth asking for, and what a refused wish should say.
 - `lib/skips.ts` — the skip tally: what it is about, and how it reads.
+- `lib/history.ts` — folding in what has been on, and what counts as *earlier*.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
 - `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
 - `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
@@ -612,6 +659,24 @@ one that says nothing, so the row reads *asked* until the page is reloaded away.
 The two composers share one socket, so each is handed only the refusals that
 carry its own `about` — `refusalAbout` in `lib/protocol.ts` is that filter, and
 it is what to look at if a refusal ever appears under the wrong box.
+
+### What was that?
+
+Under the queue, an **Earlier** list: what has been on this session, newest
+first, so somebody who walked in on the end of something can see what it was.
+
+The station writes a play down when the track *starts*, which makes the newest
+row whatever is on right now — already shown in full at the top of the page — so
+the page drops that one row and shows only what was missed (`playedEarlier` in
+`lib/history.ts`). Only that row, and only while it names the track that is on: a
+track played earlier in the evening and again now is two plays, and the earlier
+one belongs in the list.
+
+This is the one social list that survives a reload. The roster and the skip
+tally are true only while a socket is open, so a refresh starts them again; the
+history is in the database, so a listener who reloads at 10 still sees the
+evening, and one who arrives then sees what they missed — including whatever
+went on while they were reconnecting, merged by id.
 
 ### Voting on what's on
 
@@ -725,7 +790,7 @@ doing anything if the dead zone drops below 40ms.
 ### Verifying it
 
 Sync — and anything else that only happens in a real browser — is what unit
-tests cannot judge, so there are nine scripts that drive real Chrome. Each needs
+tests cannot judge, so there are ten scripts that drive real Chrome. Each needs
 a running server, a running Vite dev server, and at least two uploaded tracks
 (one of them a few minutes long).
 
@@ -739,6 +804,7 @@ npm run qa:chat        # they talk, one joins late, one tries to speak as anothe
 npm run qa:chat-refusal # types faster than the room will take, and checks what it says
 npm run qa:wishes      # one listener asks, the room hears nothing, the admin marks it off
 npm run qa:skips       # three listeners vote, the room agrees, the next track starts fresh
+npm run qa:history     # tracks appear in Earlier as they change, and survive a reload
 npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 ```
 
@@ -757,7 +823,10 @@ and the admin, and nobody else — with a chat message sent the same second as t
 control, so "the other listener saw nothing" means something. `qa:skips` drives
 three for the properties that are about the room: one number three pages agree
 on live, each of them with its own answer to "is my vote in?", a vote that leaves
-with the tab that cast it, and a unanimous room that skips nothing.
+with the tab that cast it, and a unanimous room that skips nothing. `qa:history`
+is the two halves of that acceptance: a line appearing the moment a track
+changes without anyone touching the page, and the same list still there after a
+reload and for someone who only just arrived.
 
 Between them these caught five bugs that every unit test passed straight
 through — see `docs/qa-notes.md`.

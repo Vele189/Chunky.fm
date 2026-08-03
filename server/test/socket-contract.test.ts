@@ -39,6 +39,7 @@ async function settle(client: TestClient): Promise<void> {
   await client.nextQueue()
   await client.nextPresence()
   await client.nextSkips()
+  await client.nextHistory()
   await client.nextChat()
 }
 

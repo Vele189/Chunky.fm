@@ -1,4 +1,5 @@
 import { type ChatMessage, MESSAGE_MAX_LENGTH, normalizeMessageText } from './chat.js'
+import type { Play } from './history.js'
 import type { PlaybackSnapshot } from './playback.js'
 import { type Listener, normalizeNickname } from './presence.js'
 import type { QueueEntry } from './queue.js'
@@ -58,6 +59,20 @@ export interface ChatMessagesMessage {
 export interface WishedMessage {
   type: 'wished'
   wish: Wish
+}
+
+/**
+ * What has been on, as a batch rather than one play per frame.
+ *
+ * The same shape as chat, and for the same reasons: a joiner is handed the
+ * evening so far, a track starting is a batch of one, and because plays carry
+ * ids a client that merges on id neither duplicates what a reconnect replays nor
+ * leaves a hole where the outage was. Oldest first, as the chat is; the page
+ * renders it newest first, which is a display decision rather than a wire one.
+ */
+export interface HistoryMessage {
+  type: 'history'
+  plays: Play[]
 }
 
 /**
@@ -164,6 +179,7 @@ export type ServerMessage =
   | PresenceMessage
   | ChatMessagesMessage
   | WishedMessage
+  | HistoryMessage
   | SkipsMessage
   | PongMessage
   | ErrorMessage
@@ -279,6 +295,10 @@ export function chatMessages(messages: ChatMessage[]): ChatMessagesMessage {
 
 export function wishedMessage(wish: Wish): WishedMessage {
   return { type: 'wished', wish }
+}
+
+export function historyMessage(plays: Play[]): HistoryMessage {
+  return { type: 'history', plays }
 }
 
 export function skipsMessage(tally: SkipTally, voted: boolean): SkipsMessage {

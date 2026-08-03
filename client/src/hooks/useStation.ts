@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { mergeMessages } from '../lib/chat.js'
+import { mergePlays } from '../lib/history.js'
 import type {
   ChatMessage,
   Listener,
+  Play,
   PlaybackSnapshot,
   QueueEntry,
   ServerMessage,
@@ -38,6 +40,15 @@ export interface Station {
    * in the book the admin reads.
    */
   myWishes: Wish[]
+  /**
+   * What has been on this session, oldest first. Empty until the first history
+   * frame arrives.
+   *
+   * Written down by the station rather than held on the socket, so unlike the
+   * roster and the tally this survives a reload: a listener who refreshes at 10
+   * still sees the evening, and one who arrives then sees what they missed.
+   */
+  history: Play[]
   /**
    * How much of the room wants the next one, and whether this listener is part
    * of it. Null until the first tally arrives.
@@ -84,6 +95,7 @@ export function useStation(
   const [listeners, setListeners] = useState<Listener[] | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [myWishes, setMyWishes] = useState<Wish[]>([])
+  const [history, setHistory] = useState<Play[]>([])
   const [skips, setSkips] = useState<SkipTally | null>(null)
   const [socketError, setSocketError] = useState<SocketRefusal | null>(null)
   const [connection, setConnection] = useState<StationConnection | null>(null)
@@ -109,6 +121,11 @@ export function useStation(
         // sees: their own, as it was written down.
         if (message.type === 'wished') {
           setMyWishes((current) => mergeWishes(current, [message.wish]))
+        }
+        // Merged rather than replaced, exactly as the chat is: a batch is
+        // either the evening so far or the one track that just started.
+        if (message.type === 'history') {
+          setHistory((current) => mergePlays(current, message.plays))
         }
         // Replaced, not merged: the tally is the whole truth about now, and the
         // frame that carries it is addressed to this socket — `voted` in it is
@@ -148,6 +165,7 @@ export function useStation(
     listeners,
     messages,
     myWishes,
+    history,
     skips,
     socketError,
     clearSocketError,

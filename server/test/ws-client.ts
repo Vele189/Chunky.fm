@@ -2,6 +2,7 @@ import { WebSocket } from 'ws'
 import type {
   ChatMessagesMessage,
   ClientMessage,
+  HistoryMessage,
   PresenceMessage,
   QueueMessage,
   ServerMessage,
@@ -94,6 +95,10 @@ export class TestClient {
 
   async nextChat(timeoutMs?: number): Promise<ChatMessagesMessage> {
     return (await this.waitFor((m) => m.type === 'chat', timeoutMs)) as ChatMessagesMessage
+  }
+
+  async nextHistory(timeoutMs?: number): Promise<HistoryMessage> {
+    return (await this.waitFor((m) => m.type === 'history', timeoutMs)) as HistoryMessage
   }
 
   async nextSkips(timeoutMs?: number): Promise<SkipsMessage> {

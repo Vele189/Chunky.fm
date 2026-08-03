@@ -12,6 +12,7 @@ import { type Db, openDb } from '../src/db.js'
 import type { Track } from '../src/lib/track.js'
 import { PlaybackState } from '../src/playback.js'
 import type { Station } from '../src/station.js'
+import type { PlayLog } from '../src/history.js'
 import type { WishBook } from '../src/wishes.js'
 
 export const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -25,6 +26,7 @@ export interface Harness {
   station: Station
   chat: ChatLog
   wishes: WishBook
+  plays: PlayLog
   /** Only set when the harness was started with `listen: true`. */
   wsUrl: string
   cleanup(): Promise<void>
@@ -35,6 +37,7 @@ export interface HarnessOptions {
   heartbeatIntervalMs?: number
   backstopIntervalMs?: number
   chatHistoryLimit?: number
+  playHistoryLimit?: number
   chatBurst?: number
   chatRefillMs?: number
   joinBurst?: number
@@ -56,6 +59,7 @@ export async function startHarness(
     heartbeatIntervalMs,
     backstopIntervalMs,
     chatHistoryLimit,
+    playHistoryLimit,
     chatBurst,
     chatRefillMs,
     joinBurst,
@@ -95,6 +99,7 @@ export async function startHarness(
     heartbeatIntervalMs,
     backstopIntervalMs,
     chatHistoryLimit,
+    playHistoryLimit,
     chatBurst,
     chatRefillMs,
     joinBurst,
@@ -122,6 +127,7 @@ export async function startHarness(
     station: app.station,
     chat: app.chat,
     wishes: app.wishes,
+    plays: app.plays,
     wsUrl,
     async cleanup() {
       await app.close()

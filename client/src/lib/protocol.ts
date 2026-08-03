@@ -89,12 +89,33 @@ export interface Wish {
  * The one thing the server sends that is not a broadcast: a wish goes to the
  * admin, who reads the book over HTTP, and back to whoever asked. So the only
  * wishes a listener is ever told about are their own, and this is the whole of
- * that — there is no history frame, and a reload starts the list empty even
- * though the wishes themselves are still in the book.
+ * that — nothing replays them, so a reload starts the list empty even though the
+ * wishes themselves are still in the book. (Unlike the history, which is
+ * replayed on connect precisely because it is the room's rather than one
+ * listener's.)
  */
 export interface WishedMessage {
   type: 'wished'
   wish: Wish
+}
+
+/** A track that went on air. `at` is server epoch ms — when it started. */
+export interface Play {
+  /** The play's id, not the track's: the same track can be on more than once. */
+  id: number
+  track: Track
+  at: number
+}
+
+/**
+ * What has been on, in batches: the evening so far on connect, and a batch of
+ * one each time a track starts. Merged by id, like the chat, so a reconnect
+ * fills in what was missed without duplicating what is already on screen.
+ * Oldest first on the wire; the page renders it the other way up.
+ */
+export interface HistoryMessage {
+  type: 'history'
+  plays: Play[]
 }
 
 /**
@@ -187,6 +208,7 @@ export type ServerMessage =
   | PresenceMessage
   | ChatMessagesMessage
   | WishedMessage
+  | HistoryMessage
   | SkipsMessage
   | PongMessage
   | ErrorMessage

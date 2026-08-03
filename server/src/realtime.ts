@@ -1,12 +1,14 @@
 import type { Server } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
 import { type ChatLog, RateLimit } from './chat.js'
+import type { PlayLog } from './history.js'
 import type { PlaybackSnapshot } from './playback.js'
 import { type Listener, Presence } from './presence.js'
 import {
   type ServerMessage,
   chatMessages,
   errorMessage,
+  historyMessage,
   parseClientMessage,
   presenceMessage,
   queueMessage,
@@ -31,6 +33,8 @@ export interface RealtimeOptions {
   chat?: ChatLog
   /** The session's wish book. Omit and the socket refuses `wish` frames. */
   wishes?: WishBook
+  /** The session's history. Omit and the station keeps no record of what was on. */
+  plays?: PlayLog
   path?: string
   /** How often to probe sockets for liveness. */
   heartbeatIntervalMs?: number
@@ -118,6 +122,7 @@ export function attachRealtime({
   station,
   chat,
   wishes,
+  plays,
   path = '/ws',
   heartbeatIntervalMs = DEFAULT_HEARTBEAT_MS,
   closeGraceMs = DEFAULT_CLOSE_GRACE_MS,
@@ -336,6 +341,10 @@ export function attachRealtime({
     // nothing, which is also the truth after a reconnect: the vote this listener
     // cast went with the socket that cast it.
     send(socket, skipsMessage(skips.tally(), false))
+    // What has been on, so a listener who arrives at 9pm can see what they
+    // caught the end of. Written down, so this survives a reload — unlike the
+    // roster and the tally, which are only true while a socket is open.
+    if (plays) send(socket, historyMessage(plays.recent()))
     // The conversation so far, so a joiner walks into a room mid-sentence
     // rather than an empty one. Also how a reconnecting client fills the gap.
     if (chat) send(socket, chatMessages(chat.recent()))
@@ -386,6 +395,15 @@ export function attachRealtime({
     // client that was told the votes were cleared before it knew the track had
     // changed would show an empty tally against the song that just ended.
     if (skips.retarget(snapshot.track?.id ?? null)) broadcastSkips()
+    // A track going on is the one playback change worth writing down. `record`
+    // is what decides that — most changes here are a pause, a seek or a resume,
+    // and none of those is a new play. A batch of one, in the same frame the
+    // history arrives in.
+    const played = plays?.record(snapshot.track) ?? null
+    if (played) {
+      log?.info({ playId: played.id, trackId: played.track.id }, 'recording play')
+      broadcast(historyMessage([played]))
+    }
   }
   playback.on('change', onChange)
 
