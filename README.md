@@ -292,11 +292,12 @@ Overrun isn't carried over: the next track always starts at 0:00.
 
 ## Client
 
-React + Vite, one page. The listener taps **Tune in** — which is also the user
-gesture browsers require before audio may start — and from then on the page
-follows the station.
+React + Vite, one page. The listener names themselves and taps **Tune in** —
+which is also the user gesture browsers require before audio may start — and
+from then on the page follows the station.
 
 - `lib/position.ts` — where the needle should be, given the tuple and a server time.
+- `lib/nickname.ts` — the nickname: normalising it, and keeping it in localStorage.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
 - `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
 - `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
@@ -305,6 +306,29 @@ follows the station.
 - `hooks/useServerClock.ts` — runs the handshake, exposes `serverNow()`.
 - `hooks/useSyncedAudio.ts` — aligns on every broadcast, and every 2s in between.
 - `AdminPanel.tsx` — the decks, for whoever runs the station.
+
+### Joining
+
+The join screen asks for a nickname, and the station will not take a listener
+without one: the button stays disabled until the field has something in it, and
+pressing Enter on an empty field is refused the same way. What comes back is
+stored under `chunky.fm:nickname` in localStorage — PLAN.md's identity story in
+full, with no account and nothing held server-side.
+
+The nickname and the join are deliberately the *same* gesture. Browsers only
+start audio from inside a user gesture, so the form's submit handler is where
+`play()` has to be called; a nickname step before a separate Tune in button
+would leave the audio starting outside any gesture at all.
+
+A returning listener finds the field already filled and joins without retyping,
+but still has to press the button — a name in localStorage is not a gesture, and
+a page that tried to start playing on load would be refused by the browser.
+Nicknames are normalised on the way in *and* on the way out: whitespace runs
+collapse, control characters go, and the result is capped at 24 characters, so
+what a listener finds when they come back is a name rather than whatever pasting
+went wrong. A browser that refuses storage — Safari's private mode throws on
+write, and blocked cookies throw on even touching `localStorage` — costs the
+listener a retype next visit and nothing else.
 
 ### Admin mode
 

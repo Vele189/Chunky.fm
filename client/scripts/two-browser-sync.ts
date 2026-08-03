@@ -54,6 +54,9 @@ interface SyncReadout {
 
 async function tuneIn(page: Page, label: string): Promise<void> {
   await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
+  // A nickname is required before joining, and the button stays disabled
+  // without one — so the label doubles as this listener's name.
+  await page.getByLabel('What should everyone call you?').fill(label)
   await page.getByRole('button', { name: 'Tune in' }).click()
   await page.waitForFunction(PLAYING, null, { timeout: 15_000 })
   console.log(`${label}: playing`)

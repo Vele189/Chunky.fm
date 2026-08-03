@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { AdminPanel } from './AdminPanel.js'
 import { useServerClock } from './hooks/useServerClock.js'
 import { useStation } from './hooks/useStation.js'
@@ -6,6 +6,12 @@ import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { isAdminRoute } from './lib/admin.js'
 import { seekTo } from './lib/audio-element.js'
 import type { Correction } from './lib/drift.js'
+import {
+  isValidNickname,
+  loadNickname,
+  NICKNAME_MAX_LENGTH,
+  saveNickname,
+} from './lib/nickname.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
 import { artworkUrl, type QueueEntry, type ServerMessage } from './lib/protocol.js'
 
@@ -18,6 +24,11 @@ const STATUS_LABEL = {
 export function App() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [joined, setJoined] = useState(false)
+  // Read once, at mount: what a previous visit left behind is the starting
+  // point for the field, not a decision to join. The gesture still has to
+  // happen — a browser will not start audio because localStorage had a name in
+  // it — so a returning listener finds the field filled and presses the button.
+  const [nickname, setNickname] = useState(() => loadNickname() ?? '')
 
   // The clock needs to see pongs but the station owns the socket, so the
   // handler goes through a ref to break what would otherwise be a cycle.
@@ -58,9 +69,21 @@ export function App() {
     return () => window.clearInterval(timer)
   }, [joined])
 
-  function tuneIn() {
-    // Autoplay policy: play() has to be called synchronously inside the click
-    // handler, not after an await, or the browser refuses it.
+  function joinStation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    // The gate: no nickname, no session. The button is disabled without one,
+    // but Enter in the field arrives here too, and refusing to join belongs
+    // next to joining rather than only in what the button looks like.
+    const stored = saveNickname(nickname)
+    if (stored === null) return
+    setNickname(stored)
+
+    // Autoplay policy: play() has to be called synchronously inside the submit
+    // handler, not after an await, or the browser refuses it. That is why the
+    // nickname is a field on the form the button submits rather than a step
+    // before it — naming yourself and tuning in are one gesture, and splitting
+    // them would leave the audio starting outside any gesture at all.
     const audio = audioRef.current
     if (audio && state?.track && state.pausedAt === null) {
       // Through seekTo, not currentTime: the click can land before the element
@@ -80,7 +103,14 @@ export function App() {
     <main className="station">
       <header className="station__head">
         <h1>chunky.fm</h1>
-        <span className={`status status--${status}`}>{STATUS_LABEL[status]}</span>
+        <div className="station__who">
+          {joined && (
+            <span className="station__nick" data-testid="nickname">
+              listening as {nickname}
+            </span>
+          )}
+          <span className={`status status--${status}`}>{STATUS_LABEL[status]}</span>
+        </div>
       </header>
 
       {!joined ? (
@@ -88,9 +118,26 @@ export function App() {
           <p className="join__blurb">
             One station. Everyone hears the same instant of the same song.
           </p>
-          <button type="button" className="join__button" onClick={tuneIn}>
-            Tune in
-          </button>
+          <form className="join__form" onSubmit={joinStation}>
+            <label className="join__label" htmlFor="nickname">
+              What should everyone call you?
+            </label>
+            <input
+              id="nickname"
+              className="join__input"
+              name="nickname"
+              value={nickname}
+              onChange={(event) => setNickname(event.target.value)}
+              placeholder="nickname"
+              maxLength={NICKNAME_MAX_LENGTH}
+              autoComplete="nickname"
+              autoFocus
+              required
+            />
+            <button type="submit" className="join__button" disabled={!isValidNickname(nickname)}>
+              Tune in
+            </button>
+          </form>
         </section>
       ) : tuning ? (
         <section className="off-air">

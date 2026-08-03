@@ -1,5 +1,7 @@
 /** Shared config and helpers for the browser QA scripts. */
 
+import type { Page } from 'playwright-core'
+
 export const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173'
 export const API_URL = process.env.API_URL ?? 'http://localhost:3000'
 export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'change-me'
@@ -47,6 +49,18 @@ export interface AudioState {
   paused: boolean
   rate: number
   src: string | null
+}
+
+/**
+ * Joins the station: name yourself, then tune in.
+ *
+ * The button is disabled until the field has something in it, so every script
+ * that used to click straight through now has to type first. Each page gets its
+ * own nickname so a run with several listeners is readable at a glance.
+ */
+export async function tuneIn(page: Page, nickname = 'qa'): Promise<void> {
+  await page.getByLabel('What should everyone call you?').fill(nickname)
+  await page.getByRole('button', { name: 'Tune in' }).click()
 }
 
 export function playbackCommand(body: unknown): Promise<unknown> {

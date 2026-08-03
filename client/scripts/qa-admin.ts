@@ -17,6 +17,7 @@ import {
   CHROME_PATH,
   CLIENT_URL,
   Checks,
+  tuneIn,
   wait,
 } from './qa-env.js'
 
@@ -71,7 +72,7 @@ const browser = await chromium.launch({
 try {
   // --- the listener page ships no controls -----------------------------------
   const listener = await openPage(browser, CLIENT_URL)
-  await listener.getByRole('button', { name: 'Tune in' }).click()
+  await tuneIn(listener, 'listener')
   await wait(1_000)
 
   checks.run(
@@ -179,7 +180,7 @@ try {
   // A second listener that was not there when the queue was built: it should
   // arrive already knowing about it, from the frame sent on connect.
   const latecomer = await openPage(browser, CLIENT_URL)
-  await latecomer.getByRole('button', { name: 'Tune in' }).click()
+  await tuneIn(latecomer, 'latecomer')
   await wait(1_500)
 
   checks.run(

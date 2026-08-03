@@ -38,6 +38,17 @@ body {
   letter-spacing: 0.02em;
 }
 
+.station__who {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.station__nick {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .status {
   font-size: 0.8rem;
   color: var(--muted);
@@ -57,6 +68,34 @@ body {
   margin-bottom: 2rem;
 }
 
+.join__form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.join__label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.join__input {
+  font: inherit;
+  width: min(16rem, 100%);
+  padding: 0.7rem 1rem;
+  text-align: center;
+  border: 1px solid #34303d;
+  border-radius: 0.6rem;
+  background: #1a1822;
+  color: var(--fg);
+}
+
+.join__input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .join__button {
   font: inherit;
   font-weight: 600;
@@ -68,8 +107,15 @@ body {
   cursor: pointer;
 }
 
-.join__button:hover {
+.join__button:hover:not(:disabled) {
   filter: brightness(1.08);
+}
+
+/* Nothing to join with yet — the control says so rather than failing on click. */
+.join__button:disabled {
+  background: #35313f;
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .now-playing {
