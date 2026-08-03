@@ -100,6 +100,14 @@ export function useServerClock(
     }
 
     const round = () => {
+      // A round supersedes the one before it: any probe still pending is
+      // cancelled, and any probe still unanswered never will be. Without this
+      // both the timer list and the in-flight set grow for as long as the
+      // listener stays tuned in — a resync every 30s, forever.
+      for (const timer of timers) window.clearTimeout(timer)
+      timers.length = 0
+      inFlight.current.clear()
+
       for (let i = 0; i < probeCount; i++) {
         timers.push(window.setTimeout(probeOnce, i * probeSpacingMs))
       }

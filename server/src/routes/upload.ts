@@ -119,13 +119,16 @@ export function uploadRoutes({ config, db }: UploadDeps): FastifyPluginAsync {
         // tmp lives on the same volume as audio/, so this is a cheap atomic move.
         await fs.rename(tmpPath, trackFilePath(config, filename))
 
+        // Inside the try with the insert, not before it: a failed artwork write
+        // would otherwise leave the audio file on disk with no row naming it,
+        // and nothing ever looks for orphans.
         let artworkName: string | null = null
-        if (metadata.artwork) {
-          artworkName = `${contentHash}.${metadata.artwork.extension}`
-          await fs.writeFile(artworkFilePath(config, artworkName), metadata.artwork.data)
-        }
-
         try {
+          if (metadata.artwork) {
+            artworkName = `${contentHash}.${metadata.artwork.extension}`
+            await fs.writeFile(artworkFilePath(config, artworkName), metadata.artwork.data)
+          }
+
           const result = insertTrack.run({
             title: metadata.title,
             artist: metadata.artist,

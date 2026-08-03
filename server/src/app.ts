@@ -2,6 +2,7 @@ import multipart from '@fastify/multipart'
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import type { Config } from './config.js'
 import type { Db } from './db.js'
+import { registerErrorHandlers } from './lib/errors.js'
 import { ensureStorageDirs } from './lib/storage.js'
 import { PlaybackState } from './playback.js'
 import { type RealtimeHandle, attachRealtime } from './realtime.js'
@@ -43,6 +44,11 @@ export async function buildApp({
   await ensureStorageDirs(config)
 
   const app = Fastify({ logger: logger ?? true, bodyLimit: 1024 * 1024 })
+
+  // Before the routes: everything registered after this inherits the handlers,
+  // so a schema rejection on /api/playback answers in the same shape the
+  // handler's own refusals do.
+  registerErrorHandlers(app)
 
   await app.register(multipart, {
     limits: {

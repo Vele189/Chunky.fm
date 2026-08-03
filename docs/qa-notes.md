@@ -112,6 +112,70 @@ Fixed by hoisting the default factory to module scope, where its identity is
 stable. Worth remembering for any hook here that takes an injectable: the
 default has to be defined once, not per call.
 
+## 7. Half the API's errors were not machine-readable
+
+**Severity: medium — a documented contract that only held on some paths.**
+
+Found by the second QA pass, on the `QA` branch before merging to `master`.
+
+Every refusal written by hand answers `{error, message}`, where `error` is a
+code the client switches on — `AdminError.code`, with a test pinning
+`unknown_track`. Fastify's own refusals did not. A schema rejection, an
+unparseable body, a route that does not exist and a body over the limit all
+came back as `{statusCode, error: "Bad Request", message}`, where `error` is
+prose about the *status*. So `AdminError.code` was `"Bad Request"` for every
+failure the framework caught rather than the handler, and no client could tell
+the two apart.
+
+Nothing was visibly broken, because the panel only ever displays `message` —
+which is why it survived 149 tests and a full first QA pass. The contract was
+wrong, not the screen.
+
+Fixed with `setErrorHandler` and `setNotFoundHandler` in `lib/errors.ts`,
+mapping status to a code and leaving 4xx messages alone. 5xx messages are
+replaced rather than repeated: those can carry a path, a SQL fragment or a
+stack.
+
+Guarded by `test/contract.test.ts`, which asserts every refusal in the API —
+whoever wrote it — carries a snake_case code and a message.
+
+## 8. The clock handshake leaked for as long as anyone listened
+
+**Severity: low — unbounded growth, no visible symptom.**
+
+`useServerClock` pushed `probeCount` timer ids into an array on every resync
+round and never removed them, and probes that were never answered stayed in
+the in-flight set forever. Both are cleared on reconnect and unmount, so
+neither shows up in a short session; a listener who leaves the tab open for an
+evening accumulates ten dead entries a minute in each.
+
+Fixed by having each round supersede the one before it — pending timeouts
+cancelled, unanswered probes dropped. A probe that has not been answered by the
+next round never will be.
+
+## 9. The join gesture seeked without going through `seekTo`
+
+**Severity: low — the safety net caught it.**
+
+`audio-element.ts` exists because assigning `currentTime` before metadata has
+loaded is silently dropped by browsers, which is a listener sitting at 0:00
+while everyone else is at 2:14. `tuneIn` assigned `currentTime` directly. With
+`preload="auto"` metadata is usually there by the time anyone clicks, and the
+alignment effect re-runs on `joined` and seeks properly — so the bug was
+covered twice over and never observed.
+
+Fixed anyway, because "every seek goes through here" is only true if it is.
+
+## Verified, and not a problem
+
+- **Encoded traversal under `/api/audio/` returns the SPA shell, not a 404.**
+  nginx decodes `%2f` and normalises the path *before* it matches a location,
+  so `/api/audio/..%2f..%2fchunky.sqlite` is `/chunky.sqlite` by the time
+  routing happens and falls through `try_files` to `index.html`. Nothing
+  escapes — checked against the database and `/etc/passwd`, through both nginx
+  and the server port directly. Unencoded traversal is refused by
+  fastify-static as expected.
+
 ## Things deliberately left alone
 
 - **The proportional term in drift correction is inert.** With PLAN.md's

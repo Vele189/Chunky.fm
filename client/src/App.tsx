@@ -4,6 +4,7 @@ import { useServerClock } from './hooks/useServerClock.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { isAdminRoute } from './lib/admin.js'
+import { seekTo } from './lib/audio-element.js'
 import type { Correction } from './lib/drift.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
 import { artworkUrl, type QueueEntry, type ServerMessage } from './lib/protocol.js'
@@ -62,7 +63,10 @@ export function App() {
     // handler, not after an await, or the browser refuses it.
     const audio = audioRef.current
     if (audio && state?.track && state.pausedAt === null) {
-      audio.currentTime = expectedPositionSeconds(state, clock.serverNow())
+      // Through seekTo, not currentTime: the click can land before the element
+      // has metadata, and a bare assignment is silently dropped there — which
+      // is a listener starting at 0:00 while everyone else is at 2:14.
+      seekTo(audio, expectedPositionSeconds(state, clock.serverNow()))
       void audio.play().catch(() => undefined)
     }
     setJoined(true)
