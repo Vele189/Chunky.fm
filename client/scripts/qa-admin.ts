@@ -56,8 +56,8 @@ async function signIn(page: Page, password: string): Promise<void> {
 }
 
 async function openPage(browser: Browser, url: string): Promise<Page> {
-  // A context each, so the two tabs don't share sessionStorage — otherwise the
-  // "listener" would inherit the admin's credentials and prove nothing.
+  // A context each, so the two tabs don't share cookies — otherwise the
+  // "listener" would inherit the admin's session and prove nothing.
   const page = await (await browser.newContext()).newPage()
   await page.goto(url, { waitUntil: 'domcontentloaded' })
   return page
@@ -107,7 +107,7 @@ try {
   await admin.waitForSelector('[data-testid="admin-panel"]', { timeout: 10_000 })
   checks.run('the right password reveals the controls', true, 'panel visible')
 
-  // Credentials survive a reload — a station is run over hours, and a stray
+  // The session survives a reload — a station is run over hours, and a stray
   // refresh should not mean typing the password again.
   await admin.reload({ waitUntil: 'domcontentloaded' })
   await admin.waitForSelector('[data-testid="admin-panel"]', { timeout: 10_000 })
@@ -260,7 +260,7 @@ try {
   await admin.reload({ waitUntil: 'domcontentloaded' })
   await wait(1_000)
   checks.run(
-    'and the password is not remembered afterwards',
+    'and the session is gone at the station, not just in the tab',
     !(await present(admin, 'admin-panel')),
     'still signed out',
   )

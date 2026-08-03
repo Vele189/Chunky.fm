@@ -15,7 +15,9 @@ Vite proxies `/api` and `/ws` through to the server, so the client only ever
 talks to its own origin.
 
 Then open <http://localhost:5173/#admin> and sign in with `ADMIN_PASSWORD` to
-upload tracks and run the station. Everything below can also be driven by hand:
+upload tracks and run the station. The browser trades the password for a session
+cookie once and never sends it again; a shell has nowhere to keep a cookie, so
+the password itself is accepted on any admin request too:
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_PASSWORD" -F "file=@track.mp3" \
@@ -76,7 +78,7 @@ which makes re-uploading the same track a no-op rather than a second copy.
 |---|---|
 | `201` | Stored. Body is `{ track }`. |
 | `400` | No file part, empty file, or a malformed multipart body. |
-| `401` | Missing or wrong admin password. |
+| `401` | Missing or refused admin credentials. |
 | `409` | Already in the library. Body carries the existing `track`. |
 | `413` | Over `MAX_UPLOAD_BYTES` (default 150 MB). |
 | `415` | Not audio, or a container we don't serve. |
@@ -134,8 +136,13 @@ sample with the lowest RTT** — the fastest round trip is the least contaminate
 by queueing delay. `t1` and `startedAt` are stamped from the same server clock,
 so the measured offset applies directly.
 
-Connections are anonymous and read-only: nothing a listener can send changes
-playback.
+Connections are anonymous and read-only: nothing anyone can send over the socket
+changes playback. That is also the socket's half of the admin gate — a socket
+carrying a valid admin cookie gets no more than one carrying nothing, and frames
+that look like commands (`play`, `skip`, `enqueue`, …) are refused *by name*, so
+a client that tries is told where the controls actually are rather than left
+guessing. There is no privileged frame here to authenticate, because every
+mutation lives behind `requireAdmin` on an HTTP route.
 
 **Commands go over HTTP, not the socket** — deliberately. The socket carries
 state outward and clock probes inward, and nothing else. An admin action wants
@@ -157,12 +164,48 @@ Driving the decks by hand: `{action: 'play'|'pause'|'resume'|'seek'|'stop'
 command broadcasts over `/ws` before the HTTP response returns. `skip` is the
 same advance the end-of-track timer performs — next queued track, or off air.
 
-### `GET /api/admin/session` — admin
+### `/api/admin/session` — the admin session
 
-Answers `{ok: true}` to a good password and `401` to anything else. Every other
-admin route *does* something, so there is no harmless one to probe with, and a
-login form needs somewhere to ask before it shows any controls. PLAN.md's signed
-cookie exchanged at `/admin` replaces this (task #1452).
+PLAN.md's password-for-a-signed-cookie exchange. The password crosses the wire
+once, at sign-in, and what comes back is an HMAC-signed token in a cookie the
+browser presents from then on.
+
+| Route | What |
+|---|---|
+| `POST /api/admin/session` | `{password}` → `200 {ok, expiresAt}` and the cookie, or `401`. |
+| `GET /api/admin/session` | `{ok: true}` while the session holds, `401` once it doesn't. |
+| `DELETE /api/admin/session` | Signs out. Needs no credentials — dropping a cookie you hold isn't an attack. |
+
+```bash
+curl -c jar -X POST -H 'content-type: application/json' \
+     -d "{\"password\":\"$ADMIN_PASSWORD\"}" http://localhost:3000/api/admin/session
+curl -b jar -H 'content-type: application/json' \
+     -d '{"action":"skip"}' http://localhost:3000/api/playback
+```
+
+The cookie is `HttpOnly` (page script can't read the token, so an XSS can't
+carry it off), `SameSite=Strict` (nothing the admin clicks elsewhere can drive
+the station), and `Secure` whenever the request arrived over TLS — following the
+scheme rather than hardcoding it, or development over plain HTTP would never get
+the cookie back.
+
+There is no session store. The token is `<expiresAt>.<nonce>.<signature>`, and
+the expiry is *inside* the signed payload, so a client that keeps the cookie
+past `Max-Age` still finds it refused. The signing key is derived from
+`ADMIN_PASSWORD` (through an HMAC, so a signature is never an oracle for the
+password itself), which means a restart leaves sessions intact and a **password
+change ends every one of them at once**. Sessions last 12 hours — an evening,
+not a week. Revoking one session in particular is not something a station with
+one admin has any use for.
+
+`GET` exists because every other admin route *does* something: there is no
+harmless one to probe with, and the panel has to ask whether it is still signed
+in before it shows a single control.
+
+**The password is still accepted directly**, as `Authorization: Bearer …` or
+`x-admin-password`, on every admin route — that is what the curl examples and
+the QA scripts use. The browser is the thing that shouldn't be holding a shared
+secret for hours; a one-liner in a terminal has nowhere else to put it.
 
 ### The queue
 
@@ -207,6 +250,7 @@ follows the station.
 - `lib/position.ts` — where the needle should be, given the tuple and a server time.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
 - `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
+- `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
 - `lib/clock.ts` — clock offset estimation from ping/pong samples.
 - `lib/drift.ts` — what to do about an error of a given size.
 - `hooks/useServerClock.ts` — runs the handshake, exposes `serverNow()`.
@@ -218,13 +262,21 @@ follows the station.
 The controls live at **`/#admin`** (`/admin` works too, wherever the page is
 served with an SPA fallback). Off that route nothing admin renders, and the
 route alone reveals nothing: the panel shows a password form until the server
-has accepted the password at `GET /api/admin/session`, and every action carries
-it. A wrong password gets the form back, and so does a `401` mid-session —
-which is what happens when the station restarts with a different password.
+has accepted a session at `/api/admin/session`. A wrong password gets the form
+back, and so does a `401` mid-session — which is what happens when the session
+lapses, or the station restarts with a different password.
 
-The password is held in `sessionStorage`, not `localStorage`: it survives a
-reload, which a long session needs, but a station left running on a laptop
-doesn't leave the secret on disk for whoever opens the browser next.
+**The client keeps no secret at all.** The password is typed, posted once, and
+gone; what remains is the `HttpOnly` cookie, which page script cannot read and
+does not need to, because the browser attaches it. So there is nothing to store,
+nothing to remember across a reload, and nothing an XSS could carry off. A
+reload asks `GET /api/admin/session` once — the only way to know whether a
+cookie is still good is to ask — and the answer decides between the form and the
+controls.
+
+Signing out waits for the server to drop the cookie before the form comes back,
+so "signed out" means the session is over rather than that this tab stopped
+drawing buttons.
 
 The panel keeps no playback or queue state of its own. Both arrive on the
 websocket the listener already has open, so a track ending by itself — or a

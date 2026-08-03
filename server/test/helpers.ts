@@ -89,6 +89,26 @@ export async function startHarness(
   }
 }
 
+/**
+ * Sign in the way the browser does, and hand back the `Cookie` header it would
+ * send from then on — `chunky_admin=<token>`, without the attributes, which is
+ * all a request carries back.
+ */
+export async function signIn(harness: Harness, password = ADMIN_PASSWORD): Promise<string> {
+  const res = await harness.app.inject({
+    method: 'POST',
+    url: '/api/admin/session',
+    payload: { password },
+  })
+  if (res.statusCode !== 200) throw new Error(`sign-in failed: ${res.statusCode} ${res.body}`)
+  return String(res.headers['set-cookie']).split(';')[0]!
+}
+
+/** The signed token out of a `Set-Cookie`, for asserting on it directly. */
+export function tokenFrom(res: { headers: Record<string, unknown> }): string {
+  return String(res.headers['set-cookie']).split(';')[0]!.split('=').slice(1).join('=')
+}
+
 let nextTrackId = 1
 
 export function makeTrack(overrides: Partial<Track> = {}): Track {

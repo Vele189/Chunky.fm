@@ -1,6 +1,6 @@
 import type { PlaybackSnapshot, QueueEntry, Track } from './protocol.js'
 
-/** Where the admin controls live. PLAN.md's /admin arrives with #1452. */
+/** Where the admin controls live. */
 export const ADMIN_HASH = '#admin'
 
 export function isAdminRoute(location: { pathname: string; hash: string }): boolean {
@@ -33,7 +33,7 @@ export class AdminError extends Error {
     this.code = code
   }
 
-  /** The password is wrong or no longer accepted — sign out, don't retry. */
+  /** The session is over — sign in again, don't retry. */
   get unauthorized(): boolean {
     return this.status === 401
   }
@@ -54,32 +54,54 @@ interface ErrorBody {
 /**
  * The admin's side of the HTTP API.
  *
- * Auth is the shared secret from PLAN.md's env var, presented on every request
- * rather than exchanged for a session — so the password lives in the client for
- * as long as the admin is signed in. That is the arrangement task #1452
- * replaces with a signed cookie; nothing above this class knows the difference.
+ * The password is handed over once, at `signIn`, and exchanged for the signed
+ * session cookie described in PLAN.md. Nothing here holds a secret afterwards:
+ * the cookie is HttpOnly, so this code cannot read it even to send it — the
+ * browser attaches it, and every method below is just a same-origin request.
  */
 export class AdminApi {
-  readonly #password: string
   readonly #fetch: typeof globalThis.fetch
   readonly #baseUrl: string
 
-  constructor(password: string, { fetch = globalThis.fetch, baseUrl = '' }: AdminApiOptions = {}) {
-    this.#password = password
+  constructor({ fetch = globalThis.fetch, baseUrl = '' }: AdminApiOptions = {}) {
     // Bound: fetch called as a method of anything but window throws in browsers,
     // the same way calling a stored setTimeout does — see lib/station.ts.
     this.#fetch = fetch.bind(globalThis)
     this.#baseUrl = baseUrl
   }
 
-  /** Is this password accepted? The gate the sign-in form waits on. */
-  async verify(): Promise<boolean> {
-    const response = await this.#fetch(`${this.#baseUrl}/api/admin/session`, {
-      headers: { authorization: `Bearer ${this.#password}` },
+  /**
+   * Exchange the password for a session. `false` means the station said no,
+   * which is the sign-in form's cue to stay up; a throw means it said nothing.
+   */
+  async signIn(password: string): Promise<boolean> {
+    const response = await this.#request('POST', '/api/admin/session', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
     })
     if (response.status === 401) return false
     if (!response.ok) throw await this.#toError(response)
     return true
+  }
+
+  /** Is the session still good? What the panel asks before showing controls. */
+  async verify(): Promise<boolean> {
+    const response = await this.#request('GET', '/api/admin/session')
+    if (response.status === 401) return false
+    if (!response.ok) throw await this.#toError(response)
+    return true
+  }
+
+  /**
+   * End the session at the server, not just in this tab. Failure is ignored on
+   * purpose: the admin asked to be signed out, and the UI obliges either way.
+   */
+  async signOut(): Promise<void> {
+    try {
+      await this.#request('DELETE', '/api/admin/session')
+    } catch {
+      // Unreachable station. The cookie lapses on its own soon enough.
+    }
   }
 
   /** The library. Public, but only the admin has anything to do with it. */
@@ -91,11 +113,8 @@ export class AdminApi {
     const body = new FormData()
     body.append('file', file, file.name)
 
-    const response = await this.#fetch(`${this.#baseUrl}/api/upload`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${this.#password}` },
-      body,
-    })
+    // No content-type by hand: fetch sets it, with the multipart boundary.
+    const response = await this.#request('POST', '/api/upload', { body })
 
     // Not an error worth showing as one: the file is in the library, which is
     // what the admin wanted. Uploading by content hash makes this a no-op.
@@ -136,16 +155,24 @@ export class AdminApi {
   }
 
   async #json<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
+    const response = await this.#request(
       method,
-      headers: {
-        authorization: `Bearer ${this.#password}`,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
+      path,
+      body === undefined
+        ? {}
+        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+    )
     if (!response.ok) throw await this.#toError(response)
     return (await response.json()) as T
+  }
+
+  /**
+   * Every request goes through here, so every request carries the cookie.
+   * `same-origin` is fetch's default, but it is the whole authentication story
+   * now — spelling it out keeps it from being dropped by accident.
+   */
+  #request(method: string, path: string, init: RequestInit = {}): Promise<Response> {
+    return this.#fetch(`${this.#baseUrl}${path}`, { method, credentials: 'same-origin', ...init })
   }
 
   /** The server answers errors as `{error, message}`; anything else is a shrug. */
@@ -159,6 +186,12 @@ export class AdminApi {
     const code = typeof body.error === 'string' ? body.error : 'request_failed'
     const message =
       typeof body.message === 'string' ? body.message : `request failed (${response.status})`
-    return new AdminError(response.status, code, response.status === 401 ? 'wrong password' : message)
+    // A 401 mid-session is the session ending, not a password being typed
+    // wrong — the panel signs out rather than showing this, but say it plainly.
+    return new AdminError(
+      response.status,
+      code,
+      response.status === 401 ? 'session ended — sign in again' : message,
+    )
   }
 }

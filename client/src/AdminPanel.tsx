@@ -18,9 +18,9 @@ export interface AdminPanelProps {
 /**
  * The decks, for whoever runs the station.
  *
- * Reachable only at #admin and only after the server has accepted a password,
- * so the listener page ships no controls — PLAN.md is explicit that admin
- * actions are gated on auth rather than on the UI hiding a button.
+ * Reachable only at #admin and only once the server has accepted a session, so
+ * the listener page ships no controls — though the gate that matters is the one
+ * on the server, since a hidden button is not a permission.
  *
  * Nothing here holds playback or queue state: both arrive over the websocket
  * the listener already has open, so a command issued from another tab, or a
@@ -135,10 +135,10 @@ function Controls({
   }, [refreshLibrary])
 
   /**
-   * Every control goes through here. A 401 means the password stopped being
-   * accepted — the server restarted with a new one, most likely — and the only
-   * honest response is to put the sign-in form back rather than let the admin
-   * keep pressing buttons that quietly do nothing.
+   * Every control goes through here. A 401 means the session stopped being
+   * accepted — it lapsed, or the server restarted with a different password —
+   * and the only honest response is to put the sign-in form back rather than
+   * let the admin keep pressing buttons that quietly do nothing.
    */
   const run = useCallback(
     async (action: () => Promise<unknown>) => {

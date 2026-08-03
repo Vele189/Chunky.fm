@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PlaybackState } from '../src/playback.js'
-import type { PongMessage, ServerMessage } from '../src/protocol.js'
-import { type Harness, fakeClock, makeTrack, startHarness } from './helpers.js'
+import type { ErrorMessage, PongMessage, ServerMessage } from '../src/protocol.js'
+import { type Harness, fakeClock, makeTrack, signIn, startHarness } from './helpers.js'
 import { TestClient, connectAll } from './ws-client.js'
 
 let harness: Harness
@@ -15,6 +15,13 @@ async function connect(count = 1): Promise<TestClient[]> {
   const connected = await connectAll(harness.wsUrl, count)
   clients.push(...connected)
   return connected
+}
+
+/** A socket that carries what a browser would on the upgrade — cookies. */
+async function connectWith(headers: Record<string, string>): Promise<TestClient> {
+  const client = await TestClient.connect(harness.wsUrl, headers)
+  clients.push(client)
+  return client
 }
 
 beforeEach(async () => {
@@ -273,5 +280,77 @@ describe('malformed input', () => {
 
     expect((await client!.waitFor((m) => m.type === 'error')).type).toBe('error')
     expect(harness.playback.snapshot().track).toBeNull()
+  })
+})
+
+/**
+ * The socket's half of the admin gate. There is nothing privileged to
+ * authenticate here — every mutation lives behind `requireAdmin` on an HTTP
+ * route — so what has to hold is that the socket grants no control to anyone,
+ * signed in or not.
+ */
+describe('admin actions over the socket', () => {
+  const command = (client: TestClient, body: unknown) =>
+    client.send(typeof body === 'string' ? body : JSON.stringify(body))
+
+  it('refuses command frames by name, so a client is told why', async () => {
+    const [client] = await connect()
+    await client!.nextState()
+
+    harness.playback.play(track)
+    await client!.nextState()
+
+    for (const frame of [
+      { type: 'pause' },
+      { type: 'skip' },
+      { type: 'seek', positionMs: 120_000 },
+      { type: 'enqueue', trackId: 2 },
+      { type: 'admin', password: 'hunter2-for-tests' },
+    ]) {
+      command(client!, frame)
+      const refusal = (await client!.waitFor((m) => m.type === 'error')) as ErrorMessage
+      expect(refusal.message).toMatch(/over HTTP/)
+    }
+
+    // Untouched by every one of them.
+    expect(harness.playback.snapshot().pausedAt).toBeNull()
+    expect(harness.playback.snapshot().track?.id).toBe(track.id)
+    expect(harness.station.queue.list()).toEqual([])
+  })
+
+  it('gives a socket carrying an admin cookie no more than an anonymous one', async () => {
+    const cookie = await signIn(harness)
+    const client = await connectWith({ cookie })
+    await client.nextState()
+
+    harness.playback.play(track)
+    await client.nextState()
+
+    command(client, { type: 'pause' })
+
+    expect(((await client.waitFor((m) => m.type === 'error')) as ErrorMessage).message).toMatch(
+      /over HTTP/,
+    )
+    expect(harness.playback.snapshot().pausedAt).toBeNull()
+  })
+
+  it('lets the same admin do it over HTTP, which is where the gate is', async () => {
+    const cookie = await signIn(harness)
+    const client = await connectWith({ cookie })
+    await client.nextState()
+
+    harness.playback.play(track)
+    await client.nextState()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/playback',
+      headers: { cookie },
+      payload: { action: 'pause' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    // And the change arrives on the socket, like every other change does.
+    expect((await client.nextState()).pausedAt).toBe(0)
   })
 })

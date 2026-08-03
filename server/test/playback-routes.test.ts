@@ -7,6 +7,7 @@ import {
   fixture,
   multipartBody,
   multipartHeaders,
+  signIn,
   startHarness,
 } from './helpers.js'
 
@@ -50,6 +51,13 @@ describe('POST /api/playback', () => {
 
     expect(res.statusCode).toBe(401)
     expect(harness.playback.snapshot().track).toBeNull()
+  })
+
+  it('takes the session cookie a signed-in admin carries', async () => {
+    const res = await command({ action: 'play', trackId }, { cookie: await signIn(harness) })
+
+    expect(res.statusCode).toBe(200)
+    expect(harness.playback.snapshot().track?.id).toBe(trackId)
   })
 
   it('puts a track on the decks', async () => {

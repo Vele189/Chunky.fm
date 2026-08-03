@@ -21,7 +21,7 @@ const fetchStub = vi.fn((input: RequestInfo | URL, init: RequestInit = {}) => {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-const api = () => new AdminApi(PASSWORD, { fetch: fetchStub as unknown as typeof globalThis.fetch })
+const api = () => new AdminApi({ fetch: fetchStub as unknown as typeof globalThis.fetch })
 
 const headerOf = (call: Call, name: string) =>
   new Headers(call.init.headers as HeadersInit).get(name)
@@ -43,33 +43,79 @@ describe('isAdminRoute', () => {
   })
 })
 
-describe('AdminApi credentials', () => {
-  it('presents the password on every request', async () => {
-    respond = () => json({ tracks: [], entries: [], ok: true })
+describe('AdminApi sign-in', () => {
+  it('posts the password once, and nowhere else', async () => {
+    respond = () => json({ ok: true, tracks: [], entries: [] })
 
-    await api().verify()
-    await api().command({ action: 'pause' })
-    await api().enqueue(7)
-    await api().move(3, 0)
-    await api().remove(3)
-    await api().clearQueue()
+    const session = api()
+    await session.signIn(PASSWORD)
+    await session.command({ action: 'pause' })
+    await session.enqueue(7)
+    await session.upload(new File(['bytes'], 'track.mp3', { type: 'audio/mpeg' }))
 
-    expect(calls).toHaveLength(6)
+    expect(calls[0]).toMatchObject({ url: '/api/admin/session' })
+    expect(calls[0]!.init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ password: PASSWORD })
+
+    // After that the cookie is the credential — the password is not repeated,
+    // and nothing here could resend it if it wanted to.
+    for (const call of calls.slice(1)) {
+      expect(headerOf(call, 'authorization')).toBeNull()
+      expect(String(call.init.body ?? '')).not.toContain(PASSWORD)
+    }
+  })
+
+  it('sends the session cookie with every request', async () => {
+    respond = () => json({ ok: true, tracks: [], entries: [] })
+
+    const session = api()
+    await session.signIn(PASSWORD)
+    await session.verify()
+    await session.tracks()
+    await session.command({ action: 'skip' })
+    await session.move(3, 0)
+    await session.remove(3)
+    await session.clearQueue()
+    await session.signOut()
+
+    expect(calls).toHaveLength(8)
     for (const call of calls) {
-      expect(headerOf(call, 'authorization')).toBe(`Bearer ${PASSWORD}`)
+      expect(call.init.credentials).toBe('same-origin')
     }
   })
 
   it('reports a rejected password rather than throwing', async () => {
-    respond = () => json({ error: 'unauthorized' }, 401)
+    respond = () => json({ error: 'unauthorized', message: 'wrong password' }, 401)
 
+    await expect(api().signIn('nope')).resolves.toBe(false)
     await expect(api().verify()).resolves.toBe(false)
   })
 
-  it('accepts a password the server is happy with', async () => {
+  it('accepts a session the server is happy with', async () => {
     respond = (url) => (url.endsWith('/api/admin/session') ? json({ ok: true }) : json({}, 500))
 
+    await expect(api().signIn(PASSWORD)).resolves.toBe(true)
     await expect(api().verify()).resolves.toBe(true)
+  })
+
+  it('throws when the station cannot answer at all, which is not a wrong password', async () => {
+    respond = () => new Response('<html>502 Bad Gateway</html>', { status: 502 })
+
+    await expect(api().signIn(PASSWORD)).rejects.toBeInstanceOf(AdminError)
+    await expect(api().verify()).rejects.toBeInstanceOf(AdminError)
+  })
+
+  it('asks the station to end the session, and shrugs if it cannot', async () => {
+    respond = () => json({ ok: true })
+    await api().signOut()
+
+    expect(calls[0]).toMatchObject({ url: '/api/admin/session' })
+    expect(calls[0]!.init.method).toBe('DELETE')
+
+    // The admin asked to be signed out; an unreachable station doesn't get a
+    // say in it, and a rejected promise here would surface as a UI error.
+    respond = () => json({ error: 'nope' }, 500)
+    await expect(api().signOut()).resolves.toBeUndefined()
   })
 
   it('marks a mid-session 401 as unauthorized, so the UI can sign out', async () => {
@@ -81,7 +127,7 @@ describe('AdminApi credentials', () => {
 
     expect(err).toBeInstanceOf(AdminError)
     expect((err as AdminError).unauthorized).toBe(true)
-    expect((err as AdminError).message).toBe('wrong password')
+    expect((err as AdminError).message).toBe('session ended — sign in again')
   })
 })
 

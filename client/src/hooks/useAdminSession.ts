@@ -5,7 +5,7 @@ export type AdminStatus = 'signed-out' | 'checking' | 'signed-in'
 
 export interface AdminSession {
   status: AdminStatus
-  /** Null until the password has been accepted — nothing to call before that. */
+  /** Null until the station has accepted the session — nothing to call before. */
   api: AdminApi | null
   error: string | null
   signIn(password: string): Promise<boolean>
@@ -13,111 +13,85 @@ export interface AdminSession {
 }
 
 export interface AdminSessionOptions {
-  storage?: Storage | null
-  createApi?: (password: string) => AdminApi
-}
-
-/**
- * sessionStorage, not localStorage: the admin password is a shared secret, and
- * a station left running on a laptop shouldn't leave it on disk for whoever
- * opens the browser next. It survives a reload, which is what a long session
- * actually needs.
- */
-export const ADMIN_STORAGE_KEY = 'chunky.admin'
-
-function defaultStorage(): Storage | null {
-  try {
-    return typeof window === 'undefined' ? null : window.sessionStorage
-  } catch {
-    // Storage can throw outright when cookies are blocked.
-    return null
-  }
+  createApi?: () => AdminApi
 }
 
 /**
  * Module scope on purpose. As a default argument this would be a new function
- * every render, and the effect below — which depends on it — would re-verify
- * the password on every render it caused. That is a request per render, for as
- * long as the panel is open.
+ * every render, and the effect below — which depends on it — would re-check the
+ * session on every render it caused. That is a request per render, for as long
+ * as the panel is open.
  */
-const defaultCreateApi = (password: string): AdminApi => new AdminApi(password)
+const defaultCreateApi = (): AdminApi => new AdminApi()
 
-/** Holds the admin's credentials, and re-checks them against the server. */
+/**
+ * Whether this browser is signed in, according to the station.
+ *
+ * There is nothing to remember here, and deliberately so: the session is an
+ * HttpOnly cookie, which page script cannot read and does not need to — the
+ * browser attaches it, and the only way to know whether it is still good is to
+ * ask. So a reload asks once, and the answer decides between the form and the
+ * controls. The password itself is never held after sign-in, which is the whole
+ * point of exchanging it.
+ */
 export function useAdminSession({
-  storage = defaultStorage(),
   createApi = defaultCreateApi,
 }: AdminSessionOptions = {}): AdminSession {
-  const [password, setPassword] = useState<string | null>(null)
-  const [status, setStatus] = useState<AdminStatus>('signed-out')
+  const [status, setStatus] = useState<AdminStatus>('checking')
   const [error, setError] = useState<string | null>(null)
 
-  const api = useMemo(
-    () => (password === null ? null : createApi(password)),
-    [password, createApi],
-  )
+  const api = useMemo(() => createApi(), [createApi])
 
-  // A remembered password is not a signed-in admin: the server may have
-  // restarted with a different one, so it is re-checked before any control is
-  // shown. Until it answers, the page shows neither the form nor the controls.
+  // Asked once on mount, and the panel shows neither form nor controls until it
+  // answers: a cookie left over from a station that has since restarted with a
+  // different password is not a signed-in admin.
   useEffect(() => {
-    const remembered = storage?.getItem(ADMIN_STORAGE_KEY)
-    if (!remembered) return
-
     let cancelled = false
     setStatus('checking')
-    void createApi(remembered)
+    void api
       .verify()
       .then((ok) => {
-        if (cancelled) return
-        if (!ok) {
-          storage?.removeItem(ADMIN_STORAGE_KEY)
-          setStatus('signed-out')
-          return
-        }
-        setPassword(remembered)
-        setStatus('signed-in')
+        if (!cancelled) setStatus(ok ? 'signed-in' : 'signed-out')
       })
       .catch(() => {
         if (cancelled) return
-        // The server is unreachable, not the password wrong — keep it stored so
-        // a reconnect doesn't cost the admin their credentials.
+        // The station being unreachable is not the same as being signed out,
+        // but there is nothing to show except the form until it answers.
         setStatus('signed-out')
         setError('could not reach the station')
       })
     return () => {
       cancelled = true
     }
-  }, [storage, createApi])
+  }, [api])
 
   const signIn = useCallback(
     async (candidate: string): Promise<boolean> => {
       setStatus('checking')
       setError(null)
       try {
-        const accepted = await createApi(candidate).verify()
-        if (!accepted) {
-          setStatus('signed-out')
-          setError('wrong password')
-          return false
-        }
-        storage?.setItem(ADMIN_STORAGE_KEY, candidate)
-        setPassword(candidate)
-        setStatus('signed-in')
-        return true
+        const accepted = await api.signIn(candidate)
+        setStatus(accepted ? 'signed-in' : 'signed-out')
+        if (!accepted) setError('wrong password')
+        return accepted
       } catch {
         setStatus('signed-out')
         setError('could not reach the station')
         return false
       }
     },
-    [storage, createApi],
+    [api],
   )
 
+  // The controls go away immediately, but the form only comes back once the
+  // station has actually dropped the cookie — otherwise "signed out" would mean
+  // nothing more than "this tab stopped showing buttons", and a reload a second
+  // later would walk straight back in.
   const signOut = useCallback(() => {
-    storage?.removeItem(ADMIN_STORAGE_KEY)
-    setPassword(null)
-    setStatus('signed-out')
-  }, [storage])
+    setStatus('checking')
+    setError(null)
+    void api.signOut().then(() => setStatus('signed-out'))
+  }, [api])
 
-  return { status, api, error, signIn, signOut }
+  return { status, api: status === 'signed-in' ? api : null, error, signIn, signOut }
 }

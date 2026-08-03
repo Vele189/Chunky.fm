@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { TrackRow } from '../src/db.js'
+import { ADMIN_COOKIE } from '../src/lib/auth.js'
 import {
   ADMIN_PASSWORD,
   type Harness,
@@ -9,6 +10,7 @@ import {
   listDir,
   multipartBody,
   multipartHeaders,
+  signIn,
   startHarness,
 } from './helpers.js'
 
@@ -71,6 +73,27 @@ describe('POST /api/upload — auth', () => {
     )
 
     expect(res.statusCode).toBe(201)
+  })
+
+  it('accepts the session cookie, which is what the browser actually sends', async () => {
+    const res = await upload(
+      harness,
+      { filename: 'tagged.mp3', contentType: 'audio/mpeg', data: await fixture('tagged.mp3') },
+      { cookie: await signIn(harness) },
+    )
+
+    expect(res.statusCode).toBe(201)
+  })
+
+  it('rejects a cookie it did not sign', async () => {
+    const res = await upload(
+      harness,
+      { filename: 'tagged.mp3', contentType: 'audio/mpeg', data: await fixture('tagged.mp3') },
+      { cookie: `${ADMIN_COOKIE}=9999999999999.abc.forged` },
+    )
+
+    expect(res.statusCode).toBe(401)
+    expect(trackRows(harness)).toHaveLength(0)
   })
 })
 

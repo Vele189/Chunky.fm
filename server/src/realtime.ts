@@ -39,9 +39,12 @@ function send(socket: WebSocket, message: ServerMessage): void {
 /**
  * Attaches the station's websocket surface to an existing HTTP server.
  *
- * Connections are anonymous — listeners are pure consumers of the clock, and
- * nothing they can send mutates playback. Admin control will need to be gated
- * on the socket itself once it exists.
+ * Connections are anonymous and read-only, and that *is* the socket's half of
+ * the admin gate: there is no privileged frame here to authenticate, because
+ * every mutation lives behind `requireAdmin` on an HTTP route. A socket that
+ * carries a valid admin cookie gets no more than one that carries nothing —
+ * command-shaped frames are refused by name (see `parseClientMessage`), so the
+ * only way to drive the station is a request that went through the gate.
  */
 export function attachRealtime({
   server,
@@ -74,11 +77,12 @@ export function attachRealtime({
     socket.on('pong', () => responsive.add(socket))
 
     socket.on('message', (raw) => {
-      const message = parseClientMessage(raw.toString())
-      if (!message) {
-        send(socket, { type: 'error', message: 'unrecognised message' })
+      const parsed = parseClientMessage(raw.toString())
+      if (!parsed.ok) {
+        send(socket, { type: 'error', message: parsed.error })
         return
       }
+      const { message } = parsed
       if (message.type === 'ping') {
         // Same clock that stamps startedAt — see PlaybackState.now().
         send(socket, { type: 'pong', t0: message.t0, t1: playback.now() })

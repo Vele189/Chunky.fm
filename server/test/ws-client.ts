@@ -27,9 +27,10 @@ export class TestClient {
     this.closed = new Promise((resolve) => socket.once('close', (code) => resolve(code)))
   }
 
-  static connect(url: string): Promise<TestClient> {
+  /** `headers` stands in for what a browser sends on the upgrade — cookies. */
+  static connect(url: string, headers?: Record<string, string>): Promise<TestClient> {
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(url)
+      const socket = new WebSocket(url, { headers })
       const client = new TestClient(socket)
       socket.once('open', () => resolve(client))
       socket.once('error', reject)
