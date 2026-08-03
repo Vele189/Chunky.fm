@@ -15,6 +15,7 @@ build/
 # Never commit the music library.
 data/
 uploads/
+audio_storage/
 
 # sqlite
 *.sqlite
@@ -34,3 +35,6 @@ yarn-error.log*
 .idea/
 .vscode/
 *.swp
+
+# client build output
+client/dist/

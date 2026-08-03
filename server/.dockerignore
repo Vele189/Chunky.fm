@@ -1,0 +1,16 @@
+node_modules
+dist
+audio_storage
+data
+uploads
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite3
+*.db
+*-wal
+*-shm
+*.log
+Dockerfile
+.dockerignore
