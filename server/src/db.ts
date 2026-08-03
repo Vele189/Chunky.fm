@@ -36,6 +36,20 @@ export interface MessageRow {
   created_at: number
 }
 
+export interface WishRow {
+  id: number
+  session_id: number
+  /** The nickname as it stood when the wish was made. Same copy as a message's. */
+  nick: string
+  text: string
+  created_at: number
+  /**
+   * Where the wish stands with whoever runs the decks. Named `WishStatus` in
+   * `wishes.ts`, which is where the values mean anything; the column is here.
+   */
+  status: 'new' | 'handled'
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tracks (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +80,22 @@ CREATE TABLE IF NOT EXISTS messages (
 
 -- Chat is only ever read as "the last N of one session", newest first.
 CREATE INDEX IF NOT EXISTS messages_session_id ON messages (session_id, id);
+
+CREATE TABLE IF NOT EXISTS wishes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  INTEGER NOT NULL REFERENCES sessions(id),
+  nick        TEXT    NOT NULL,
+  text        TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL,
+  -- Constrained here as well as in the type: a status nothing can render is a
+  -- row the admin panel would show as a blank, and the column outlives the
+  -- process that wrote it.
+  status      TEXT    NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'handled'))
+);
+
+-- Read as "this session's wishes, oldest first", which is the order they were
+-- asked in and the order they are worked through.
+CREATE INDEX IF NOT EXISTS wishes_session_id ON wishes (session_id, id);
 `
 
 /**

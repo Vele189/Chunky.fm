@@ -25,12 +25,21 @@ import { expectedPositionSeconds, formatClock } from './lib/position.js'
 import {
   artworkUrl,
   type ChatMessage,
-  type ErrorMessage,
   type Listener,
   type QueueEntry,
   type ServerMessage,
+  type SocketRefusal,
+  type Wish,
+  refusalAbout,
 } from './lib/protocol.js'
 import type { StationConnection } from './lib/station.js'
+import {
+  isSendableWish,
+  normalizeWishText,
+  WISH_MAX_LENGTH,
+  wishRefusal,
+  wishStatusLabel,
+} from './lib/wishes.js'
 
 const STATUS_LABEL = {
   connecting: 'tuning in…',
@@ -56,6 +65,7 @@ export function App() {
     queue,
     listeners,
     messages,
+    myWishes,
     socketError,
     clearSocketError,
     connection,
@@ -204,12 +214,24 @@ export function App() {
       {/* Shown on the admin route too: the panel has the queue covered, but
           nothing in it says who is out there or what they are saying. */}
       {joined && <Listeners listeners={listeners} />}
+      {/* Two composers, one socket: each is handed only the refusals that are
+          about what it sends, or a refused wish would also read as a message
+          that went nowhere. */}
+      {joined && (
+        <Wishes
+          wishes={myWishes}
+          connection={connection}
+          live={status === 'connected'}
+          refusal={refusalAbout(socketError, 'wish')}
+          clearRefusal={clearSocketError}
+        />
+      )}
       {joined && (
         <Chat
           messages={messages}
           connection={connection}
           live={status === 'connected'}
-          refusal={socketError}
+          refusal={refusalAbout(socketError, 'say')}
           clearRefusal={clearSocketError}
         />
       )}
@@ -290,13 +312,116 @@ function Listeners({ listeners }: { listeners: Listener[] | null }) {
   )
 }
 
+interface WishesProps {
+  /** This listener's own — the only ones the station tells them about. */
+  wishes: Wish[]
+  connection: StationConnection | null
+  live: boolean
+  /** The last refusal that was about a wish, if any. */
+  refusal: SocketRefusal | null
+  clearRefusal(): void
+}
+
+/**
+ * Asking for something.
+ *
+ * PLAN.md's requests decision, in full: free text, and no library to browse.
+ * There is nothing to pick from here on purpose — a listener asks in their own
+ * words for something the station may not even have, and whoever runs the decks
+ * reads it and decides. So this composer promises nothing, and says so.
+ *
+ * What comes back is the wish as the station wrote it down, and that is the
+ * whole confirmation — nothing is rendered optimistically, for the reason the
+ * chat renders nothing optimistically: a line that says "asked" for something
+ * that was refused is worse than no line at all.
+ */
+function Wishes({ wishes, connection, live, refusal, clearRefusal }: WishesProps) {
+  const [draft, setDraft] = useState('')
+  // What went out and has not been answered, so a refusal can hand it back.
+  const unanswered = useRef<string | null>(null)
+
+  const seq = refusal?.seq
+  useEffect(() => {
+    if (seq === undefined) return
+    const text = unanswered.current
+    unanswered.current = null
+    setDraft((current) => draftAfterRefusal(current, text))
+  }, [seq])
+
+  function ask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const text = normalizeWishText(draft)
+    if (text.length === 0 || !connection || !live) return
+    // Only when this composer has a notice up. The station keeps one refusal at
+    // a time for the whole socket, and clearing it from here would take down
+    // the chat's "not sent" because somebody asked for a song.
+    if (refusal) clearRefusal()
+    unanswered.current = text
+    connection.send({ type: 'wish', text })
+    setDraft('')
+  }
+
+  const refusalNotice = refusal ? wishRefusal(refusal.error.code) : null
+
+  return (
+    <section className="wishes" data-testid="wishes">
+      <h2 className="wishes__heading">Wishes</h2>
+      {wishes.length === 0 ? (
+        <p className="wishes__blurb">
+          Ask for anything. Whoever's on the decks reads these — no promises.
+        </p>
+      ) : (
+        <ol className="wishes__list" data-testid="wishes-list">
+          {wishes.map((wish) => (
+            <li key={wish.id} className="wishes__line" data-wish={wish.id}>
+              <span className="wishes__text">{wish.text}</span>
+              {/* Only ever "asked" for now: nothing tells a listener their wish
+                  was played, so a status that could change is rendered rather
+                  than assumed. */}
+              <span className="wishes__status">{wishStatusLabel(wish.status)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {refusalNotice && (
+        <p className="wishes__refusal" role="status" data-testid="wishes-refusal">
+          {refusalNotice}
+        </p>
+      )}
+      <form className="wishes__form" onSubmit={ask}>
+        <label className="wishes__label" htmlFor="wish-input">
+          Ask for something
+        </label>
+        <input
+          id="wish-input"
+          className="wishes__input"
+          data-testid="wish-input"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={live ? 'anything off Rumours…' : 'reconnecting…'}
+          maxLength={WISH_MAX_LENGTH}
+          autoComplete="off"
+          disabled={!live}
+        />
+        <button
+          type="submit"
+          className="wishes__send"
+          disabled={!live || !isSendableWish(draft)}
+        >
+          Ask
+        </button>
+      </form>
+    </section>
+  )
+}
+
 interface ChatProps {
   messages: ChatMessage[]
   connection: StationConnection | null
   /** False while reconnecting — a send would go on the floor unannounced. */
   live: boolean
-  /** The last thing the socket refused, if anything. */
-  refusal: { error: ErrorMessage; seq: number } | null
+  /** The last refusal that was about a message, if any. */
+  refusal: SocketRefusal | null
   clearRefusal(): void
 }
 
@@ -342,7 +467,8 @@ function Chat({ messages, connection, live, refusal, clearRefusal }: ChatProps) 
     event.preventDefault()
     const text = normalizeMessageText(draft)
     if (text.length === 0 || !connection || !live) return
-    clearRefusal()
+    // Only this composer's own — see the same line under the wishes.
+    if (refusal) clearRefusal()
     unanswered.current = text
     connection.send({ type: 'say', text })
     setDraft('')

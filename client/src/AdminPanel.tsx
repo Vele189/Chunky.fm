@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useAdminSession } from './hooks/useAdminSession.js'
-import { AdminError, type AdminApi, type PlaybackCommand } from './lib/admin.js'
+import { AdminError, type AdminApi, type PlaybackCommand, type WishBook } from './lib/admin.js'
+import { formatTime } from './lib/chat.js'
 import { formatClock } from './lib/position.js'
 import type { PlaybackSnapshot, QueueEntry, StateMessage, Track } from './lib/protocol.js'
 import type { StationStatus } from './lib/station.js'
@@ -98,6 +99,9 @@ function SignIn({
   )
 }
 
+/** How often the panel asks for the wish book while it is open. */
+const WISH_POLL_MS = 10_000
+
 interface ControlsProps {
   api: AdminApi
   state: StateMessage | null
@@ -118,6 +122,7 @@ function Controls({
   onSignOut,
 }: ControlsProps) {
   const [tracks, setTracks] = useState<Track[]>([])
+  const [book, setBook] = useState<WishBook>({ wishes: [], outstanding: 0 })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [uploads, setUploads] = useState<{ id: number; line: string }[]>([])
@@ -133,6 +138,35 @@ function Controls({
   useEffect(() => {
     void refreshLibrary()
   }, [refreshLibrary])
+
+  /**
+   * Not through `run`: this fires on a timer, and a poll that set `busy` would
+   * flicker every control on the panel twice a minute. A lapsed session still
+   * has to end the same way it does everywhere else, though — the poll is the
+   * one request here that happens without the admin touching anything, so it is
+   * also the first thing to notice.
+   */
+  const refreshWishes = useCallback(async () => {
+    try {
+      setBook(await api.wishes())
+    } catch (err) {
+      if (err instanceof AdminError && err.unauthorized) return onSignOut()
+      setError('could not load the wishes')
+    }
+  }, [api, onSignOut])
+
+  /**
+   * Polled, because a wish arrives over a socket that carries no privileged
+   * frames — the gate is on HTTP, and the station deliberately tells a socket
+   * holding an admin cookie nothing it would not tell a stranger. So the panel
+   * asks, rather than the station pushing. Ten seconds is well inside how long
+   * a track lasts, which is the pace anyone is actually working at.
+   */
+  useEffect(() => {
+    void refreshWishes()
+    const timer = window.setInterval(() => void refreshWishes(), WISH_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [refreshWishes])
 
   /**
    * Every control goes through here. A 401 means the session stopped being
@@ -306,6 +340,45 @@ function Controls({
             </li>
           ))}
         </ol>
+      )}
+
+      {/* Above the library on purpose: a wish is read, and then answered by
+          queueing something from the list below it. */}
+      <h3 className="admin__subheading">
+        Wishes <span className="admin__count">{book.outstanding}</span>
+      </h3>
+
+      {book.wishes.length === 0 ? (
+        <p className="admin__note">Nobody has asked for anything.</p>
+      ) : (
+        <ul className="admin__wishes" data-testid="admin-wishes">
+          {book.wishes.map((wish) => (
+            <li
+              key={wish.id}
+              className={`admin__row${wish.status === 'handled' ? ' admin__row--handled' : ''}`}
+              data-wish={wish.id}
+              data-status={wish.status}
+            >
+              <span className="admin__row-time">{formatTime(wish.at)}</span>
+              <span className="admin__wish-nick">{wish.nickname}</span>
+              <span className="admin__wish-text">{wish.text}</span>
+              {/* Reversible: the mark is a note to whoever is reading the list,
+                  and a misclick should not be the end of somebody's request. */}
+              <button
+                type="button"
+                className="admin__link"
+                disabled={busy}
+                onClick={() =>
+                  run(async () =>
+                    setBook(await api.markWish(wish.id, wish.status === 'handled' ? 'new' : 'handled')),
+                  )
+                }
+              >
+                {wish.status === 'handled' ? 'Undo' : 'Mark handled'}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       <h3 className="admin__subheading">Library</h3>

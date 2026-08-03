@@ -12,6 +12,7 @@ import { type Db, openDb } from '../src/db.js'
 import type { Track } from '../src/lib/track.js'
 import { PlaybackState } from '../src/playback.js'
 import type { Station } from '../src/station.js'
+import type { WishBook } from '../src/wishes.js'
 
 export const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
 export const ADMIN_PASSWORD = 'hunter2-for-tests'
@@ -23,6 +24,7 @@ export interface Harness {
   playback: PlaybackState
   station: Station
   chat: ChatLog
+  wishes: WishBook
   /** Only set when the harness was started with `listen: true`. */
   wsUrl: string
   cleanup(): Promise<void>
@@ -37,6 +39,8 @@ export interface HarnessOptions {
   chatRefillMs?: number
   joinBurst?: number
   joinRefillMs?: number
+  wishBurst?: number
+  wishRefillMs?: number
   signInBurst?: number
   signInRefillMs?: number
   /** Bind a real port — required for anything that opens a websocket. */
@@ -54,6 +58,8 @@ export async function startHarness(
     chatRefillMs,
     joinBurst,
     joinRefillMs,
+    wishBurst,
+    wishRefillMs,
     signInBurst,
     signInRefillMs,
     listen = false,
@@ -89,6 +95,8 @@ export async function startHarness(
     chatRefillMs,
     joinBurst,
     joinRefillMs,
+    wishBurst,
+    wishRefillMs,
     signInBurst,
     signInRefillMs,
   })
@@ -107,6 +115,7 @@ export async function startHarness(
     playback,
     station: app.station,
     chat: app.chat,
+    wishes: app.wishes,
     wsUrl,
     async cleanup() {
       await app.close()

@@ -71,6 +71,32 @@ export interface ChatMessagesMessage {
   messages: ChatMessage[]
 }
 
+/** Where a wish stands with whoever runs the decks. */
+export type WishStatus = 'new' | 'handled'
+
+/** Something a listener asked for. `at` is server epoch ms. */
+export interface Wish {
+  id: number
+  nickname: string
+  text: string
+  at: number
+  status: WishStatus
+}
+
+/**
+ * "Your wish is written down", to the socket that made it and to no other.
+ *
+ * The one thing the server sends that is not a broadcast: a wish goes to the
+ * admin, who reads the book over HTTP, and back to whoever asked. So the only
+ * wishes a listener is ever told about are their own, and this is the whole of
+ * that — there is no history frame, and a reload starts the list empty even
+ * though the wishes themselves are still in the book.
+ */
+export interface WishedMessage {
+  type: 'wished'
+  wish: Wish
+}
+
 export interface PongMessage {
   type: 'pong'
   t0: number
@@ -93,12 +119,48 @@ export type SocketErrorCode =
   | 'command_over_http'
   | 'not_joined'
   | 'no_chat'
+  | 'wish_too_long'
+  | 'empty_wish'
+  | 'no_wishes'
   | 'slow_down'
+
+/**
+ * Which frame a refusal is about, when it is about one.
+ *
+ * `slow_down` and `not_joined` can each come from more than one thing a
+ * listener typed, and there are two composers on the page. Without this, a wish
+ * refused for pace also puts "not sent" under the chat — telling someone a
+ * message they never sent went nowhere.
+ */
+export type SocketErrorAbout = 'join' | 'say' | 'wish'
 
 export interface ErrorMessage {
   type: 'error'
   code: SocketErrorCode
   message: string
+  /** Absent when the frame was too malformed to say what it was trying to do. */
+  about?: SocketErrorAbout
+}
+
+/** What a socket refused, and the sequence number that makes a repeat visible. */
+export interface SocketRefusal {
+  error: ErrorMessage
+  seq: number
+}
+
+/**
+ * The refusal, if the last one was about this composer — otherwise nothing.
+ *
+ * Null rather than a stale value on purpose: a composer that filtered on the
+ * code alone would react to the other one's refusals, and one that held onto
+ * the last refusal of its own would react again every time the *other* composer
+ * was refused.
+ */
+export function refusalAbout(
+  refusal: SocketRefusal | null,
+  about: SocketErrorAbout,
+): SocketRefusal | null {
+  return refusal && refusal.error.about === about ? refusal : null
 }
 
 export type ServerMessage =
@@ -106,6 +168,7 @@ export type ServerMessage =
   | QueueMessage
   | PresenceMessage
   | ChatMessagesMessage
+  | WishedMessage
   | PongMessage
   | ErrorMessage
 
@@ -126,7 +189,16 @@ export interface SayMessage {
   text: string
 }
 
-export type ClientMessage = PingMessage | JoinMessage | SayMessage
+/**
+ * "I'd love to hear this." Free text and nothing else — listeners do not browse
+ * the library, and the name on it is the one the roster already has.
+ */
+export interface WishMessage {
+  type: 'wish'
+  text: string
+}
+
+export type ClientMessage = PingMessage | JoinMessage | SayMessage | WishMessage
 
 export const audioUrl = (track: Track) => `/api/audio/${track.filename}`
 export const artworkUrl = (track: Track) =>

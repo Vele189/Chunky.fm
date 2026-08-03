@@ -266,6 +266,118 @@ body {
   white-space: nowrap;
 }
 
+/* --- wishes ---------------------------------------------------------------
+ *
+ * Deliberately quieter than the chat: a listener asks for one thing now and
+ * then, and the list is only ever their own.
+ */
+
+.wishes {
+  border-top: 1px solid #26232e;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.wishes__heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.wishes__blurb,
+.wishes__refusal {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.wishes__blurb {
+  color: var(--muted);
+}
+
+.wishes__refusal {
+  color: #ff8080;
+}
+
+.wishes__list {
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.wishes__line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+}
+
+/* Somebody else's words in the admin's list, and this listener's own here —
+   break them rather than letting a wall of characters stretch the layout. */
+.wishes__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.wishes__status {
+  flex: none;
+  margin-left: auto;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5d5868;
+}
+
+.wishes__form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.wishes__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.wishes__input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #2f2b39;
+  border-radius: 6px;
+  background: #1a1820;
+  padding: 0.5rem 0.7rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.wishes__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.wishes__send {
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  padding: 0.5rem 1rem;
+  color: #191622;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wishes__send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .chat {
   border-top: 1px solid #26232e;
   margin-top: 1rem;
@@ -486,6 +598,7 @@ body {
 
 .admin__queue,
 .admin__library,
+.admin__wishes,
 .admin__uploads {
   margin: 0;
   padding: 0;
@@ -526,6 +639,29 @@ body {
 
 .admin__row .admin__link {
   margin-left: 0;
+}
+
+/* Struck through rather than hidden: a handled wish is still a record of what
+   was asked for, and the mark has to be undoable from where it was made. */
+.admin__row--handled .admin__wish-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.admin__wish-nick {
+  flex: none;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.admin__wish-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .admin__icon {

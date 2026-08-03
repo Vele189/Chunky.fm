@@ -2,6 +2,7 @@ import { type ChatMessage, MESSAGE_MAX_LENGTH, normalizeMessageText } from './ch
 import type { PlaybackSnapshot } from './playback.js'
 import { type Listener, normalizeNickname } from './presence.js'
 import type { QueueEntry } from './queue.js'
+import { type Wish, WISH_MAX_LENGTH, normalizeWishText } from './wishes.js'
 
 /** Full playback state. Sent on connect and on every change. */
 export type StateMessage = PlaybackSnapshot & { type: 'state' }
@@ -38,6 +39,24 @@ export interface PresenceMessage {
 export interface ChatMessagesMessage {
   type: 'chat'
   messages: ChatMessage[]
+}
+
+/**
+ * "Your wish is written down", and only to the socket that made it.
+ *
+ * Not a broadcast, unlike everything else the server volunteers. A wish is
+ * addressed to whoever runs the decks rather than to the room — PLAN.md puts
+ * "see wishes" on the admin surface and keeps it off the social one — so the
+ * only client told about a wish is the one that made it, and the only other way
+ * to read the book is `GET /api/wishes`, behind the admin gate.
+ *
+ * It carries the whole wish rather than an "ok", so the listener sees what was
+ * actually written down: normalised, timestamped by the server, and signed with
+ * the name they are on the roster under.
+ */
+export interface WishedMessage {
+  type: 'wished'
+  wish: Wish
 }
 
 /**
@@ -79,17 +98,42 @@ export type SocketErrorCode =
   | 'not_joined'
   /** This station was built without a chat. */
   | 'no_chat'
+  /** A wish longer than the station stores. Refused, not truncated. */
+  | 'wish_too_long'
+  /** A wish that was nothing but whitespace. */
+  | 'empty_wish'
+  /** This station was built without a wish book. */
+  | 'no_wishes'
   /** Doing that faster than the station will take it. */
   | 'slow_down'
+
+/**
+ * Which frame a refusal is about, when it is about one.
+ *
+ * The code says what went wrong; this says what it went wrong *for*. Two of the
+ * codes — `slow_down` and `not_joined` — are reachable from more than one thing
+ * a listener can send, and a client showing "not sent" under the composer has
+ * to know which composer. Without it, a wish refused for pace also lights up the
+ * chat, telling someone a message they never sent was not sent.
+ */
+export type SocketErrorAbout = 'join' | 'say' | 'wish'
 
 export interface ErrorMessage {
   type: 'error'
   code: SocketErrorCode
   message: string
+  /** Absent when the frame was too malformed to say what it was trying to do. */
+  about?: SocketErrorAbout
 }
 
-export function errorMessage(code: SocketErrorCode, message: string): ErrorMessage {
-  return { type: 'error', code, message }
+export function errorMessage(
+  code: SocketErrorCode,
+  message: string,
+  about?: SocketErrorAbout,
+): ErrorMessage {
+  // `about` left undefined simply doesn't survive JSON.stringify, which is the
+  // "absent" the type describes — there is nothing to strip by hand.
+  return { type: 'error', code, message, about }
 }
 
 export type ServerMessage =
@@ -97,6 +141,7 @@ export type ServerMessage =
   | QueueMessage
   | PresenceMessage
   | ChatMessagesMessage
+  | WishedMessage
   | PongMessage
   | ErrorMessage
 
@@ -131,7 +176,20 @@ export interface SayMessage {
   text: string
 }
 
-export type ClientMessage = PingMessage | JoinMessage | SayMessage
+/**
+ * "I'd love to hear this."
+ *
+ * Free text and nothing else — no track id, because listeners do not browse the
+ * library, and no author, for the reason `say` carries none. What comes back is
+ * a `wished` frame to this socket alone; the room is not told, and neither is
+ * the queue. Whether it gets played is a person's decision, made later.
+ */
+export interface WishMessage {
+  type: 'wish'
+  text: string
+}
+
+export type ClientMessage = PingMessage | JoinMessage | SayMessage | WishMessage
 
 /**
  * Frames that read as an attempt to drive the station.
@@ -161,7 +219,7 @@ const COMMAND_TYPES = new Set([
 /** Either a message the socket will act on, or why it won't. */
 export type ParsedClientMessage =
   | { ok: true; message: ClientMessage }
-  | { ok: false; code: SocketErrorCode; error: string }
+  | { ok: false; code: SocketErrorCode; error: string; about?: SocketErrorAbout }
 
 export function stateMessage(snapshot: PlaybackSnapshot): StateMessage {
   return { type: 'state', ...snapshot }
@@ -177,6 +235,10 @@ export function presenceMessage(listeners: Listener[]): PresenceMessage {
 
 export function chatMessages(messages: ChatMessage[]): ChatMessagesMessage {
   return { type: 'chat', messages }
+}
+
+export function wishedMessage(wish: Wish): WishedMessage {
+  return { type: 'wished', wish }
 }
 
 export function parseClientMessage(raw: string): ParsedClientMessage {
@@ -205,7 +267,12 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
     // the side that owns the roster.
     const nickname = normalizeNickname(message.nickname)
     if (nickname.length === 0) {
-      return { ok: false, code: 'nickname_required', error: 'a nickname is required' }
+      return {
+        ok: false,
+        code: 'nickname_required',
+        error: 'a nickname is required',
+        about: 'join',
+      }
     }
     return { ok: true, message: { type: 'join', nickname } }
   }
@@ -218,13 +285,37 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
         ok: false,
         code: 'message_too_long',
         error: `a message is at most ${MESSAGE_MAX_LENGTH} characters`,
+        about: 'say',
       }
     }
     const text = normalizeMessageText(message.text)
     if (text.length === 0) {
-      return { ok: false, code: 'empty_message', error: 'an empty message is not a message' }
+      return {
+        ok: false,
+        code: 'empty_message',
+        error: 'an empty message is not a message',
+        about: 'say',
+      }
     }
     return { ok: true, message: { type: 'say', text } }
+  }
+  if (message.type === 'wish' && typeof message.text === 'string') {
+    // Refused rather than truncated, as an over-long message is: the composer
+    // caps what can be typed, and half a request is worse than none — the admin
+    // would read out an album title cut in the middle.
+    if ([...message.text].length > WISH_MAX_LENGTH) {
+      return {
+        ok: false,
+        code: 'wish_too_long',
+        error: `a wish is at most ${WISH_MAX_LENGTH} characters`,
+        about: 'wish',
+      }
+    }
+    const text = normalizeWishText(message.text)
+    if (text.length === 0) {
+      return { ok: false, code: 'empty_wish', error: 'an empty wish is not a wish', about: 'wish' }
+    }
+    return { ok: true, message: { type: 'wish', text } }
   }
   if (typeof message.type === 'string' && COMMAND_TYPES.has(message.type)) {
     return {

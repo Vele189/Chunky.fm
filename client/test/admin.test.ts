@@ -200,6 +200,41 @@ describe('AdminApi queue', () => {
   })
 })
 
+describe('AdminApi wishes', () => {
+  const book = { wishes: [{ id: 3, nickname: 'sam', text: 'some Bowie', at: 0, status: 'new' }], outstanding: 1 }
+
+  it('reads the book whole, count and all', async () => {
+    respond = () => json(book)
+
+    // Not unwrapped to just the list: the count comes from the server so the
+    // heading and the rows can never disagree about what is outstanding.
+    expect(await api().wishes()).toEqual(book)
+    expect(calls[0]).toMatchObject({ url: '/api/wishes' })
+    expect(calls[0]!.init.method).toBe('GET')
+  })
+
+  it('marks one handled by id, and can put it back', async () => {
+    respond = () => json({ wish: { id: 3, status: 'handled' }, ...book })
+
+    await api().markWish(3, 'handled')
+    await api().markWish(3, 'new')
+
+    expect(calls[0]).toMatchObject({ url: '/api/wishes/3' })
+    expect(calls[0]!.init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ status: 'handled' })
+    expect(JSON.parse(String(calls[1]!.init.body))).toEqual({ status: 'new' })
+  })
+
+  it('throws a session-ended error when the cookie has lapsed', async () => {
+    respond = () => json({ error: 'unauthorized', message: 'nope' }, 401)
+
+    // The panel polls this on a timer, so it is the first request likely to
+    // meet a lapsed session — and it has to be the same error every other
+    // control reacts to by signing out.
+    await expect(api().wishes()).rejects.toMatchObject({ name: 'AdminError', status: 401 })
+  })
+})
+
 describe('AdminApi upload', () => {
   const file = () => new File(['audio bytes'], 'track.mp3', { type: 'audio/mpeg' })
 

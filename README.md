@@ -108,9 +108,9 @@ audio_storage/
   chunky.sqlite
 ```
 
-The database holds `tracks` (the library), and `sessions` + `messages` (the
-chat — see below). Playback and the queue are not in it: they are session-scoped
-and die with the process by design.
+The database holds `tracks` (the library), and `sessions` + `messages` +
+`wishes` (the chat and the requests — see below). Playback and the queue are not
+in it: they are session-scoped and die with the process by design.
 
 ### `POST /api/upload`
 
@@ -171,14 +171,21 @@ code path as joining at 0:00.
 | `{ type: 'queue', entries }` | On connect, and on every queue change. |
 | `{ type: 'presence', listeners }` | On connect, and whenever someone joins, leaves or renames. |
 | `{ type: 'chat', messages }` | On connect (the tail of the conversation), and one per new message. |
+| `{ type: 'wished', wish }` | To the socket that made a wish, and to nobody else. |
 | `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
-| `{ type: 'error', code, message }` | Anything the socket refused; the connection stays open. |
+| `{ type: 'error', code, message, about? }` | Anything the socket refused; the connection stays open. |
 
 `code` is machine-readable and `message` is prose, the same split as the `error`
 field on every HTTP refusal — a client telling `slow_down` from `not_joined`
 switches on the code rather than matching on English. The codes are
 `unrecognised_message`, `nickname_required`, `message_too_long`,
-`empty_message`, `command_over_http`, `not_joined`, `no_chat` and `slow_down`.
+`empty_message`, `command_over_http`, `not_joined`, `no_chat`, `wish_too_long`,
+`empty_wish`, `no_wishes` and `slow_down`. `about` names the frame a refusal was
+for — `'join'`, `'say'` or `'wish'` — and is absent only when the frame was too
+malformed to say what it was trying to do; a page with two composers needs it to
+put "not sent" under the right one.
+
+`wished` is the only message here that is not a broadcast. See **Wishes**.
 
 The queue and the roster are separate messages rather than fields on `state`:
 playback changes several times a track and neither of the others does, so
@@ -191,15 +198,18 @@ folding them together would ship both on every seek.
 | `{ type: 'ping', t0 }` | Clock offset probe. |
 | `{ type: 'join', nickname }` | "Here is what to call me." |
 | `{ type: 'say', text }` | "Say this to the room." |
+| `{ type: 'wish', text }` | "I'd love to hear this." Goes to the admin, not the room. |
 
-Both of the frames a listener can repeat are paced per socket: five messages
-back to back (one earned back every 2s), and five *roster-changing* joins (one
-every 5s). A join that renames a socket to what it is already called broadcasts
-nothing and so costs nothing, which is what keeps a reconnect's rejoin free.
-Over the limit is a `slow_down` refusal, not a dropped connection. Chat is
-paced because the server writes it down; `join` because a roster goes out to
-every listener each time one changes, which is otherwise the cheapest way for
-one anonymous socket to make the station shout at the whole room.
+Every frame a listener can repeat is paced per socket, with a bucket of its own:
+five messages back to back (one earned back every 2s), five *roster-changing*
+joins (one every 5s), and three wishes (one every 30s). Separate buckets, so
+being refused a wish never costs a listener their voice. A join that renames a
+socket to what it is already called broadcasts nothing and so costs nothing,
+which is what keeps a reconnect's rejoin free. Over the limit is a `slow_down`
+refusal, not a dropped connection. Chat and wishes are paced because the server
+writes them down; `join` because a roster goes out to every listener each time
+one changes, which is otherwise the cheapest way for one anonymous socket to
+make the station shout at the whole room.
 
 Browser clocks are wrong by seconds, so a client measures the offset NTP-style:
 send `t0`, receive `t1`, note `t2` on arrival, then
@@ -219,9 +229,11 @@ mutation lives behind `requireAdmin` on an HTTP route.
 **Commands go over HTTP, not the socket** — deliberately. The socket carries
 state outward, and inward only what has nowhere else to go: a clock probe, which
 is meaningless anywhere but on the connection it is measuring; a nickname, which
-lives exactly as long as the socket does; and a chat message, which has to reach
-everyone in the room the moment it is sent. None of the three drives the
-station. An admin action wants
+lives exactly as long as the socket does; a chat message, which has to reach
+everyone in the room the moment it is sent; and a wish, which has to be signed
+with the name its own socket is listed under — a `POST` would have to be told
+who was asking, and a request that names its own author can name someone else.
+None of the four drives the station. An admin action wants
 exactly what HTTP already gives it: a request/response pair, a status code that
 says whether it worked, and — for upload — a body measured in megabytes. Adding
 a second, authenticated command channel over the socket would duplicate that
@@ -303,6 +315,61 @@ nothing to clean up after a socket that never comes back. Over-length messages
 are refused rather than truncated — the composer caps what can be typed, so
 anything longer came from something hand-written, and quietly publishing half of
 what it said would be worse than saying no.
+
+### Wishes
+
+PLAN.md's requests decision — *free-text wishes, no library browsing for
+listeners* — written down next to the chat:
+
+```sql
+wishes  (id, session_id, nick, text, created_at, status)
+```
+
+A listener sends `{type: 'wish', text}` over the socket and gets back
+`{type: 'wished', wish}`, where a wish is `{id, nickname, text, at, status}` and
+`status` is `new` or `handled`. There is nothing to pick from and no `trackId`:
+a listener asks in their own words, for something the station may not even have,
+and whoever runs the decks reads it and decides. Nothing here touches the queue.
+
+**A wish is not broadcast.** It reaches exactly two places — the admin, and back
+to the socket that made it. That is the one thing on this socket that is not
+sent to the room, and it is why `GET /api/wishes` is the one read in the API
+behind the admin gate: everything else a listener could fetch they were already
+sent, so gating it would protect nothing, while a public book would turn asking
+for a song into asking in front of everyone. It is also why the frame comes back
+at all — with no broadcast to see their wish arrive in, a listener would be left
+guessing whether it went anywhere.
+
+Who asked is the server's answer, exactly as it is for chat: the frame carries
+no author, and the name written down is the one the sending socket is listed
+under on the roster. So the roster is the gate here too — a socket that has not
+joined has no name to sign with and is told to name itself.
+
+| Route | What |
+|---|---|
+| `GET /api/wishes` | Admin. `{wishes, outstanding}` — this session's, oldest first, and how many are still waiting. |
+| `POST /api/wishes/:wishId` | Admin. `{status: 'new'\|'handled'}` → the wish and the book as it now stands. `404 unknown_wish` otherwise. |
+
+Marking is reversible, and a handled wish stays in the book: the mark is a note
+to whoever is reading the list, and a misclick should not be the end of
+somebody's request. The status is constrained in the schema as well as in the
+type — the column outlives the process that wrote it, and a wish in a state
+nothing can render is a wish nobody will ever see.
+
+**Pacing.** Three wishes back to back, one earned back every 30 seconds —
+tighter than chat, because a wish is not conversation. Every one of them is a
+row somebody has to read, and a book nobody can get through is the same as no
+book. The bucket is separate from the chat's, so being refused a wish never
+costs a listener their voice. Over-length wishes are refused rather than
+truncated, for the reason messages are: the admin would otherwise read out an
+album title cut in half.
+
+**Refusals say which composer they are about.** `slow_down` and `not_joined` are
+reachable from both the chat and the wishes, and the page has a box for each, so
+every socket refusal that is about something a listener typed carries
+`about: 'say' | 'wish' | 'join'` alongside the code. Without it, a wish refused
+for pace also puts "not sent" under the chat — telling someone a message they
+never sent went nowhere.
 
 ### `POST /api/playback` — admin
 
@@ -406,6 +473,7 @@ from then on the page follows the station.
 - `lib/position.ts` — where the needle should be, given the tuple and a server time.
 - `lib/nickname.ts` — the nickname: normalising it, and keeping it in localStorage.
 - `lib/chat.ts` — what is worth sending, and folding a batch into what is shown.
+- `lib/wishes.ts` — what is worth asking for, and what a refused wish should say.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
 - `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
 - `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
@@ -477,6 +545,24 @@ arrives is merged by id, so a reconnect fills in what was missed without
 duplicating what is already on screen — `lib/chat.ts` is that merge, and it is
 the piece worth reading if the chat ever looks doubled or out of order.
 
+### Wishing
+
+Under the roster, above the chat: one field, no library to browse, and a list of
+what this listener has asked for. Nothing is rendered until the station answers
+— the line that appears is the wish as it was written down, with the station's
+own timestamp and the name from the roster.
+
+The list is only ever this listener's own, because that is all the station tells
+them. It survives a reconnect (the connection is remade under the same hook) and
+starts empty after a reload, while the wishes themselves are still in the book
+the admin reads. Nothing tells a listener their wish was played, either — a
+station that said "played" about a track that never went on would be worse than
+one that says nothing, so the row reads *asked* until the page is reloaded away.
+
+The two composers share one socket, so each is handed only the refusals that
+carry its own `about` — `refusalAbout` in `lib/protocol.ts` is that filter, and
+it is what to look at if a refusal ever appears under the wrong box.
+
 ### Admin mode
 
 The controls live at **`/#admin`** (`/admin` works too, wherever the page is
@@ -518,6 +604,15 @@ frame the panel reorders, seen from the other side.
 | Pause / Resume, Skip, Stop | `POST /api/playback`. Skip advances the queue. |
 | Queue ↑ ↓ ✕ | `POST /api/queue/move`, `DELETE /api/queue/:entryId`. |
 | Library **Queue** / **Play now** | Queue behind what's playing, or take the decks. |
+| Wishes **Mark handled** / **Undo** | `POST /api/wishes/:wishId`. A note to yourself, and reversible. |
+
+The wish book sits above the library, because a wish is read and then answered
+by queueing something from the list below it. It is the one part of the panel
+that is *polled* rather than pushed — every ten seconds, and after every mark.
+A wish arrives over a socket that carries no privileged frames at all: the
+station deliberately tells a socket holding an admin cookie nothing it would not
+tell a stranger, so the panel asks rather than the station pushing. Ten seconds
+is well inside the length of a track, which is the pace anyone is working at.
 
 Reordering sends the *entry id* and the position it should land at. The row
 positions come from a render, and the queue can advance underneath it, which is
@@ -560,7 +655,7 @@ doing anything if the dead zone drops below 40ms.
 ### Verifying it
 
 Sync — and anything else that only happens in a real browser — is what unit
-tests cannot judge, so there are six scripts that drive real Chrome. Each needs
+tests cannot judge, so there are eight scripts that drive real Chrome. Each needs
 a running server, a running Vite dev server, and at least two uploaded tracks
 (one of them a few minutes long).
 
@@ -572,6 +667,7 @@ npm run qa:reconnect   # kills the server underneath a listener and restarts it
 npm run qa:presence    # three listeners watch each other arrive and leave
 npm run qa:chat        # they talk, one joins late, one tries to speak as another
 npm run qa:chat-refusal # types faster than the room will take, and checks what it says
+npm run qa:wishes      # one listener asks, the room hears nothing, the admin marks it off
 npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 ```
 
@@ -584,7 +680,10 @@ disconnection for real. `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short 
 point it at something a few minutes long) and drives three tabs at once: an
 admin, a listener, and a second listener that joins after the queue was built.
 It checks that both listeners hear every command, show the same queue as the
-admin without a reload, and never grow a control.
+admin without a reload, and never grow a control. `qa:wishes` drives three tabs
+for the property no unit test can see: that a wish reaches the person who asked
+and the admin, and nobody else — with a chat message sent the same second as the
+control, so "the other listener saw nothing" means something.
 
 Between them these caught five bugs that every unit test passed straight
 through — see `docs/qa-notes.md`.

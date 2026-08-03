@@ -12,7 +12,9 @@ import { mediaRoutes } from './routes/media.js'
 import { playbackRoutes } from './routes/playback.js'
 import { queueRoutes } from './routes/queue.js'
 import { uploadRoutes } from './routes/upload.js'
+import { wishesRoutes } from './routes/wishes.js'
 import { Station } from './station.js'
+import { WishBook } from './wishes.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -20,6 +22,7 @@ declare module 'fastify' {
     playback: PlaybackState
     realtime: RealtimeHandle
     chat: ChatLog
+    wishes: WishBook
     /** The session everything this run writes down belongs to. */
     sessionId: number
   }
@@ -39,6 +42,8 @@ export interface BuildAppOptions {
   chatRefillMs?: number
   joinBurst?: number
   joinRefillMs?: number
+  wishBurst?: number
+  wishRefillMs?: number
   signInBurst?: number
   signInRefillMs?: number
 }
@@ -56,6 +61,8 @@ export async function buildApp({
   chatRefillMs,
   joinBurst,
   joinRefillMs,
+  wishBurst,
+  wishRefillMs,
   signInBurst,
   signInRefillMs,
 }: BuildAppOptions): Promise<FastifyInstance> {
@@ -91,23 +98,30 @@ export async function buildApp({
   // admin can start and end sessions by hand, this is the line that changes.
   const sessionId = openSession(db)
   const chat = new ChatLog({ db, sessionId, historyLimit: chatHistoryLimit })
+  // Same session, same reason: a wish is about this time on air, and a station
+  // that came back up is not still being asked for what it missed.
+  const wishes = new WishBook({ db, sessionId })
 
   await app.register(adminRoutes({ config, signInBurst, signInRefillMs }))
   await app.register(uploadRoutes({ config, db }))
   await app.register(mediaRoutes({ config, db }))
   await app.register(playbackRoutes({ config, db, station }))
   await app.register(queueRoutes({ config, db, station }))
+  await app.register(wishesRoutes({ config, wishes }))
 
   const realtime = attachRealtime({
     server: app.server,
     station,
     chat,
+    wishes,
     heartbeatIntervalMs,
     closeGraceMs,
     chatBurst,
     chatRefillMs,
     joinBurst,
     joinRefillMs,
+    wishBurst,
+    wishRefillMs,
     log: app.log,
   })
 
@@ -115,6 +129,7 @@ export async function buildApp({
   app.decorate('playback', playback)
   app.decorate('realtime', realtime)
   app.decorate('chat', chat)
+  app.decorate('wishes', wishes)
   app.decorate('sessionId', sessionId)
 
   // preClose, not onClose: an upgraded websocket keeps the HTTP server open, so

@@ -11,9 +11,11 @@ import {
   presenceMessage,
   queueMessage,
   stateMessage,
+  wishedMessage,
 } from './protocol.js'
 import type { QueueEntry } from './queue.js'
 import type { Station } from './station.js'
+import type { WishBook } from './wishes.js'
 
 export interface RealtimeLogger {
   info(obj: object, msg: string): void
@@ -25,6 +27,8 @@ export interface RealtimeOptions {
   station: Station
   /** The session's chat. Omit and the socket refuses `say` frames. */
   chat?: ChatLog
+  /** The session's wish book. Omit and the socket refuses `wish` frames. */
+  wishes?: WishBook
   path?: string
   /** How often to probe sockets for liveness. */
   heartbeatIntervalMs?: number
@@ -38,6 +42,10 @@ export interface RealtimeOptions {
   joinBurst?: number
   /** How long one of those costs to earn back. */
   joinRefillMs?: number
+  /** Wishes a socket may make back to back. */
+  wishBurst?: number
+  /** How long one of those costs to earn back. */
+  wishRefillMs?: number
   log?: RealtimeLogger
 }
 
@@ -63,6 +71,14 @@ const DEFAULT_CHAT_REFILL_MS = 2_000
  */
 const DEFAULT_JOIN_BURST = 5
 const DEFAULT_JOIN_REFILL_MS = 5_000
+/**
+ * Asking for three things at once is a person remembering a set they liked;
+ * asking for a fourth in the same half-minute is not. Tighter than chat because
+ * a wish is not conversation — every one of them is a row in a list somebody
+ * has to read, and a book nobody can get through is the same as no book.
+ */
+const DEFAULT_WISH_BURST = 3
+const DEFAULT_WISH_REFILL_MS = 30_000
 
 function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
@@ -86,6 +102,7 @@ export function attachRealtime({
   server,
   station,
   chat,
+  wishes,
   path = '/ws',
   heartbeatIntervalMs = DEFAULT_HEARTBEAT_MS,
   closeGraceMs = DEFAULT_CLOSE_GRACE_MS,
@@ -93,6 +110,8 @@ export function attachRealtime({
   chatRefillMs = DEFAULT_CHAT_REFILL_MS,
   joinBurst = DEFAULT_JOIN_BURST,
   joinRefillMs = DEFAULT_JOIN_REFILL_MS,
+  wishBurst = DEFAULT_WISH_BURST,
+  wishRefillMs = DEFAULT_WISH_REFILL_MS,
   log,
 }: RealtimeOptions): RealtimeHandle {
   const { playback, queue } = station
@@ -135,16 +154,16 @@ export function attachRealtime({
    */
   function say(socket: WebSocket, listenerId: number, limit: RateLimit, text: string): void {
     if (!chat) {
-      send(socket, errorMessage('no_chat', 'this station has no chat'))
+      send(socket, errorMessage('no_chat', 'this station has no chat', 'say'))
       return
     }
     const nickname = presence.nicknameOf(listenerId)
     if (nickname === null) {
-      send(socket, errorMessage('not_joined', 'name yourself before saying anything'))
+      send(socket, errorMessage('not_joined', 'name yourself before saying anything', 'say'))
       return
     }
     if (!limit.take()) {
-      send(socket, errorMessage('slow_down', 'slow down'))
+      send(socket, errorMessage('slow_down', 'slow down', 'say'))
       return
     }
 
@@ -152,6 +171,39 @@ export function attachRealtime({
     log?.info({ id: message.id, listeners: wss.clients.size }, 'broadcasting chat message')
     // A batch of one, in the same frame the history arrives in.
     broadcast(chatMessages([message]))
+  }
+
+  /**
+   * Writes a wish down and tells the listener who made it. Nobody else.
+   *
+   * The gate is the roster, as it is for chat and for the same reason: a wish is
+   * signed with the name its own socket is listed under, so there is nothing to
+   * sign with before naming yourself. What is different is where it goes — this
+   * is the one thing a listener can send that is *not* broadcast, because a wish
+   * is addressed to whoever runs the decks rather than to the room. The room
+   * would learn nothing from it, and the person who asked would have made a
+   * request in public that may never be played.
+   */
+  function wish(socket: WebSocket, listenerId: number, limit: RateLimit, text: string): void {
+    if (!wishes) {
+      send(socket, errorMessage('no_wishes', 'this station takes no wishes', 'wish'))
+      return
+    }
+    const nickname = presence.nicknameOf(listenerId)
+    if (nickname === null) {
+      send(socket, errorMessage('not_joined', 'name yourself before asking for anything', 'wish'))
+      return
+    }
+    if (!limit.take()) {
+      send(socket, errorMessage('slow_down', 'slow down', 'wish'))
+      return
+    }
+
+    const made = wishes.make(nickname, text)
+    log?.info({ id: made.id }, 'wish written down')
+    // Straight back to the one socket that asked, so the listener sees what was
+    // written down rather than being left to assume.
+    send(socket, wishedMessage(made))
   }
 
   /**
@@ -172,7 +224,7 @@ export function attachRealtime({
   function join(socket: WebSocket, listenerId: number, limit: RateLimit, nickname: string): void {
     if (presence.nicknameOf(listenerId) === nickname) return
     if (!limit.take()) {
-      send(socket, errorMessage('slow_down', 'slow down'))
+      send(socket, errorMessage('slow_down', 'slow down', 'join'))
       return
     }
     // Everyone, including the joiner: the roster they are now on is the same
@@ -188,6 +240,7 @@ export function attachRealtime({
     // never come back.
     const chatLimit = new RateLimit({ burst: chatBurst, refillMs: chatRefillMs })
     const joinLimit = new RateLimit({ burst: joinBurst, refillMs: joinRefillMs })
+    const wishLimit = new RateLimit({ burst: wishBurst, refillMs: wishRefillMs })
 
     // Drop straight into the moment: the snapshot alone is enough to align.
     send(socket, stateMessage(playback.snapshot()))
@@ -204,7 +257,7 @@ export function attachRealtime({
     socket.on('message', (raw) => {
       const parsed = parseClientMessage(raw.toString())
       if (!parsed.ok) {
-        send(socket, errorMessage(parsed.code, parsed.error))
+        send(socket, errorMessage(parsed.code, parsed.error, parsed.about))
         return
       }
       const { message } = parsed
@@ -214,6 +267,7 @@ export function attachRealtime({
       }
       if (message.type === 'join') join(socket, listenerId, joinLimit, message.nickname)
       if (message.type === 'say') say(socket, listenerId, chatLimit, message.text)
+      if (message.type === 'wish') wish(socket, listenerId, wishLimit, message.text)
     })
 
     // Every way a socket can end arrives here — a tab closing, a network that

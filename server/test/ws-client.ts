@@ -6,6 +6,7 @@ import type {
   QueueMessage,
   ServerMessage,
   StateMessage,
+  WishedMessage,
 } from '../src/protocol.js'
 
 const DEFAULT_TIMEOUT_MS = 2_000
@@ -98,6 +99,12 @@ export class TestClient {
   async say(text: string): Promise<ChatMessagesMessage> {
     this.send({ type: 'say', text })
     return this.nextChat()
+  }
+
+  /** Asks for something and waits for the station's note back. */
+  async wish(text: string): Promise<WishedMessage> {
+    this.send({ type: 'wish', text })
+    return (await this.waitFor((m) => m.type === 'wished')) as WishedMessage
   }
 
   /**

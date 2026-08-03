@@ -15,7 +15,8 @@
     "qa:reconnect": "tsx scripts/qa-reconnect.ts",
     "qa:presence": "tsx scripts/qa-presence.ts",
     "qa:chat": "tsx scripts/qa-chat.ts",
-    "qa:chat-refusal": "tsx scripts/qa-chat-refusal.ts"
+    "qa:chat-refusal": "tsx scripts/qa-chat-refusal.ts",
+    "qa:wishes": "tsx scripts/qa-wishes.ts"
   },
   "dependencies": {
     "react": "^19.0.0",

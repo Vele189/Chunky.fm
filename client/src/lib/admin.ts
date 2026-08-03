@@ -1,4 +1,4 @@
-import type { PlaybackSnapshot, QueueEntry, Track } from './protocol.js'
+import type { PlaybackSnapshot, QueueEntry, Track, Wish, WishStatus } from './protocol.js'
 
 /** Where the admin controls live. */
 export const ADMIN_HASH = '#admin'
@@ -19,6 +19,17 @@ export interface UploadResult {
   track: Track
   /** The file was already in the library — the same track, not a second copy. */
   duplicate: boolean
+}
+
+/**
+ * The wish book as the station describes it: this session's wishes, oldest
+ * first, and how many are still waiting on somebody. The count comes from the
+ * server rather than being derived here, so the heading and the list can never
+ * disagree about what is outstanding.
+ */
+export interface WishBook {
+  wishes: Wish[]
+  outstanding: number
 }
 
 /** A request the server refused. `status` is what decides how the UI reacts. */
@@ -170,6 +181,20 @@ export class AdminApi {
 
   clearQueue(): Promise<{ entries: QueueEntry[] }> {
     return this.#json('DELETE', '/api/queue')
+  }
+
+  /**
+   * What the room has asked for. Admin-only, unlike the library and the queue:
+   * wishes are never broadcast, so this is the only way to read them, and a
+   * listener reading it would be reading everyone else's requests.
+   */
+  wishes(): Promise<WishBook> {
+    return this.#json<WishBook>('GET', '/api/wishes')
+  }
+
+  /** Marks a wish handled, or puts one back. Answers with the whole book. */
+  markWish(wishId: number, status: WishStatus): Promise<WishBook> {
+    return this.#json<WishBook>('POST', `/api/wishes/${wishId}`, { status })
   }
 
   async #json<T>(method: string, path: string, body?: unknown): Promise<T> {
