@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AdminPanel } from './AdminPanel.js'
 import { useServerClock } from './hooks/useServerClock.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
+import { isAdminRoute } from './lib/admin.js'
 import type { Correction } from './lib/drift.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
 import { artworkUrl, type ServerMessage } from './lib/protocol.js'
@@ -19,9 +21,10 @@ export function App() {
   // The clock needs to see pongs but the station owns the socket, so the
   // handler goes through a ref to break what would otherwise be a cycle.
   const routeToClock = useRef<(message: ServerMessage) => void>(() => undefined)
-  const { status, state, connection } = useStation(undefined, (message) =>
+  const { status, state, queue, connection } = useStation(undefined, (message) =>
     routeToClock.current(message),
   )
+  const admin = useAdminRoute()
   const clock = useServerClock(connection, { connected: status === 'connected' })
   // Assigned after commit, not during render — a render React throws away
   // must not leave a handler wired up behind it.
@@ -116,8 +119,31 @@ export function App() {
 
       {/* Owned imperatively — React never sets currentTime or calls play(). */}
       <audio ref={audioRef} preload="auto" />
+
+      {/* The listener page ships no controls at all: off this route, none of
+          this renders, and the server would refuse it anyway. */}
+      {admin && <AdminPanel state={state} queue={queue} />}
     </main>
   )
+}
+
+/** True on #admin (or /admin), and follows the address bar without a reload. */
+function useAdminRoute(): boolean {
+  const [admin, setAdmin] = useState(() =>
+    typeof window === 'undefined' ? false : isAdminRoute(window.location),
+  )
+
+  useEffect(() => {
+    const update = () => setAdmin(isAdminRoute(window.location))
+    window.addEventListener('hashchange', update)
+    window.addEventListener('popstate', update)
+    return () => {
+      window.removeEventListener('hashchange', update)
+      window.removeEventListener('popstate', update)
+    }
+  }, [])
+
+  return admin
 }
 
 interface ClockReadoutProps {

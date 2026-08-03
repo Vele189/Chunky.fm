@@ -11,6 +11,7 @@
     "test": "vitest run",
     "verify:sync": "tsx scripts/two-browser-sync.ts",
     "qa:playback": "tsx scripts/qa-playback.ts",
+    "qa:admin": "tsx scripts/qa-admin.ts",
     "qa:reconnect": "tsx scripts/qa-reconnect.ts"
   },
   "dependencies": {

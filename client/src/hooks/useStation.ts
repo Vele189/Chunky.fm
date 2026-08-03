@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ServerMessage, StateMessage } from '../lib/protocol.js'
+import type { QueueEntry, ServerMessage, StateMessage } from '../lib/protocol.js'
 import { StationConnection, type StationStatus } from '../lib/station.js'
 
 export function defaultStationUrl(): string {
@@ -10,6 +10,8 @@ export function defaultStationUrl(): string {
 export interface Station {
   status: StationStatus
   state: StateMessage | null
+  /** What's coming up. Null until the first queue frame arrives. */
+  queue: QueueEntry[] | null
   connection: StationConnection | null
 }
 
@@ -20,6 +22,7 @@ export function useStation(
 ): Station {
   const [status, setStatus] = useState<StationStatus>('connecting')
   const [state, setState] = useState<StateMessage | null>(null)
+  const [queue, setQueue] = useState<QueueEntry[] | null>(null)
   const [connection, setConnection] = useState<StationConnection | null>(null)
 
   // Kept in a ref so a changing handler doesn't tear down the socket.
@@ -32,6 +35,7 @@ export function useStation(
       onStatus: setStatus,
       onMessage: (message) => {
         if (message.type === 'state') setState(message)
+        if (message.type === 'queue') setQueue(message.entries)
         messageHandler.current?.(message)
       },
     })
@@ -43,5 +47,5 @@ export function useStation(
     }
   }, [url])
 
-  return { status, state, connection }
+  return { status, state, queue, connection }
 }

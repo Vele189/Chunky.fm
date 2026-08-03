@@ -5,6 +5,7 @@ import type { Db } from './db.js'
 import { ensureStorageDirs } from './lib/storage.js'
 import { PlaybackState } from './playback.js'
 import { type RealtimeHandle, attachRealtime } from './realtime.js'
+import { adminRoutes } from './routes/admin.js'
 import { mediaRoutes } from './routes/media.js'
 import { playbackRoutes } from './routes/playback.js'
 import { queueRoutes } from './routes/queue.js'
@@ -55,6 +56,7 @@ export async function buildApp({
 
   const station = new Station({ playback, backstopIntervalMs })
 
+  await app.register(adminRoutes({ config }))
   await app.register(uploadRoutes({ config, db }))
   await app.register(mediaRoutes({ config, db }))
   await app.register(playbackRoutes({ config, db, station }))

@@ -1,0 +1,323 @@
+import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { useAdminSession } from './hooks/useAdminSession.js'
+import { AdminError, type AdminApi } from './lib/admin.js'
+import { formatClock } from './lib/position.js'
+import type { QueueEntry, StateMessage, Track } from './lib/protocol.js'
+
+export interface AdminPanelProps {
+  /** The station's own broadcast — the panel never keeps its own copy. */
+  state: StateMessage | null
+  queue: QueueEntry[] | null
+}
+
+/**
+ * The decks, for whoever runs the station.
+ *
+ * Reachable only at #admin and only after the server has accepted a password,
+ * so the listener page ships no controls — PLAN.md is explicit that admin
+ * actions are gated on auth rather than on the UI hiding a button.
+ *
+ * Nothing here holds playback or queue state: both arrive over the websocket
+ * the listener already has open, so a command issued from another tab, or a
+ * track ending on its own, moves this panel too.
+ */
+export function AdminPanel({ state, queue }: AdminPanelProps) {
+  const { status, api, error: sessionError, signIn, signOut } = useAdminSession()
+
+  if (status === 'checking') {
+    return (
+      <section className="admin" data-testid="admin-panel">
+        <p className="admin__note">checking credentials…</p>
+      </section>
+    )
+  }
+
+  if (status !== 'signed-in' || !api) {
+    return <SignIn onSubmit={signIn} error={sessionError} />
+  }
+
+  return <Controls api={api} state={state} queue={queue} onSignOut={signOut} />
+}
+
+function SignIn({
+  onSubmit,
+  error,
+}: {
+  onSubmit: (password: string) => Promise<boolean>
+  error: string | null
+}) {
+  const [password, setPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setSubmitting(true)
+    const accepted = await onSubmit(password)
+    setSubmitting(false)
+    if (accepted) setPassword('')
+  }
+
+  return (
+    <section className="admin" data-testid="admin-signin">
+      <h2 className="admin__heading">Admin</h2>
+      <form className="admin__signin" onSubmit={submit}>
+        <input
+          type="password"
+          className="admin__input"
+          placeholder="station password"
+          aria-label="Admin password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          data-testid="admin-password"
+        />
+        <button type="submit" className="admin__button" disabled={submitting || !password}>
+          Sign in
+        </button>
+      </form>
+      {error && (
+        <p className="admin__error" data-testid="admin-error">
+          {error}
+        </p>
+      )}
+    </section>
+  )
+}
+
+interface ControlsProps {
+  api: AdminApi
+  state: StateMessage | null
+  queue: QueueEntry[] | null
+  onSignOut: () => void
+}
+
+function Controls({ api, state, queue, onSignOut }: ControlsProps) {
+  const [tracks, setTracks] = useState<Track[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [uploads, setUploads] = useState<{ id: number; line: string }[]>([])
+
+  const refreshLibrary = useCallback(async () => {
+    try {
+      setTracks(await api.tracks())
+    } catch {
+      setError('could not load the library')
+    }
+  }, [api])
+
+  useEffect(() => {
+    void refreshLibrary()
+  }, [refreshLibrary])
+
+  /**
+   * Every control goes through here. A 401 means the password stopped being
+   * accepted — the server restarted with a new one, most likely — and the only
+   * honest response is to put the sign-in form back rather than let the admin
+   * keep pressing buttons that quietly do nothing.
+   */
+  const run = useCallback(
+    async (action: () => Promise<unknown>) => {
+      setBusy(true)
+      setError(null)
+      try {
+        await action()
+      } catch (err) {
+        if (err instanceof AdminError && err.unauthorized) {
+          onSignOut()
+          return
+        }
+        setError(err instanceof Error ? err.message : 'something went wrong')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [onSignOut],
+  )
+
+  const report = (line: string) => setUploads((seen) => [...seen, { id: seen.length, line }])
+
+  async function upload(files: File[]) {
+    if (files.length === 0) return
+    // One file per request is what the endpoint takes, and uploading in
+    // sequence keeps the report in the order the admin picked them.
+    for (const file of files) {
+      try {
+        const { track, duplicate } = await api.upload(file)
+        report(`${track.title} — ${duplicate ? 'already in the library' : 'uploaded'}`)
+      } catch (err) {
+        if (err instanceof AdminError && err.unauthorized) return onSignOut()
+        report(`${file.name} — ${err instanceof Error ? err.message : 'failed'}`)
+      }
+    }
+    await refreshLibrary()
+  }
+
+  const track = state?.track ?? null
+  const paused = state !== null && state.pausedAt !== null
+  const entries = queue ?? []
+
+  return (
+    <section className="admin" data-testid="admin-panel">
+      <header className="admin__head">
+        <h2 className="admin__heading">Admin</h2>
+        <button type="button" className="admin__link" onClick={onSignOut}>
+          Sign out
+        </button>
+      </header>
+
+      {error && (
+        <p className="admin__error" data-testid="admin-error">
+          {error}
+        </p>
+      )}
+
+      <div className="admin__transport">
+        <button
+          type="button"
+          className="admin__button"
+          disabled={busy || !track}
+          data-testid="admin-playpause"
+          onClick={() => run(() => api.command({ action: paused ? 'resume' : 'pause' }))}
+        >
+          {paused ? 'Resume' : 'Pause'}
+        </button>
+        <button
+          type="button"
+          className="admin__button"
+          disabled={busy || (!track && entries.length === 0)}
+          data-testid="admin-skip"
+          onClick={() => run(() => api.command({ action: 'skip' }))}
+        >
+          Skip
+        </button>
+        <button
+          type="button"
+          className="admin__button admin__button--quiet"
+          disabled={busy || !track}
+          data-testid="admin-stop"
+          onClick={() => run(() => api.command({ action: 'stop' }))}
+        >
+          Stop
+        </button>
+        <span className="admin__now" data-testid="admin-now">
+          {track ? `${track.title}${paused ? ' (paused)' : ''}` : 'off air'}
+        </span>
+      </div>
+
+      <h3 className="admin__subheading">
+        Up next <span className="admin__count">{entries.length}</span>
+        {entries.length > 0 && (
+          <button
+            type="button"
+            className="admin__link"
+            disabled={busy}
+            data-testid="admin-queue-clear"
+            onClick={() => run(() => api.clearQueue())}
+          >
+            Clear
+          </button>
+        )}
+      </h3>
+
+      {entries.length === 0 ? (
+        <p className="admin__note">Nothing queued.</p>
+      ) : (
+        <ol className="admin__queue" data-testid="admin-queue">
+          {entries.map((entry, index) => (
+            <li key={entry.id} className="admin__row" data-entry={entry.id}>
+              <span className="admin__row-title">{entry.track.title}</span>
+              <span className="admin__row-time">{formatClock(entry.track.durationMs / 1000)}</span>
+              {/* Positions come from this render, and the queue can advance
+                  underneath it — which is exactly why the server addresses
+                  entries by id and clamps the index it is given. */}
+              <button
+                type="button"
+                className="admin__icon"
+                aria-label={`Move ${entry.track.title} up`}
+                disabled={busy || index === 0}
+                onClick={() => run(() => api.move(entry.id, index - 1))}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="admin__icon"
+                aria-label={`Move ${entry.track.title} down`}
+                disabled={busy || index === entries.length - 1}
+                onClick={() => run(() => api.move(entry.id, index + 1))}
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                className="admin__icon admin__icon--remove"
+                aria-label={`Remove ${entry.track.title}`}
+                disabled={busy}
+                onClick={() => run(() => api.remove(entry.id))}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <h3 className="admin__subheading">Library</h3>
+      <label className="admin__upload">
+        <span>Upload audio</span>
+        <input
+          type="file"
+          accept="audio/*"
+          multiple
+          data-testid="admin-upload"
+          onChange={(event) => {
+            // Copied out before the input is reset: clearing `value` empties
+            // `files` too, so handing the FileList straight to an async upload
+            // would leave it with nothing to send.
+            const picked = Array.from(event.target.files ?? [])
+            event.target.value = '' // so the same file can be picked twice
+            void upload(picked)
+          }}
+        />
+      </label>
+
+      {uploads.length > 0 && (
+        <ul className="admin__uploads" data-testid="admin-uploads">
+          {uploads.map((line) => (
+            <li key={line.id}>{line.line}</li>
+          ))}
+        </ul>
+      )}
+
+      {tracks.length === 0 ? (
+        <p className="admin__note">Nothing uploaded yet.</p>
+      ) : (
+        <ul className="admin__library" data-testid="admin-library">
+          {tracks.map((libraryTrack) => (
+            <li key={libraryTrack.id} className="admin__row" data-track={libraryTrack.id}>
+              <span className="admin__row-title">{libraryTrack.title}</span>
+              <span className="admin__row-time">
+                {formatClock(libraryTrack.durationMs / 1000)}
+              </span>
+              <button
+                type="button"
+                className="admin__link"
+                disabled={busy}
+                onClick={() => run(() => api.enqueue(libraryTrack.id))}
+              >
+                Queue
+              </button>
+              <button
+                type="button"
+                className="admin__link"
+                disabled={busy}
+                onClick={() => run(() => api.command({ action: 'play', trackId: libraryTrack.id }))}
+              >
+                Play now
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}

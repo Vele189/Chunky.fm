@@ -14,7 +14,8 @@ cd client && npm install && npm run dev                           # :5173
 Vite proxies `/api` and `/ws` through to the server, so the client only ever
 talks to its own origin.
 
-Put something on the decks (there is no admin UI yet — task #1453):
+Then open <http://localhost:5173/#admin> and sign in with `ADMIN_PASSWORD` to
+upload tracks and run the station. Everything below can also be driven by hand:
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_PASSWORD" -F "file=@track.mp3" \
@@ -142,7 +143,13 @@ Driving the decks by hand: `{action: 'play'|'pause'|'resume'|'seek'|'stop'
 |'skip', trackId?, positionMs?}`, admin-only, returns the new state. Every
 command broadcasts over `/ws` before the HTTP response returns. `skip` is the
 same advance the end-of-track timer performs — next queued track, or off air.
-The admin UI on top of this is task #1453/#1454.
+
+### `GET /api/admin/session` — admin
+
+Answers `{ok: true}` to a good password and `401` to anything else. Every other
+admin route *does* something, so there is no harmless one to probe with, and a
+login form needs somewhere to ask before it shows any controls. PLAN.md's signed
+cookie exchanged at `/admin` replaces this (task #1452).
 
 ### The queue
 
@@ -186,10 +193,40 @@ follows the station.
 
 - `lib/position.ts` — where the needle should be, given the tuple and a server time.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
+- `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
 - `lib/clock.ts` — clock offset estimation from ping/pong samples.
 - `lib/drift.ts` — what to do about an error of a given size.
 - `hooks/useServerClock.ts` — runs the handshake, exposes `serverNow()`.
 - `hooks/useSyncedAudio.ts` — aligns on every broadcast, and every 2s in between.
+- `AdminPanel.tsx` — the decks, for whoever runs the station.
+
+### Admin mode
+
+The controls live at **`/#admin`** (`/admin` works too, wherever the page is
+served with an SPA fallback). Off that route nothing admin renders, and the
+route alone reveals nothing: the panel shows a password form until the server
+has accepted the password at `GET /api/admin/session`, and every action carries
+it. A wrong password gets the form back, and so does a `401` mid-session —
+which is what happens when the station restarts with a different password.
+
+The password is held in `sessionStorage`, not `localStorage`: it survives a
+reload, which a long session needs, but a station left running on a laptop
+doesn't leave the secret on disk for whoever opens the browser next.
+
+The panel keeps no playback or queue state of its own. Both arrive on the
+websocket the listener already has open, so a track ending by itself — or a
+command issued from another tab — moves the panel too.
+
+| Control | What it does |
+|---|---|
+| Upload | One request per file; reports stored / already in the library / why not. |
+| Pause / Resume, Skip, Stop | `POST /api/playback`. Skip advances the queue. |
+| Queue ↑ ↓ ✕ | `POST /api/queue/move`, `DELETE /api/queue/:entryId`. |
+| Library **Queue** / **Play now** | Queue behind what's playing, or take the decks. |
+
+Reordering sends the *entry id* and the position it should land at. The row
+positions come from a render, and the queue can advance underneath it, which is
+exactly why the server addresses entries by id and clamps the index it is given.
 
 ### Staying in sync
 
@@ -227,21 +264,25 @@ doing anything if the dead zone drops below 40ms.
 
 ### Verifying it
 
-Sync is the one thing unit tests genuinely cannot judge, so there are three
-scripts that drive real Chrome. Each needs a running server, a running Vite dev
-server, and at least two uploaded tracks (one of them a few minutes long).
+Sync — and anything else that only happens in a real browser — is what unit
+tests cannot judge, so there are four scripts that drive real Chrome. Each needs
+a running server, a running Vite dev server, and at least two uploaded tracks
+(one of them a few minutes long).
 
 ```bash
 cd client
 npm run verify:sync    # two listeners joining at different times stay together
 npm run qa:playback    # seeks, pause/resume/seek/stop, track changes
 npm run qa:reconnect   # kills the server underneath a listener and restarts it
+npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 ```
 
 They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
 `OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect` also
 starts and stops the server itself, so build it first (`cd server && npm run
-build`).
+build`). `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
+point it at something a few minutes long) and checks a second, unauthenticated
+tab both hears the commands and never grows a control.
 
-Between them these caught four bugs that every unit test passed straight
+Between them these caught five bugs that every unit test passed straight
 through — see `docs/qa-notes.md`.

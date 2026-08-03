@@ -89,6 +89,29 @@ Worth noting the first attempt at this fix put the flag before `tsx`'s `watch`
 subcommand, which broke `npm run dev` differently. Running the documented
 command is the only way to know.
 
+## 6. The admin panel re-verified its password on every render
+
+**Severity: medium — a request storm, and it broke uploading.**
+
+Found by the first run of `qa:admin` (#1453).
+
+`useAdminSession` took `createApi` as an options argument defaulting to an
+inline arrow. A default argument is evaluated per call, so the function had a
+new identity on every render — and the effect that verifies the stored password
+depends on it. Verify → set state → render → new identity → verify, for as long
+as the panel was open. The server log showed `/api/admin/session` and
+`/api/tracks` being hit in a loop.
+
+The visible symptom was not the traffic, though: picking a file never uploaded
+anything. The panel was re-rendering continuously while the `change` event was
+being dispatched, and the upload never ran — no request reached the server at
+all. Every unit test passed, because the API client was fine; the bug was in
+when React called it.
+
+Fixed by hoisting the default factory to module scope, where its identity is
+stable. Worth remembering for any hook here that takes an injectable: the
+default has to be defined once, not per call.
+
 ## Things deliberately left alone
 
 - **The proportional term in drift correction is inert.** With PLAN.md's
@@ -96,6 +119,10 @@ command is the only way to know.
   ±2% cap, so correction is bang-bang. It converges from the worst
   non-seeking case in well under a minute and is inaudible. Changing it means
   changing numbers the plan specifies.
-- **No auto-advance when a track ends.** That is task #1451.
 - **Admin auth is a shared secret, not the signed cookie** PLAN.md describes.
-  That is task #1452.
+  The client holds the password and presents it on every request. That is task
+  #1452, and nothing above `AdminApi` knows the difference.
+- **The admin bundle ships to listeners.** Nothing admin *renders* off the
+  `#admin` route, and the server would refuse the requests anyway, but the code
+  is in the same chunk. Splitting it is worth doing when there is a build step
+  that cares.
