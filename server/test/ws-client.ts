@@ -1,5 +1,12 @@
 import { WebSocket } from 'ws'
-import type { ClientMessage, QueueMessage, ServerMessage, StateMessage } from '../src/protocol.js'
+import type {
+  ChatMessagesMessage,
+  ClientMessage,
+  PresenceMessage,
+  QueueMessage,
+  ServerMessage,
+  StateMessage,
+} from '../src/protocol.js'
 
 const DEFAULT_TIMEOUT_MS = 2_000
 
@@ -79,8 +86,37 @@ export class TestClient {
     return (await this.waitFor((m) => m.type === 'queue', timeoutMs)) as QueueMessage
   }
 
+  async nextPresence(timeoutMs?: number): Promise<PresenceMessage> {
+    return (await this.waitFor((m) => m.type === 'presence', timeoutMs)) as PresenceMessage
+  }
+
+  async nextChat(timeoutMs?: number): Promise<ChatMessagesMessage> {
+    return (await this.waitFor((m) => m.type === 'chat', timeoutMs)) as ChatMessagesMessage
+  }
+
+  /** Says something and waits for it to come back around. */
+  async say(text: string): Promise<ChatMessagesMessage> {
+    this.send({ type: 'say', text })
+    return this.nextChat()
+  }
+
+  /**
+   * Names this listener and waits for the next roster. Messages are queued, so
+   * the roster sent on connect has to have been consumed first or it is what
+   * this returns — see `arrive` in the presence tests.
+   */
+  async join(nickname: string): Promise<PresenceMessage> {
+    this.send({ type: 'join', nickname })
+    return this.nextPresence()
+  }
+
   send(message: ClientMessage | string): void {
     this.#socket.send(typeof message === 'string' ? message : JSON.stringify(message))
+  }
+
+  /** Vanishes without a close handshake, the way a dead network does. */
+  terminate(): void {
+    this.#socket.terminate()
   }
 
   close(): Promise<void> {

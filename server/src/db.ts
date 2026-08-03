@@ -19,6 +19,23 @@ export interface TrackRow {
   uploaded_at: number
 }
 
+/** A stretch of the station being on air. See `openSession`. */
+export interface SessionRow {
+  id: number
+  started_at: number
+  /** Null while the session is the current one. */
+  ended_at: number | null
+}
+
+export interface MessageRow {
+  id: number
+  session_id: number
+  /** The nickname as it stood when the message was sent, not a live reference. */
+  nick: string
+  text: string
+  created_at: number
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tracks (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +49,47 @@ CREATE TABLE IF NOT EXISTS tracks (
   gain_db       REAL    NOT NULL DEFAULT 0,
   uploaded_at   INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at  INTEGER NOT NULL,
+  ended_at    INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  INTEGER NOT NULL REFERENCES sessions(id),
+  nick        TEXT    NOT NULL,
+  text        TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+
+-- Chat is only ever read as "the last N of one session", newest first.
+CREATE INDEX IF NOT EXISTS messages_session_id ON messages (session_id, id);
 `
+
+/**
+ * Starts a session, and returns its id.
+ *
+ * PLAN.md's availability story is session-based — you go live, you end it — and
+ * the admin controls for that are a later task. What exists now is the part
+ * chat needs: something for a message to belong to, so "the chat" means this
+ * time on air rather than everything ever said. A run of the process is a
+ * session; when the admin can start and end them by hand, messages will scope
+ * themselves to those instead, and nothing here has to change to allow it.
+ */
+export function openSession(db: Db, now = Date.now()): number {
+  const result = db.prepare('INSERT INTO sessions (started_at) VALUES (?)').run(now)
+  return Number(result.lastInsertRowid)
+}
+
+/** Marks a session over. Idempotent: a session already ended keeps its time. */
+export function closeSession(db: Db, sessionId: number, now = Date.now()): void {
+  db.prepare('UPDATE sessions SET ended_at = ? WHERE id = ? AND ended_at IS NULL').run(
+    now,
+    sessionId,
+  )
+}
 
 export function openDb(dbPath: string): Db {
   if (dbPath !== ':memory:') {

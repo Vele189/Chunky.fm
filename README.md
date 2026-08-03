@@ -108,6 +108,10 @@ audio_storage/
   chunky.sqlite
 ```
 
+The database holds `tracks` (the library), and `sessions` + `messages` (the
+chat — see below). Playback and the queue are not in it: they are session-scoped
+and die with the process by design.
+
 ### `POST /api/upload`
 
 Admin-only, one audio file per request as `multipart/form-data`.
@@ -165,18 +169,37 @@ code path as joining at 0:00.
 |---|---|
 | `{ type: 'state', track, startedAt, pausedAt, serverTime }` | On connect, and on every playback change. |
 | `{ type: 'queue', entries }` | On connect, and on every queue change. |
+| `{ type: 'presence', listeners }` | On connect, and whenever someone joins, leaves or renames. |
+| `{ type: 'chat', messages }` | On connect (the tail of the conversation), and one per new message. |
 | `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
-| `{ type: 'error', message }` | Unrecognised frame; the connection stays open. |
+| `{ type: 'error', code, message }` | Anything the socket refused; the connection stays open. |
 
-The queue is a separate message rather than a field on `state`: playback changes
-several times a track and the queue rarely does, so folding them together would
-ship the whole queue on every seek.
+`code` is machine-readable and `message` is prose, the same split as the `error`
+field on every HTTP refusal — a client telling `slow_down` from `not_joined`
+switches on the code rather than matching on English. The codes are
+`unrecognised_message`, `nickname_required`, `message_too_long`,
+`empty_message`, `command_over_http`, `not_joined`, `no_chat` and `slow_down`.
+
+The queue and the roster are separate messages rather than fields on `state`:
+playback changes several times a track and neither of the others does, so
+folding them together would ship both on every seek.
 
 **Client → server**
 
 | Message | Purpose |
 |---|---|
 | `{ type: 'ping', t0 }` | Clock offset probe. |
+| `{ type: 'join', nickname }` | "Here is what to call me." |
+| `{ type: 'say', text }` | "Say this to the room." |
+
+Both of the frames a listener can repeat are paced per socket: five messages
+back to back (one earned back every 2s), and five *roster-changing* joins (one
+every 5s). A join that renames a socket to what it is already called broadcasts
+nothing and so costs nothing, which is what keeps a reconnect's rejoin free.
+Over the limit is a `slow_down` refusal, not a dropped connection. Chat is
+paced because the server writes it down; `join` because a roster goes out to
+every listener each time one changes, which is otherwise the cheapest way for
+one anonymous socket to make the station shout at the whole room.
 
 Browser clocks are wrong by seconds, so a client measures the offset NTP-style:
 send `t0`, receive `t1`, note `t2` on arrival, then
@@ -185,8 +208,8 @@ sample with the lowest RTT** — the fastest round trip is the least contaminate
 by queueing delay. `t1` and `startedAt` are stamped from the same server clock,
 so the measured offset applies directly.
 
-Connections are anonymous and read-only: nothing anyone can send over the socket
-changes playback. That is also the socket's half of the admin gate — a socket
+Connections are read-only: nothing anyone can send over the socket changes
+playback. That is also the socket's half of the admin gate — a socket
 carrying a valid admin cookie gets no more than one carrying nothing, and frames
 that look like commands (`play`, `skip`, `enqueue`, …) are refused *by name*, so
 a client that tries is told where the controls actually are rather than left
@@ -194,7 +217,11 @@ guessing. There is no privileged frame here to authenticate, because every
 mutation lives behind `requireAdmin` on an HTTP route.
 
 **Commands go over HTTP, not the socket** — deliberately. The socket carries
-state outward and clock probes inward, and nothing else. An admin action wants
+state outward, and inward only what has nowhere else to go: a clock probe, which
+is meaningless anywhere but on the connection it is measuring; a nickname, which
+lives exactly as long as the socket does; and a chat message, which has to reach
+everyone in the room the moment it is sent. None of the three drives the
+station. An admin action wants
 exactly what HTTP already gives it: a request/response pair, a status code that
 says whether it worked, and — for upload — a body measured in megabytes. Adding
 a second, authenticated command channel over the socket would duplicate that
@@ -205,6 +232,77 @@ be abused into mutating something.
 So the loop is: admin `POST`s, the server changes its state, and the change goes
 out to every client — including the admin's own page — on the socket they all
 already have open.
+
+### Presence
+
+The server keeps a socket → nickname map and broadcasts the whole roster
+whenever it changes. `listeners` is `[{id, nickname}]`, in join order.
+
+A socket is not a listener. A tab holds one open from the moment the page loads,
+which is before anyone has typed a name, so the roster is who has *said* who
+they are — `join` is what puts a listener on it, and the socket closing is what
+takes them off. There is no leave frame: closing is the only signal that also
+covers a tab closed, a laptop shut, and a network that simply stopped. A socket
+that vanishes without a close is dropped by the heartbeat, so a listener whose
+network died lingers for up to one heartbeat interval (30s) and no longer.
+
+The id is the socket's, which has two consequences worth knowing. Two listeners
+may pick the same nickname and are still two rows — the id is what keeps them
+apart, and what a client should key its list on. And a listener who reconnects
+comes back as a new row rather than reclaiming the old one: identity that a
+client could assert is identity a client could assert about *someone else*, and
+the roster is not worth an eviction primitive. Rosters go out whole rather than
+as joins and leaves, so a client renders the last frame and has nothing to
+reconcile.
+
+A `join` buys a row and nothing else. Nicknames are re-normalised server-side —
+collapsed, stripped of control characters, capped at 24 characters, and refused
+when what's left is empty — because the client's own normalising is a courtesy
+to the listener, not a guarantee to the server. Re-sending the name a socket
+already has costs no broadcast; sending a different one is a rename, and keeps
+the listener's place in the list.
+
+### Chat
+
+Unlike playback, the queue and the roster, this one is written down:
+
+```sql
+sessions  (id, started_at, ended_at)
+messages  (id, session_id, nick, text, created_at)
+```
+
+A message is `{id, nickname, text, at}` on the wire, and frames carry a *batch*
+of them: the tail of the conversation on connect, and a batch of one for each
+new message. One frame type, one code path on the client — and because messages
+carry ids, a client that merges on id gets two properties for free. A reconnect
+replays history without duplicating a line, and whatever was said while it was
+away arrives in that replay instead of being a hole in the conversation.
+
+**Who said it is the server's answer, not the client's.** A `say` frame carries
+text and nothing else; the author is the nickname the sending socket is listed
+under on the roster. A frame that could name its own sender could sign someone
+else's name to a message. That also makes the roster the gate: a socket that has
+not joined has no name to sign with, and is told to name itself rather than
+being quietly ignored. A rename applies from then on — what was already said
+keeps the name it was said under, because `nick` is a copy, not a reference.
+
+**Sessions.** PLAN.md's availability story is session-based — you go live, you
+end it — and chat is scoped to a session, so "the chat" means this time on air
+rather than everything ever said. The admin controls for starting and ending one
+are a later task; for now a run of the process is a session, opened at startup
+and closed on shutdown. A restarted station is a new session with an empty room,
+and only the line that opens the session has to change when the admin can do it
+by hand.
+
+**Pacing.** Chat is the first thing a listener can send that the server writes
+down, so each socket gets a token bucket: five messages back to back, one earned
+back every two seconds. Without it, one client in a loop is an unbounded row
+count and a broadcast storm to everyone else. Buckets are per socket rather than
+per listener, so one listener talking never spends another's, and there is
+nothing to clean up after a socket that never comes back. Over-length messages
+are refused rather than truncated — the composer caps what can be typed, so
+anything longer came from something hand-written, and quietly publishing half of
+what it said would be worse than saying no.
 
 ### `POST /api/playback` — admin
 
@@ -221,9 +319,18 @@ browser presents from then on.
 
 | Route | What |
 |---|---|
-| `POST /api/admin/session` | `{password}` → `200 {ok, expiresAt}` and the cookie, or `401`. |
+| `POST /api/admin/session` | `{password}` → `200 {ok, expiresAt}` and the cookie, `401`, or `429` once guesses are coming too fast. |
 | `GET /api/admin/session` | `{ok: true}` while the session holds, `401` once it doesn't. |
 | `DELETE /api/admin/session` | Signs out. Needs no credentials — dropping a cookie you hold isn't an attack. |
+
+Sign-in is paced per caller: five wrong passwords, then one earned back a
+minute, answered `429` with a `Retry-After`. The password is the whole admin
+gate, so the rate at which a stranger can test guesses is part of how strong it
+is — unpaced, a passphrase that would take centuries offline is a few hours of
+HTTP. Only *wrong* attempts are charged, and getting it right clears the count,
+so an admin who fumbles their own password twice is not then locked out of
+their own station. Nothing else is throttled: a session already issued is a
+credential its holder has proved.
 
 ```bash
 curl -c jar -X POST -H 'content-type: application/json' \
@@ -292,19 +399,83 @@ Overrun isn't carried over: the next track always starts at 0:00.
 
 ## Client
 
-React + Vite, one page. The listener taps **Tune in** — which is also the user
-gesture browsers require before audio may start — and from then on the page
-follows the station.
+React + Vite, one page. The listener names themselves and taps **Tune in** —
+which is also the user gesture browsers require before audio may start — and
+from then on the page follows the station.
 
 - `lib/position.ts` — where the needle should be, given the tuple and a server time.
+- `lib/nickname.ts` — the nickname: normalising it, and keeping it in localStorage.
+- `lib/chat.ts` — what is worth sending, and folding a batch into what is shown.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
 - `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
 - `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
 - `lib/clock.ts` — clock offset estimation from ping/pong samples.
 - `lib/drift.ts` — what to do about an error of a given size.
 - `hooks/useServerClock.ts` — runs the handshake, exposes `serverNow()`.
+- `hooks/usePresence.ts` — says who this listener is, and says it again on reconnect.
 - `hooks/useSyncedAudio.ts` — aligns on every broadcast, and every 2s in between.
 - `AdminPanel.tsx` — the decks, for whoever runs the station.
+
+### Joining
+
+The join screen asks for a nickname, and the station will not take a listener
+without one: the button stays disabled until the field has something in it, and
+pressing Enter on an empty field is refused the same way. What comes back is
+stored under `chunky.fm:nickname` in localStorage — PLAN.md's identity story in
+full, with no account and nothing held server-side.
+
+The nickname and the join are deliberately the *same* gesture. Browsers only
+start audio from inside a user gesture, so the form's submit handler is where
+`play()` has to be called; a nickname step before a separate Tune in button
+would leave the audio starting outside any gesture at all.
+
+A returning listener finds the field already filled and joins without retyping,
+but still has to press the button — a name in localStorage is not a gesture, and
+a page that tried to start playing on load would be refused by the browser.
+Nicknames are normalised on the way in *and* on the way out: whitespace runs
+collapse, control characters go, and the result is capped at 24 characters, so
+what a listener finds when they come back is a name rather than whatever pasting
+went wrong. A browser that refuses storage — Safari's private mode throws on
+write, and blocked cookies throw on even touching `localStorage` — costs the
+listener a retype next visit and nothing else.
+
+### Who's listening
+
+Once tuned in, the page shows the room: everyone currently listening, by
+nickname, updating as people arrive and leave. It is the roster the socket
+broadcasts, rendered whole each time — rows keyed on the listener id, so two
+people called "sam" are two chips rather than one.
+
+The nickname reaches the server as a `join` frame sent *after* tuning in, not on
+connect: a socket opens with the page, and a name typed into the field is not
+yet someone in the room. `usePresence` waits for the connection to be open
+rather than merely to exist — a send on a socket that is still opening is thrown
+away in silence, and a join lost there would be a listener nobody can see, with
+nothing to retry it. It is the same trap the clock handshake fell into once,
+which is why both hooks are written against `connected` rather than `connection`.
+
+Hanging the join off `connected` is also what makes reconnection work: presence
+lives with the socket, a reconnect is a new socket, and the effect re-runs each
+time the connection comes back. So a listener who drops during an outage is put
+back on the roster by the same line that put them there in the first place, and
+a station that restarts finds its room refilling on its own. `npm run
+qa:presence` is that whole story, in three browsers.
+
+### Talking
+
+The chat sits under the roster, and nothing in it is rendered optimistically:
+what was typed goes out, and appears when it comes back with the id and
+timestamp the server gave it. On a station where everyone is already connected
+to the same server that costs a round trip, and it buys a list that is the same
+list for everyone in the room — rather than a local-only line that a refused
+message would leave sitting there looking sent.
+
+The composer is disabled while the socket is down, for the reason the join frame
+waits for `connected`: a send on a closed socket is thrown away in silence, and
+a message that vanished would be worse than one that could not be typed. What
+arrives is merged by id, so a reconnect fills in what was missed without
+duplicating what is already on screen — `lib/chat.ts` is that merge, and it is
+the piece worth reading if the chat ever looks doubled or out of order.
 
 ### Admin mode
 
@@ -389,7 +560,7 @@ doing anything if the dead zone drops below 40ms.
 ### Verifying it
 
 Sync — and anything else that only happens in a real browser — is what unit
-tests cannot judge, so there are four scripts that drive real Chrome. Each needs
+tests cannot judge, so there are six scripts that drive real Chrome. Each needs
 a running server, a running Vite dev server, and at least two uploaded tracks
 (one of them a few minutes long).
 
@@ -398,13 +569,18 @@ cd client
 npm run verify:sync    # two listeners joining at different times stay together
 npm run qa:playback    # seeks, pause/resume/seek/stop, track changes
 npm run qa:reconnect   # kills the server underneath a listener and restarts it
+npm run qa:presence    # three listeners watch each other arrive and leave
+npm run qa:chat        # they talk, one joins late, one tries to speak as another
+npm run qa:chat-refusal # types faster than the room will take, and checks what it says
 npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 ```
 
 They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
-`OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect` also
-starts and stops the server itself, so build it first (`cd server && npm run
-build`). `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
+`OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect`,
+`qa:presence` and `qa:chat` also start and stop the server itself, so build it
+first (`cd server && npm run build`) — telling a browser it is offline does *not* drop an
+established WebSocket, so taking the station away is the only way to test a
+disconnection for real. `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
 point it at something a few minutes long) and drives three tabs at once: an
 admin, a listener, and a second listener that joins after the queue was built.
 It checks that both listeners hear every command, show the same queue as the

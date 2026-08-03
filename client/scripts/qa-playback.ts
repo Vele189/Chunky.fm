@@ -20,6 +20,7 @@ import {
   STATUS,
   TRACK_ID,
   playbackCommand,
+  tuneIn,
   wait,
 } from './qa-env.js'
 
@@ -37,7 +38,7 @@ try {
 
   const page = await (await browser.newContext()).newPage()
   await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
-  await page.getByRole('button', { name: 'Tune in' }).click()
+  await tuneIn(page, 'playback qa')
   await page.waitForFunction(PLAYING, null, { timeout: 15_000 })
   await page.evaluate(INSTRUMENT_SEEKS)
   console.log('listener playing and instrumented\n')

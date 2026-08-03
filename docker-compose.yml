@@ -16,6 +16,10 @@ services:
       HOST: 0.0.0.0
       PORT: "3000"
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-157286400}
+      # nginx is in front of this, so every request arrives from the web
+      # container's address. The sign-in throttle is keyed on the caller, and
+      # would otherwise pace the whole internet as one — see server/.env.example.
+      TRUST_PROXY: ${TRUST_PROXY:-true}
     volumes:
       - chunky_data:/data
     ports:

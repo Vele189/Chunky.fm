@@ -1,13 +1,36 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { AdminPanel } from './AdminPanel.js'
+import { usePresence } from './hooks/usePresence.js'
 import { useServerClock } from './hooks/useServerClock.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { isAdminRoute } from './lib/admin.js'
 import { seekTo } from './lib/audio-element.js'
+import {
+  chatRefusal,
+  draftAfterRefusal,
+  formatTime,
+  isSendableMessage,
+  MESSAGE_MAX_LENGTH,
+  normalizeMessageText,
+} from './lib/chat.js'
 import type { Correction } from './lib/drift.js'
+import {
+  isValidNickname,
+  loadNickname,
+  NICKNAME_MAX_LENGTH,
+  saveNickname,
+} from './lib/nickname.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
-import { artworkUrl, type QueueEntry, type ServerMessage } from './lib/protocol.js'
+import {
+  artworkUrl,
+  type ChatMessage,
+  type ErrorMessage,
+  type Listener,
+  type QueueEntry,
+  type ServerMessage,
+} from './lib/protocol.js'
+import type { StationConnection } from './lib/station.js'
 
 const STATUS_LABEL = {
   connecting: 'tuning in…',
@@ -18,16 +41,35 @@ const STATUS_LABEL = {
 export function App() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [joined, setJoined] = useState(false)
+  // Read once, at mount: what a previous visit left behind is the starting
+  // point for the field, not a decision to join. The gesture still has to
+  // happen — a browser will not start audio because localStorage had a name in
+  // it — so a returning listener finds the field filled and presses the button.
+  const [nickname, setNickname] = useState(() => loadNickname() ?? '')
 
   // The clock needs to see pongs but the station owns the socket, so the
   // handler goes through a ref to break what would otherwise be a cycle.
   const routeToClock = useRef<(message: ServerMessage) => void>(() => undefined)
-  const { status, state, queue, connection, applyState, applyQueue } = useStation(
-    undefined,
-    (message) => routeToClock.current(message),
-  )
+  const {
+    status,
+    state,
+    queue,
+    listeners,
+    messages,
+    socketError,
+    clearSocketError,
+    connection,
+    applyState,
+    applyQueue,
+  } = useStation(undefined, (message) => routeToClock.current(message))
   const admin = useAdminRoute()
   const clock = useServerClock(connection, { connected: status === 'connected' })
+  // Only once tuned in: a socket is open from the moment the page loads, and a
+  // name typed into the field is not yet a listener in the room.
+  usePresence(connection, {
+    connected: status === 'connected',
+    nickname: joined ? nickname : null,
+  })
   // Assigned after commit, not during render — a render React throws away
   // must not leave a handler wired up behind it.
   useEffect(() => {
@@ -58,9 +100,21 @@ export function App() {
     return () => window.clearInterval(timer)
   }, [joined])
 
-  function tuneIn() {
-    // Autoplay policy: play() has to be called synchronously inside the click
-    // handler, not after an await, or the browser refuses it.
+  function joinStation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    // The gate: no nickname, no session. The button is disabled without one,
+    // but Enter in the field arrives here too, and refusing to join belongs
+    // next to joining rather than only in what the button looks like.
+    const stored = saveNickname(nickname)
+    if (stored === null) return
+    setNickname(stored)
+
+    // Autoplay policy: play() has to be called synchronously inside the submit
+    // handler, not after an await, or the browser refuses it. That is why the
+    // nickname is a field on the form the button submits rather than a step
+    // before it — naming yourself and tuning in are one gesture, and splitting
+    // them would leave the audio starting outside any gesture at all.
     const audio = audioRef.current
     if (audio && state?.track && state.pausedAt === null) {
       // Through seekTo, not currentTime: the click can land before the element
@@ -80,7 +134,14 @@ export function App() {
     <main className="station">
       <header className="station__head">
         <h1>chunky.fm</h1>
-        <span className={`status status--${status}`}>{STATUS_LABEL[status]}</span>
+        <div className="station__who">
+          {joined && (
+            <span className="station__nick" data-testid="nickname">
+              listening as {nickname}
+            </span>
+          )}
+          <span className={`status status--${status}`}>{STATUS_LABEL[status]}</span>
+        </div>
       </header>
 
       {!joined ? (
@@ -88,9 +149,26 @@ export function App() {
           <p className="join__blurb">
             One station. Everyone hears the same instant of the same song.
           </p>
-          <button type="button" className="join__button" onClick={tuneIn}>
-            Tune in
-          </button>
+          <form className="join__form" onSubmit={joinStation}>
+            <label className="join__label" htmlFor="nickname">
+              What should everyone call you?
+            </label>
+            <input
+              id="nickname"
+              className="join__input"
+              name="nickname"
+              value={nickname}
+              onChange={(event) => setNickname(event.target.value)}
+              placeholder="nickname"
+              maxLength={NICKNAME_MAX_LENGTH}
+              autoComplete="nickname"
+              autoFocus
+              required
+            />
+            <button type="submit" className="join__button" disabled={!isValidNickname(nickname)}>
+              Tune in
+            </button>
+          </form>
         </section>
       ) : tuning ? (
         <section className="off-air">
@@ -123,6 +201,18 @@ export function App() {
       )}
 
       {joined && !admin && <UpNext queue={queue} />}
+      {/* Shown on the admin route too: the panel has the queue covered, but
+          nothing in it says who is out there or what they are saying. */}
+      {joined && <Listeners listeners={listeners} />}
+      {joined && (
+        <Chat
+          messages={messages}
+          connection={connection}
+          live={status === 'connected'}
+          refusal={socketError}
+          clearRefusal={clearSocketError}
+        />
+      )}
 
       {/* Owned imperatively — React never sets currentTime or calls play(). */}
       <audio ref={audioRef} preload="auto" />
@@ -163,6 +253,149 @@ function UpNext({ queue }: { queue: QueueEntry[] | null }) {
           </li>
         ))}
       </ol>
+    </section>
+  )
+}
+
+/**
+ * Who else is here.
+ *
+ * The roster arrives whole on every change rather than as joins and leaves, so
+ * there is nothing to reconcile: render what the last frame said. Rows are
+ * keyed on the socket's id, not the nickname, because two listeners are allowed
+ * to pick the same name and both of them should show up.
+ *
+ * Null before the first roster arrives, and empty for the moment between tuning
+ * in and this listener's own join landing — neither is worth a heading.
+ */
+function Listeners({ listeners }: { listeners: Listener[] | null }) {
+  if (!listeners || listeners.length === 0) return null
+
+  return (
+    <section className="listeners" data-testid="listeners">
+      <h2 className="listeners__heading">
+        Listening now
+        <span className="listeners__count" data-testid="listener-count">
+          {listeners.length}
+        </span>
+      </h2>
+      <ul className="listeners__list">
+        {listeners.map((listener) => (
+          <li key={listener.id} className="listeners__name" data-listener={listener.id}>
+            {listener.nickname}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+interface ChatProps {
+  messages: ChatMessage[]
+  connection: StationConnection | null
+  /** False while reconnecting — a send would go on the floor unannounced. */
+  live: boolean
+  /** The last thing the socket refused, if anything. */
+  refusal: { error: ErrorMessage; seq: number } | null
+  clearRefusal(): void
+}
+
+/**
+ * The room, talking.
+ *
+ * Nothing is rendered optimistically: what was typed goes out, and appears when
+ * it comes back with the id and timestamp the server gave it. That costs a
+ * round trip on a station where everyone is already listening to the same
+ * server, and it buys a list that is the same list for everyone in the room —
+ * no local-only line that a refused message would leave sitting there looking
+ * sent.
+ */
+function Chat({ messages, connection, live, refusal, clearRefusal }: ChatProps) {
+  const [draft, setDraft] = useState('')
+  const list = useRef<HTMLOListElement>(null)
+  // What went out and has not been answered, so a refusal can hand it back.
+  const unanswered = useRef<string | null>(null)
+
+  // Follow the conversation. Reading back through it is a scroll away, but a
+  // new line arriving should not leave the listener looking at an old one.
+  useEffect(() => {
+    const element = list.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [messages])
+
+  // A refused message is not a sent message, so give the text back rather than
+  // leaving the listener to retype something they watched disappear. Keyed on
+  // the sequence number, so a second identical refusal is still a refusal.
+  //
+  // Only into a composer they have not started refilling: whatever they are
+  // typing now is newer than whatever was refused, and restoring over the top
+  // of it would destroy the one thing here that isn't recoverable.
+  const seq = refusal?.seq
+  useEffect(() => {
+    if (seq === undefined) return
+    const text = unanswered.current
+    unanswered.current = null
+    setDraft((current) => draftAfterRefusal(current, text))
+  }, [seq])
+
+  function say(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const text = normalizeMessageText(draft)
+    if (text.length === 0 || !connection || !live) return
+    clearRefusal()
+    unanswered.current = text
+    connection.send({ type: 'say', text })
+    setDraft('')
+  }
+
+  const refusalNotice = refusal ? chatRefusal(refusal.error.code) : null
+
+  return (
+    <section className="chat" data-testid="chat">
+      <h2 className="chat__heading">Chat</h2>
+      {messages.length === 0 ? (
+        <p className="chat__empty">Nobody has said anything yet.</p>
+      ) : (
+        <ol className="chat__list" data-testid="chat-list" ref={list}>
+          {messages.map((message) => (
+            <li key={message.id} className="chat__line" data-message={message.id}>
+              <time className="chat__at" dateTime={new Date(message.at).toISOString()}>
+                {formatTime(message.at)}
+              </time>
+              <span className="chat__nick">{message.nickname}</span>
+              <span className="chat__text">{message.text}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {refusalNotice && (
+        <p className="chat__refusal" role="status" data-testid="chat-refusal">
+          {refusalNotice}
+        </p>
+      )}
+      <form className="chat__form" onSubmit={say}>
+        <label className="chat__label" htmlFor="chat-input">
+          Say something
+        </label>
+        <input
+          id="chat-input"
+          className="chat__input"
+          data-testid="chat-input"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={live ? 'say something' : 'reconnecting…'}
+          maxLength={MESSAGE_MAX_LENGTH}
+          autoComplete="off"
+          disabled={!live}
+        />
+        <button
+          type="submit"
+          className="chat__send"
+          disabled={!live || !isSendableMessage(draft)}
+        >
+          Send
+        </button>
+      </form>
     </section>
   )
 }

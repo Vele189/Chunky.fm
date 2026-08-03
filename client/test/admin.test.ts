@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AdminApi, AdminError, isAdminRoute } from '../src/lib/admin.js'
+import { AdminApi, AdminError, isAdminRoute, refusalMessage } from '../src/lib/admin.js'
 
 const PASSWORD = 'hunter2'
 
@@ -234,5 +234,30 @@ describe('AdminApi upload', () => {
 
     expect((err as AdminError).status).toBe(415)
     expect((err as AdminError).message).toBe('not usable audio')
+  })
+})
+
+/**
+ * Which refusals are the station's words, and which are ours.
+ *
+ * Every 4xx message in this API is written to be shown — that is the contract
+ * `server/src/lib/errors.ts` keeps, and why it replaces 5xx messages rather than
+ * repeating them. Sign-in is throttled, so "wait a moment and try again" is now
+ * a thing the station says, and reporting it as "could not reach the station"
+ * would send the admin looking for a network problem that is not there.
+ */
+describe('refusalMessage', () => {
+  it('repeats what the station said about a refusal it wrote', () => {
+    const throttled = new AdminError(429, 'too_many_requests', 'too many sign-in attempts')
+    expect(refusalMessage(throttled)).toBe('too many sign-in attempts')
+  })
+
+  it('says nothing about a failure the station did not describe', () => {
+    // A 500's message is replaced server-side precisely because it can carry a
+    // path or a stack, so there is nothing there worth showing.
+    expect(refusalMessage(new AdminError(500, 'internal_error', 'the station could not'))).toBeNull()
+    // And a network failure is not an AdminError at all.
+    expect(refusalMessage(new TypeError('Failed to fetch'))).toBeNull()
+    expect(refusalMessage(undefined)).toBeNull()
   })
 })

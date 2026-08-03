@@ -38,6 +38,17 @@ body {
   letter-spacing: 0.02em;
 }
 
+.station__who {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.station__nick {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .status {
   font-size: 0.8rem;
   color: var(--muted);
@@ -57,6 +68,34 @@ body {
   margin-bottom: 2rem;
 }
 
+.join__form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.join__label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.join__input {
+  font: inherit;
+  width: min(16rem, 100%);
+  padding: 0.7rem 1rem;
+  text-align: center;
+  border: 1px solid #34303d;
+  border-radius: 0.6rem;
+  background: #1a1822;
+  color: var(--fg);
+}
+
+.join__input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .join__button {
   font: inherit;
   font-weight: 600;
@@ -68,8 +107,15 @@ body {
   cursor: pointer;
 }
 
-.join__button:hover {
+.join__button:hover:not(:disabled) {
   filter: brightness(1.08);
+}
+
+/* Nothing to join with yet — the control says so rather than failing on click. */
+.join__button:disabled {
+  background: #35313f;
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .now-playing {
@@ -169,6 +215,174 @@ body {
   color: var(--muted);
   font-size: 0.8rem;
   margin-left: 0.5rem;
+}
+
+.listeners {
+  border-top: 1px solid #26232e;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.listeners__heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.listeners__count {
+  border-radius: 999px;
+  background: #1c1a22;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
+/* Wraps rather than scrolls: a full room should read as a crowd, not a list. */
+.listeners__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.listeners__name {
+  border: 1px solid #26232e;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.8rem;
+  /* Nicknames are capped at 24 characters, and a long one still has to sit in
+     a row without stretching it. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat {
+  border-top: 1px solid #26232e;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.chat__heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chat__empty {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Sits between the conversation and the composer, where the message that was
+   refused would have appeared if it had been taken. */
+.chat__refusal {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: #ff8080;
+}
+
+/* Tall enough to be a conversation, capped so it never pushes the decks off
+   the screen — the station is what the page is for. */
+.chat__list {
+  max-height: 15rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.chat__line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+}
+
+.chat__at {
+  flex: none;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: #5d5868;
+}
+
+.chat__nick {
+  flex: none;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* The only place arbitrary text from another listener is rendered: break it
+   rather than letting a wall of characters stretch the layout. */
+.chat__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat__form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.chat__input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #2f2b39;
+  border-radius: 6px;
+  background: #1a1820;
+  padding: 0.5rem 0.7rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.chat__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.chat__send {
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  padding: 0.5rem 1rem;
+  color: #191622;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat__send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* --- admin ---------------------------------------------------------------- */

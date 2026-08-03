@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AdminApi } from '../lib/admin.js'
+import { AdminApi, refusalMessage } from '../lib/admin.js'
 
 export type AdminStatus = 'signed-out' | 'checking' | 'signed-in'
 
@@ -74,9 +74,14 @@ export function useAdminSession({
         setStatus(accepted ? 'signed-in' : 'signed-out')
         if (!accepted) setError('wrong password')
         return accepted
-      } catch {
+      } catch (err) {
         setStatus('signed-out')
-        setError('could not reach the station')
+        // A refusal the station wrote is worth repeating. Sign-in is throttled,
+        // and "could not reach the station" is the wrong thing to tell someone
+        // who reached it and was told to wait — it sends them looking for a
+        // network problem that isn't there. 4xx messages are written to be
+        // shown; anything else is ours to summarise.
+        setError(refusalMessage(err) ?? 'could not reach the station')
         return false
       }
     },

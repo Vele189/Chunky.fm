@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PlaybackSnapshot, QueueEntry, ServerMessage, StateMessage } from '../lib/protocol.js'
+import { mergeMessages } from '../lib/chat.js'
+import type {
+  ChatMessage,
+  ErrorMessage,
+  Listener,
+  PlaybackSnapshot,
+  QueueEntry,
+  ServerMessage,
+  StateMessage,
+} from '../lib/protocol.js'
 import { StationConnection, type StationStatus } from '../lib/station.js'
 
 export function defaultStationUrl(): string {
@@ -12,6 +21,21 @@ export interface Station {
   state: StateMessage | null
   /** What's coming up. Null until the first queue frame arrives. */
   queue: QueueEntry[] | null
+  /** Who else is here. Null until the first roster arrives. */
+  listeners: Listener[] | null
+  /** The conversation, oldest first. Empty until the first chat frame arrives. */
+  messages: ChatMessage[]
+  /**
+   * The last thing the socket refused, and a sequence number that goes up on
+   * every refusal.
+   *
+   * The counter is what makes two identical refusals in a row — "slow down",
+   * then "slow down" again — distinguishable, so whatever is showing them can
+   * react to the second one. Without it a repeat is the same value and nothing
+   * downstream ever hears about it. Null until something is refused.
+   */
+  socketError: { error: ErrorMessage; seq: number } | null
+  clearSocketError(): void
   connection: StationConnection | null
   /**
    * Fold in state the server just handed back over HTTP.
@@ -34,6 +58,9 @@ export function useStation(
   const [status, setStatus] = useState<StationStatus>('connecting')
   const [state, setState] = useState<StateMessage | null>(null)
   const [queue, setQueue] = useState<QueueEntry[] | null>(null)
+  const [listeners, setListeners] = useState<Listener[] | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [socketError, setSocketError] = useState<{ error: ErrorMessage; seq: number } | null>(null)
   const [connection, setConnection] = useState<StationConnection | null>(null)
 
   // Kept in a ref so a changing handler doesn't tear down the socket.
@@ -47,6 +74,19 @@ export function useStation(
       onMessage: (message) => {
         if (message.type === 'state') setState(message)
         if (message.type === 'queue') setQueue(message.entries)
+        if (message.type === 'presence') setListeners(message.listeners)
+        // Merged rather than replaced: a batch is either the history or one new
+        // line, and both fold into what is already on screen the same way.
+        if (message.type === 'chat') {
+          setMessages((current) => mergeMessages(current, message.messages))
+        }
+        // Kept rather than dropped. A refusal is the *only* thing the server
+        // says about a frame that went nowhere — a rate-limited message would
+        // otherwise leave the composer cleared and nothing on screen, which
+        // reads exactly like having said something.
+        if (message.type === 'error') {
+          setSocketError((current) => ({ error: message, seq: (current?.seq ?? 0) + 1 }))
+        }
         messageHandler.current?.(message)
       },
     })
@@ -63,6 +103,18 @@ export function useStation(
     [],
   )
   const applyQueue = useCallback((entries: QueueEntry[]) => setQueue(entries), [])
+  const clearSocketError = useCallback(() => setSocketError(null), [])
 
-  return { status, state, queue, connection, applyState, applyQueue }
+  return {
+    status,
+    state,
+    queue,
+    listeners,
+    messages,
+    socketError,
+    clearSocketError,
+    connection,
+    applyState,
+    applyQueue,
+  }
 }
