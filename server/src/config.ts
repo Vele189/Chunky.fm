@@ -12,6 +12,44 @@ export interface Config {
   dbPath: string
   adminPassword: string
   maxUploadBytes: number
+  /**
+   * Who is allowed to tell the station where a request really came from.
+   *
+   * This is never reached directly in either supported deployment: nginx sits
+   * in front of it in compose, and Railway's edge does in production. So the
+   * socket's peer address is the proxy's, and `request.ip` is that same address
+   * for every caller alive — which is fine for logging and *not* fine for
+   * anything keyed on it. The sign-in throttle is keyed on it, and one shared
+   * bucket there is not brute-force protection, it is a way for a stranger to
+   * lock the admin out of their own station.
+   *
+   * True by default for that reason, which means trusting `X-Forwarded-For`.
+   * Anyone who can reach the origin directly can therefore claim to be any
+   * address they like — so don't publish the origin port. Set `TRUST_PROXY` to
+   * `false` when nothing is in front, or to a hop count or a list of proxy
+   * addresses to trust something narrower.
+   */
+  trustProxy: boolean | string | string[] | number
+}
+
+/**
+ * `false`/`true` as written, a bare integer as a hop count, anything else as a
+ * comma-separated list of addresses or CIDR ranges — the shapes Fastify already
+ * takes, chosen from the string an env var has to be.
+ */
+function trustProxyFromEnv(value: string | undefined): Config['trustProxy'] {
+  if (value === undefined || value === '') return true
+  if (value === 'true') return true
+  if (value === 'false') return false
+  if (/^\d+$/.test(value)) return Number(value)
+  const addresses = value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (addresses.length === 0) {
+    throw new Error(`TRUST_PROXY must be true, false, a hop count or a list of addresses`)
+  }
+  return addresses
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 150 * 1024 * 1024
@@ -43,5 +81,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(storageDir, 'chunky.sqlite'),
     adminPassword,
     maxUploadBytes: intFromEnv(env.MAX_UPLOAD_BYTES, DEFAULT_MAX_UPLOAD_BYTES, 'MAX_UPLOAD_BYTES'),
+    trustProxy: trustProxyFromEnv(env.TRUST_PROXY),
   }
 }

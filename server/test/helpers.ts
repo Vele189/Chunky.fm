@@ -35,6 +35,10 @@ export interface HarnessOptions {
   chatHistoryLimit?: number
   chatBurst?: number
   chatRefillMs?: number
+  joinBurst?: number
+  joinRefillMs?: number
+  signInBurst?: number
+  signInRefillMs?: number
   /** Bind a real port — required for anything that opens a websocket. */
   listen?: boolean
 }
@@ -48,6 +52,10 @@ export async function startHarness(
     chatHistoryLimit,
     chatBurst,
     chatRefillMs,
+    joinBurst,
+    joinRefillMs,
+    signInBurst,
+    signInRefillMs,
     listen = false,
   }: HarnessOptions = {},
 ): Promise<Harness> {
@@ -62,6 +70,9 @@ export async function startHarness(
     dbPath: ':memory:',
     adminPassword: ADMIN_PASSWORD,
     maxUploadBytes: 10 * 1024 * 1024,
+    // As deployed: something is always in front of this, and anything keyed on
+    // the caller's address is only correct if it reads through it.
+    trustProxy: true,
     ...overrides,
   }
 
@@ -76,6 +87,10 @@ export async function startHarness(
     chatHistoryLimit,
     chatBurst,
     chatRefillMs,
+    joinBurst,
+    joinRefillMs,
+    signInBurst,
+    signInRefillMs,
   })
 
   let wsUrl = ''

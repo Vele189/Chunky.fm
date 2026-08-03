@@ -77,8 +77,27 @@ export interface PongMessage {
   t1: number
 }
 
+/**
+ * Why the socket refused something. Mirrors `SocketErrorCode` on the server —
+ * keep the two in step.
+ *
+ * A code rather than prose for the same reason `AdminError.code` is one: a
+ * client that has to tell "you are going too fast" from "say who you are" should
+ * switch on a value, not match on English.
+ */
+export type SocketErrorCode =
+  | 'unrecognised_message'
+  | 'nickname_required'
+  | 'message_too_long'
+  | 'empty_message'
+  | 'command_over_http'
+  | 'not_joined'
+  | 'no_chat'
+  | 'slow_down'
+
 export interface ErrorMessage {
   type: 'error'
+  code: SocketErrorCode
   message: string
 }
 

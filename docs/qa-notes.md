@@ -1,9 +1,23 @@
 # QA notes
 
-Findings from the first full QA pass on the `QA` branch, after merging tasks
-#1446 through #1450. Recorded because every one of these passed the unit
-suite — they are the shape of bug this project is prone to, and worth
-remembering when adding features.
+Findings from the QA passes on the `QA` branch. Recorded because almost every
+one of these passed the unit suite — they are the shape of bug this project is
+prone to, and worth remembering when adding features.
+
+- **#1–#5** — the first pass, after merging tasks #1446 through #1450.
+- **#6** — the first run of `qa:admin` (#1453).
+- **#7** — the second pass, before merging to `master`.
+- **#8–#9** — found alongside those.
+- **#10–#14** — the third pass, after the join flow, presence and chat landed
+  (#1455–#1457), before merging to `master`.
+
+If there is a theme to the third pass, it is that the first two asked "does this
+work?" and it did. #10 and #13 came from asking a different question — *what can
+someone do repeatedly?* — and #11 from noticing that #7 fixed a property on one
+channel and called it done, when the property was about the whole API. #14 is
+the one worth rereading: it is a bug in the fix for #13, it was invisible to
+every unit test, and it turned up only because the stack was actually brought
+up and the logs read.
 
 ## 1. The clock handshake silently never completed
 
@@ -165,6 +179,156 @@ alignment effect re-runs on `joined` and seeks properly — so the bug was
 covered twice over and never observed.
 
 Fixed anyway, because "every seek goes through here" is only true if it is.
+
+## 10. One socket could make the station shout at the whole room
+
+**Severity: high — an unauthenticated amplifier, reachable by anyone with the
+link.**
+
+Found by the third QA pass, on the `QA` branch before merging to `master`.
+
+Chat is rate-limited because the server writes it down. `join` was not, and it
+is the more expensive frame: a roster goes out to *every* listener each time one
+changes. So a socket alternating between two nicknames turned one inbound frame
+into N outbound ones, for as long as it cared to keep going — no nickname worth
+having, no password, no chat, nothing to authenticate. Measured before the fix:
+200 join frames from one socket produced 200 full roster broadcasts to every
+other listener. After: 5.
+
+The failure mode is not a crash. It is thirty listeners' clients re-rendering
+the roster a few hundred times a second while the audio they came for competes
+for the same main thread — the station degrading for everyone with nothing in
+the logs that looks unusual.
+
+Fixed with the same token bucket chat already used, per socket, spending a token
+only on a join that actually *changes* the roster. That carve-out matters: a
+client re-sending the name it already has broadcasts nothing, and a reconnect's
+rejoin must stay free or the reconnect path pays for the abuse path.
+
+Guarded by `test/socket-contract.test.ts`, which counts the roster frames one
+socket can cause and asserts a refused join leaves the roster as it was. Three
+of those four tests fail against the old code.
+
+## 11. Half the *socket's* errors were not machine-readable either
+
+**Severity: medium — the same defect as #7, on the channel it was never applied
+to.**
+
+#7 made every HTTP refusal answer `{error, message}` with `error` a code, and
+pinned it with `test/contract.test.ts`. The socket was left alone. Its refusals
+were `{type: 'error', message}` — prose only — so a client wanting to tell "you
+are going too fast" from "say who you are" had to match on English, and any
+rewording of a message was a silent break in something no test was watching.
+
+Worth noting how it survived: #7 was written as a fix to Fastify's error
+handler, so it was scoped to Fastify. The property it was actually about —
+*every refusal in the API is machine-readable* — is not a property of Fastify,
+and the half of the API that does not go through Fastify never got it.
+
+Fixed by giving `ErrorMessage` a `code` alongside the prose, mirrored in
+`client/src/lib/protocol.ts`. Guarded by `test/socket-contract.test.ts`, which
+asserts every socket refusal carries a snake_case code and a message — the
+socket's version of the test #7 left behind.
+
+## 12. A refused message vanished, and looked exactly like a sent one
+
+**Severity: medium — silent data loss, in the feature most likely to hit it.**
+
+The consequence of #11 on the client, and the reason it was worth fixing rather
+than noting. `useStation` handled `state`, `queue`, `presence` and `chat`, and
+dropped `error` on the floor. The composer clears itself the moment something is
+sent, so a refused message left an empty box and an unchanged conversation —
+which on screen is *identical* to having said something successfully. The
+listener's only clue was that their line never appeared, and a line that has not
+appeared yet looks the same.
+
+Not a hypothetical: chat is rate-limited at five back to back, so this is
+reachable by anyone who types quickly. What they lost was the thing they had
+just written.
+
+Fixed by keeping the refusal, telling the listener the message was not sent, and
+handing the text back to the composer — but only into an empty one, since
+whatever they have started typing since is the one thing on screen that cannot
+be recovered from anywhere else. The refusal is carried with a sequence number,
+so two identical refusals in a row are still two events.
+
+Guarded twice: `client/test/chat.test.ts` covers the decisions as pure functions
+(`chatRefusal`, `draftAfterRefusal`), and `npm run qa:chat-refusal` types nine
+messages into a real browser faster than the room will take them and checks what
+the listener is actually looking at afterwards — including that the handed-back
+message is not *also* in the conversation, and that it sends normally once the
+bucket refills.
+
+## 13. Nothing slowed down guessing the admin password
+
+**Severity: medium-high — the whole admin gate is one shared secret.**
+
+Found in the same pass, by asking what a stranger can do repeatedly. Fifty wrong
+passwords in a row: fifty `401`s, no throttling, nothing in the logs to
+distinguish it from one wrong attempt. The password guards every upload, the
+queue and the decks, and it is the *only* thing that does — so the rate at which
+it can be tested is part of how strong it is. Unpaced, a passphrase that would
+take centuries offline is a few hours of HTTP requests.
+
+Fixed with a per-caller token bucket on `POST /api/admin/session` — five wrong
+passwords, one earned back a minute, then `429` with a `Retry-After` in the
+API's standard error shape.
+
+Three things that are easy to get wrong here, and are what the tests are about:
+
+- The bucket is checked *before* the password comparison. A throttle that still
+  compared would still be letting the guessing happen.
+- Only wrong attempts are charged, and a correct one clears the count. An admin
+  who fumbles their own password twice should not spend the evening one typo
+  from being locked out of their own station.
+- Nothing else is throttled. A session already issued is a credential its holder
+  has proved, and pacing the panel's own polling would break the admin surface
+  to protect a password nobody is guessing.
+
+The bucket map is keyed on the caller's address, which is to say on something
+the caller chooses — so it is capped, and evicts fully-refilled buckets before
+live ones. A caller who keeps knocking stays the most recently used and is the
+last thing dropped, so filling the map with fresh keys is not a way to buy your
+own tokens back. `test/rate-limit.test.ts` pins that.
+
+## 14. The throttle in #13 paced the proxy, not the caller
+
+**Severity: high — the fix for #13, as first written, was a denial of service on
+the admin.**
+
+Found by running the compose stack, which is the only place it exists.
+
+`request.ip` is the socket's peer address, and nothing reaches this station
+directly: nginx is in front of it under compose, the platform edge is in
+production. So every caller alive shared one bucket. Five wrong passwords a
+minute from anyone on the internet and the admin could never sign in — and
+because the gate is checked *before* the password comparison (which is the one
+thing about #13 that must not change), the correct password was refused right
+along with the guesses.
+
+Every unit test passed, because `app.inject` gives each call the same loopback
+address and the tests were written asserting one caller. The direct-port check
+passed too. It only shows up with a proxy in the path, and the only way to see
+it was to bring the stack up and read the `ip` the server logged: `172.26.0.3`,
+the web container, on every request.
+
+Fixed with `trustProxy` on the Fastify instance, configurable via `TRUST_PROXY`
+and defaulting to true because both supported deployments sit behind a proxy —
+the codebase already trusts that proxy for `X-Forwarded-Proto` when deciding
+whether the session cookie gets `Secure`, so this is the same trust, written
+down. Verified through nginx: an attacker's address is throttled while a
+different address behind the same proxy signs in untouched, and the logs now
+carry real client addresses.
+
+The trade this makes, deliberately: anything that can reach the origin directly
+can claim to be any address it likes, and so can rotate past the throttle. That
+is why the origin port must not be published to the internet — it is published
+in `docker-compose.yml` for curl and the QA scripts, on a host port that is not
+meant to be exposed. `TRUST_PROXY=false` is the setting for a station with
+nothing in front of it.
+
+Worth remembering: a limiter is only as good as its key, and the key was the one
+part of it no test could see.
 
 ## Verified, and not a problem
 

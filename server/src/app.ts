@@ -37,6 +37,10 @@ export interface BuildAppOptions {
   chatHistoryLimit?: number
   chatBurst?: number
   chatRefillMs?: number
+  joinBurst?: number
+  joinRefillMs?: number
+  signInBurst?: number
+  signInRefillMs?: number
 }
 
 export async function buildApp({
@@ -50,10 +54,21 @@ export async function buildApp({
   chatHistoryLimit,
   chatBurst,
   chatRefillMs,
+  joinBurst,
+  joinRefillMs,
+  signInBurst,
+  signInRefillMs,
 }: BuildAppOptions): Promise<FastifyInstance> {
   await ensureStorageDirs(config)
 
-  const app = Fastify({ logger: logger ?? true, bodyLimit: 1024 * 1024 })
+  // trustProxy so `request.ip` is the caller rather than whatever proxy is in
+  // front — see Config.trustProxy. The sign-in throttle is keyed on it, and one
+  // bucket shared by everyone behind the proxy would be a lockout, not a limit.
+  const app = Fastify({
+    logger: logger ?? true,
+    bodyLimit: 1024 * 1024,
+    trustProxy: config.trustProxy,
+  })
 
   // Before the routes: everything registered after this inherits the handlers,
   // so a schema rejection on /api/playback answers in the same shape the
@@ -77,7 +92,7 @@ export async function buildApp({
   const sessionId = openSession(db)
   const chat = new ChatLog({ db, sessionId, historyLimit: chatHistoryLimit })
 
-  await app.register(adminRoutes({ config }))
+  await app.register(adminRoutes({ config, signInBurst, signInRefillMs }))
   await app.register(uploadRoutes({ config, db }))
   await app.register(mediaRoutes({ config, db }))
   await app.register(playbackRoutes({ config, db, station }))
@@ -91,6 +106,8 @@ export async function buildApp({
     closeGraceMs,
     chatBurst,
     chatRefillMs,
+    joinBurst,
+    joinRefillMs,
     log: app.log,
   })
 

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_KEPT_MESSAGES,
   MESSAGE_MAX_LENGTH,
+  chatRefusal,
+  draftAfterRefusal,
   isSendableMessage,
   mergeMessages,
   normalizeMessageText,
@@ -87,5 +89,53 @@ describe('mergeMessages', () => {
   it('starts from nothing without complaining', () => {
     expect(mergeMessages([], [])).toEqual([])
     expect(mergeMessages([], [message(1)]).map((m) => m.id)).toEqual([1])
+  })
+})
+
+/**
+ * What a listener is told when the room would not take what they said.
+ *
+ * The socket answers a refused `say` with an error frame and nothing else — no
+ * echo, no id, nothing that arrives in the conversation. Before this, the client
+ * dropped that frame on the floor: the composer had already been cleared
+ * optimistically, so a message the server declined left an empty box and an
+ * unchanged conversation, which on screen is exactly what saying something
+ * successfully looks like.
+ */
+describe('a message the room refused', () => {
+  it('explains itself for every refusal a composer can cause', () => {
+    for (const code of ['slow_down', 'not_joined', 'no_chat', 'message_too_long', 'empty_message'] as const) {
+      const notice = chatRefusal(code)
+      expect(notice, code).not.toBeNull()
+      // The point of the line is that it was not sent, not the code itself.
+      expect(notice).toMatch(/not sent/i)
+    }
+  })
+
+  it('says nothing about refusals the listener did not cause', () => {
+    // A frame this client got wrong is a bug to fix, not news for the person
+    // using it — and putting it on screen would be blaming them for it.
+    expect(chatRefusal('unrecognised_message')).toBeNull()
+    expect(chatRefusal('command_over_http')).toBeNull()
+    expect(chatRefusal('nickname_required')).toBeNull()
+  })
+
+  it('hands the unsent text back to an empty composer', () => {
+    expect(draftAfterRefusal('', 'what I actually typed')).toBe('what I actually typed')
+  })
+
+  it('never types over something newer', () => {
+    // The refused text is recoverable — it is still in the conversation nobody
+    // had, or can be typed again. What is in the box right now is not.
+    expect(draftAfterRefusal('already onto the next thing', 'the refused one')).toBe(
+      'already onto the next thing',
+    )
+  })
+
+  it('leaves the composer alone when nothing was waiting on an answer', () => {
+    // A refusal for something other than a message — the socket refusing a
+    // malformed frame — must not put stale text into the box.
+    expect(draftAfterRefusal('half a thought', null)).toBe('half a thought')
+    expect(draftAfterRefusal('', null)).toBe('')
   })
 })

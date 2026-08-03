@@ -1,6 +1,14 @@
 import type { Db, MessageRow } from './db.js'
 
 /**
+ * Chat was the first thing here worth pacing, so the token bucket was written
+ * in this file. It is not chat-specific — the admin sign-in gate needs the same
+ * shape — so it now lives in `lib/rate-limit.ts` and is re-exported here for
+ * everything that already knew where to find it.
+ */
+export { type RateLimitOptions, RateLimit } from './lib/rate-limit.js'
+
+/**
  * The room's chat.
  *
  * Unlike playback and the queue, this one is written down: PLAN.md puts
@@ -121,45 +129,3 @@ export class ChatLog {
   }
 }
 
-export interface RateLimitOptions {
-  /** How many messages can be sent back to back. */
-  burst: number
-  /** How long one message costs to earn back. */
-  refillMs: number
-  now?: () => number
-}
-
-/**
- * A token bucket, per socket.
- *
- * Chat is the first thing a listener can send that the server writes down, so
- * it is the first thing worth pacing: without this, one client in a loop is an
- * unbounded row count and a broadcast storm to everyone else. A bucket rather
- * than a fixed window because the natural way to chat is a burst of short lines
- * and then nothing, which a window either refuses or barely limits.
- */
-export class RateLimit {
-  readonly #burst: number
-  readonly #refillMs: number
-  readonly #now: () => number
-  #tokens: number
-  #last: number
-
-  constructor({ burst, refillMs, now = Date.now }: RateLimitOptions) {
-    this.#burst = burst
-    this.#refillMs = refillMs
-    this.#now = now
-    this.#tokens = burst
-    this.#last = now()
-  }
-
-  /** True if this message is allowed, and spends the token if so. */
-  take(): boolean {
-    const at = this.#now()
-    this.#tokens = Math.min(this.#burst, this.#tokens + (at - this.#last) / this.#refillMs)
-    this.#last = at
-    if (this.#tokens < 1) return false
-    this.#tokens -= 1
-    return true
-  }
-}

@@ -7,6 +7,8 @@ import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { isAdminRoute } from './lib/admin.js'
 import { seekTo } from './lib/audio-element.js'
 import {
+  chatRefusal,
+  draftAfterRefusal,
   formatTime,
   isSendableMessage,
   MESSAGE_MAX_LENGTH,
@@ -23,6 +25,7 @@ import { expectedPositionSeconds, formatClock } from './lib/position.js'
 import {
   artworkUrl,
   type ChatMessage,
+  type ErrorMessage,
   type Listener,
   type QueueEntry,
   type ServerMessage,
@@ -47,8 +50,18 @@ export function App() {
   // The clock needs to see pongs but the station owns the socket, so the
   // handler goes through a ref to break what would otherwise be a cycle.
   const routeToClock = useRef<(message: ServerMessage) => void>(() => undefined)
-  const { status, state, queue, listeners, messages, connection, applyState, applyQueue } =
-    useStation(undefined, (message) => routeToClock.current(message))
+  const {
+    status,
+    state,
+    queue,
+    listeners,
+    messages,
+    socketError,
+    clearSocketError,
+    connection,
+    applyState,
+    applyQueue,
+  } = useStation(undefined, (message) => routeToClock.current(message))
   const admin = useAdminRoute()
   const clock = useServerClock(connection, { connected: status === 'connected' })
   // Only once tuned in: a socket is open from the moment the page loads, and a
@@ -192,7 +205,13 @@ export function App() {
           nothing in it says who is out there or what they are saying. */}
       {joined && <Listeners listeners={listeners} />}
       {joined && (
-        <Chat messages={messages} connection={connection} live={status === 'connected'} />
+        <Chat
+          messages={messages}
+          connection={connection}
+          live={status === 'connected'}
+          refusal={socketError}
+          clearRefusal={clearSocketError}
+        />
       )}
 
       {/* Owned imperatively — React never sets currentTime or calls play(). */}
@@ -276,6 +295,9 @@ interface ChatProps {
   connection: StationConnection | null
   /** False while reconnecting — a send would go on the floor unannounced. */
   live: boolean
+  /** The last thing the socket refused, if anything. */
+  refusal: { error: ErrorMessage; seq: number } | null
+  clearRefusal(): void
 }
 
 /**
@@ -288,9 +310,11 @@ interface ChatProps {
  * no local-only line that a refused message would leave sitting there looking
  * sent.
  */
-function Chat({ messages, connection, live }: ChatProps) {
+function Chat({ messages, connection, live, refusal, clearRefusal }: ChatProps) {
   const [draft, setDraft] = useState('')
   const list = useRef<HTMLOListElement>(null)
+  // What went out and has not been answered, so a refusal can hand it back.
+  const unanswered = useRef<string | null>(null)
 
   // Follow the conversation. Reading back through it is a scroll away, but a
   // new line arriving should not leave the listener looking at an old one.
@@ -299,13 +323,32 @@ function Chat({ messages, connection, live }: ChatProps) {
     if (element) element.scrollTop = element.scrollHeight
   }, [messages])
 
+  // A refused message is not a sent message, so give the text back rather than
+  // leaving the listener to retype something they watched disappear. Keyed on
+  // the sequence number, so a second identical refusal is still a refusal.
+  //
+  // Only into a composer they have not started refilling: whatever they are
+  // typing now is newer than whatever was refused, and restoring over the top
+  // of it would destroy the one thing here that isn't recoverable.
+  const seq = refusal?.seq
+  useEffect(() => {
+    if (seq === undefined) return
+    const text = unanswered.current
+    unanswered.current = null
+    setDraft((current) => draftAfterRefusal(current, text))
+  }, [seq])
+
   function say(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const text = normalizeMessageText(draft)
     if (text.length === 0 || !connection || !live) return
+    clearRefusal()
+    unanswered.current = text
     connection.send({ type: 'say', text })
     setDraft('')
   }
+
+  const refusalNotice = refusal ? chatRefusal(refusal.error.code) : null
 
   return (
     <section className="chat" data-testid="chat">
@@ -324,6 +367,11 @@ function Chat({ messages, connection, live }: ChatProps) {
             </li>
           ))}
         </ol>
+      )}
+      {refusalNotice && (
+        <p className="chat__refusal" role="status" data-testid="chat-refusal">
+          {refusalNotice}
+        </p>
       )}
       <form className="chat__form" onSubmit={say}>
         <label className="chat__label" htmlFor="chat-input">

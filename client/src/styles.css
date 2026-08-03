@@ -286,6 +286,14 @@ body {
   color: var(--muted);
 }
 
+/* Sits between the conversation and the composer, where the message that was
+   refused would have appeared if it had been taken. */
+.chat__refusal {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: #ff8080;
+}
+
 /* Tall enough to be a conversation, capped so it never pushes the decks off
    the screen — the station is what the page is for. */
 .chat__list {

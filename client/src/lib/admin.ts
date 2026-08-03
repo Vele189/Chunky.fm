@@ -39,6 +39,24 @@ export class AdminError extends Error {
   }
 }
 
+/**
+ * What the station said, when it is something worth repeating to the admin.
+ *
+ * Every 4xx message in this API is written for whoever is holding it wrong and
+ * says nothing private — that is the contract `lib/errors.ts` keeps, and why
+ * 5xx messages are replaced rather than repeated. So a refusal the station
+ * wrote is shown as written, and anything else — a 500, a network failure, a
+ * response that was not this API at all — is null for the caller to summarise.
+ *
+ * Without this, a throttled sign-in reads as "could not reach the station",
+ * which sends the admin looking for a network problem that is not there.
+ */
+export function refusalMessage(err: unknown): string | null {
+  if (!(err instanceof AdminError)) return null
+  if (err.status < 400 || err.status >= 500) return null
+  return err.message
+}
+
 export interface AdminApiOptions {
   /** Injected in tests; the browser supplies the real one. */
   fetch?: typeof globalThis.fetch

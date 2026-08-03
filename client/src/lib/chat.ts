@@ -1,4 +1,4 @@
-import type { ChatMessage } from './protocol.js'
+import type { ChatMessage, SocketErrorCode } from './protocol.js'
 
 /**
  * The client's half of chat: what to keep, and what is worth sending.
@@ -55,4 +55,49 @@ export function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]): 
 /** Wall-clock time of a message, for the listener reading it. */
 export function formatTime(at: number, locale?: string): string {
   return new Date(at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * What to tell a listener whose message the room would not take.
+ *
+ * Keyed on the code rather than shown as the server's own words: `message` is
+ * written for whoever is holding the API wrong, and "slow down" on its own next
+ * to an empty composer does not say the thing that actually matters — that what
+ * they typed was not sent.
+ *
+ * Null for anything that is not about a message they tried to send. A refusal
+ * for a malformed frame is a bug in this client, not news for the person using
+ * it, and putting it on screen would be blaming them for it.
+ */
+export function chatRefusal(code: SocketErrorCode): string | null {
+  switch (code) {
+    case 'slow_down':
+      return 'Not sent — you are saying things faster than the room will take them.'
+    case 'not_joined':
+      return 'Not sent — the station has not finished putting you in the room yet.'
+    case 'no_chat':
+      return 'Not sent — this station has no chat.'
+    case 'message_too_long':
+      return 'Not sent — that message is too long.'
+    case 'empty_message':
+      return 'Not sent — there was nothing in that message.'
+    default:
+      return null
+  }
+}
+
+/**
+ * What the composer should hold after a refusal.
+ *
+ * A refused message is not a sent message, so the text goes back rather than
+ * being lost — the composer is cleared optimistically the moment something is
+ * sent, and without this a message the server declined simply vanishes, which
+ * on screen is indistinguishable from having said it.
+ *
+ * Never over the top of something newer: whatever the listener has started
+ * typing since is the one thing here that cannot be recovered from anywhere.
+ */
+export function draftAfterRefusal(current: string, unanswered: string | null): string {
+  if (unanswered === null) return current
+  return current === '' ? unanswered : current
 }

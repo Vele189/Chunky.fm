@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { mergeMessages } from '../lib/chat.js'
 import type {
   ChatMessage,
+  ErrorMessage,
   Listener,
   PlaybackSnapshot,
   QueueEntry,
@@ -24,6 +25,17 @@ export interface Station {
   listeners: Listener[] | null
   /** The conversation, oldest first. Empty until the first chat frame arrives. */
   messages: ChatMessage[]
+  /**
+   * The last thing the socket refused, and a sequence number that goes up on
+   * every refusal.
+   *
+   * The counter is what makes two identical refusals in a row — "slow down",
+   * then "slow down" again — distinguishable, so whatever is showing them can
+   * react to the second one. Without it a repeat is the same value and nothing
+   * downstream ever hears about it. Null until something is refused.
+   */
+  socketError: { error: ErrorMessage; seq: number } | null
+  clearSocketError(): void
   connection: StationConnection | null
   /**
    * Fold in state the server just handed back over HTTP.
@@ -48,6 +60,7 @@ export function useStation(
   const [queue, setQueue] = useState<QueueEntry[] | null>(null)
   const [listeners, setListeners] = useState<Listener[] | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [socketError, setSocketError] = useState<{ error: ErrorMessage; seq: number } | null>(null)
   const [connection, setConnection] = useState<StationConnection | null>(null)
 
   // Kept in a ref so a changing handler doesn't tear down the socket.
@@ -67,6 +80,13 @@ export function useStation(
         if (message.type === 'chat') {
           setMessages((current) => mergeMessages(current, message.messages))
         }
+        // Kept rather than dropped. A refusal is the *only* thing the server
+        // says about a frame that went nowhere — a rate-limited message would
+        // otherwise leave the composer cleared and nothing on screen, which
+        // reads exactly like having said something.
+        if (message.type === 'error') {
+          setSocketError((current) => ({ error: message, seq: (current?.seq ?? 0) + 1 }))
+        }
         messageHandler.current?.(message)
       },
     })
@@ -83,6 +103,18 @@ export function useStation(
     [],
   )
   const applyQueue = useCallback((entries: QueueEntry[]) => setQueue(entries), [])
+  const clearSocketError = useCallback(() => setSocketError(null), [])
 
-  return { status, state, queue, listeners, messages, connection, applyState, applyQueue }
+  return {
+    status,
+    state,
+    queue,
+    listeners,
+    messages,
+    socketError,
+    clearSocketError,
+    connection,
+    applyState,
+    applyQueue,
+  }
 }

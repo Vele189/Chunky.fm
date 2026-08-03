@@ -6,6 +6,7 @@ import { type Listener, Presence } from './presence.js'
 import {
   type ServerMessage,
   chatMessages,
+  errorMessage,
   parseClientMessage,
   presenceMessage,
   queueMessage,
@@ -33,6 +34,10 @@ export interface RealtimeOptions {
   chatBurst?: number
   /** How long one of those costs to earn back. */
   chatRefillMs?: number
+  /** Roster-changing joins a socket may send back to back. */
+  joinBurst?: number
+  /** How long one of those costs to earn back. */
+  joinRefillMs?: number
   log?: RealtimeLogger
 }
 
@@ -51,6 +56,13 @@ const DEFAULT_CLOSE_GRACE_MS = 1_000
 /** A few lines in a row is how people talk; a stream of them is not. */
 const DEFAULT_CHAT_BURST = 5
 const DEFAULT_CHAT_REFILL_MS = 2_000
+/**
+ * A socket names itself once, and again only if the listener changes their mind
+ * — so this is generous for anything a person does, and the first thing a script
+ * renaming itself in a loop runs into.
+ */
+const DEFAULT_JOIN_BURST = 5
+const DEFAULT_JOIN_REFILL_MS = 5_000
 
 function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
@@ -79,6 +91,8 @@ export function attachRealtime({
   closeGraceMs = DEFAULT_CLOSE_GRACE_MS,
   chatBurst = DEFAULT_CHAT_BURST,
   chatRefillMs = DEFAULT_CHAT_REFILL_MS,
+  joinBurst = DEFAULT_JOIN_BURST,
+  joinRefillMs = DEFAULT_JOIN_REFILL_MS,
   log,
 }: RealtimeOptions): RealtimeHandle {
   const { playback, queue } = station
@@ -121,16 +135,16 @@ export function attachRealtime({
    */
   function say(socket: WebSocket, listenerId: number, limit: RateLimit, text: string): void {
     if (!chat) {
-      send(socket, { type: 'error', message: 'this station has no chat' })
+      send(socket, errorMessage('no_chat', 'this station has no chat'))
       return
     }
     const nickname = presence.nicknameOf(listenerId)
     if (nickname === null) {
-      send(socket, { type: 'error', message: 'name yourself before saying anything' })
+      send(socket, errorMessage('not_joined', 'name yourself before saying anything'))
       return
     }
     if (!limit.take()) {
-      send(socket, { type: 'error', message: 'slow down' })
+      send(socket, errorMessage('slow_down', 'slow down'))
       return
     }
 
@@ -140,6 +154,32 @@ export function attachRealtime({
     broadcast(chatMessages([message]))
   }
 
+  /**
+   * Puts a socket on the roster under a name, and tells the room.
+   *
+   * Paced, because this is the one frame a listener can send that costs every
+   * *other* listener something: a roster goes out to all of them each time one
+   * changes. Unpaced, a single socket renaming itself in a loop is a broadcast
+   * to the whole room per frame — the cheapest way in there is to make the
+   * station shout at everyone, and it needs no nickname, no password and no
+   * chat to do it.
+   *
+   * A join that names a socket what it is already called is free, because it
+   * broadcasts nothing: only a change to the roster spends a token. That keeps a
+   * client that re-sends its name — on a reconnect, or a render it didn't mean —
+   * from being charged for saying nothing.
+   */
+  function join(socket: WebSocket, listenerId: number, limit: RateLimit, nickname: string): void {
+    if (presence.nicknameOf(listenerId) === nickname) return
+    if (!limit.take()) {
+      send(socket, errorMessage('slow_down', 'slow down'))
+      return
+    }
+    // Everyone, including the joiner: the roster they are now on is the same
+    // frame the rest of the room gets, so there is one code path.
+    if (presence.join(listenerId, nickname)) broadcastPresence()
+  }
+
   wss.on('connection', (socket) => {
     responsive.add(socket)
     const listenerId = nextListenerId++
@@ -147,6 +187,7 @@ export function attachRealtime({
     // a bucket that outlived one would have to be cleaned up after sockets that
     // never come back.
     const chatLimit = new RateLimit({ burst: chatBurst, refillMs: chatRefillMs })
+    const joinLimit = new RateLimit({ burst: joinBurst, refillMs: joinRefillMs })
 
     // Drop straight into the moment: the snapshot alone is enough to align.
     send(socket, stateMessage(playback.snapshot()))
@@ -163,7 +204,7 @@ export function attachRealtime({
     socket.on('message', (raw) => {
       const parsed = parseClientMessage(raw.toString())
       if (!parsed.ok) {
-        send(socket, { type: 'error', message: parsed.error })
+        send(socket, errorMessage(parsed.code, parsed.error))
         return
       }
       const { message } = parsed
@@ -171,11 +212,7 @@ export function attachRealtime({
         // Same clock that stamps startedAt — see PlaybackState.now().
         send(socket, { type: 'pong', t0: message.t0, t1: playback.now() })
       }
-      if (message.type === 'join' && presence.join(listenerId, message.nickname)) {
-        // Everyone, including the joiner: the roster they are now on is the
-        // same frame the rest of the room gets, so there is one code path.
-        broadcastPresence()
-      }
+      if (message.type === 'join') join(socket, listenerId, joinLimit, message.nickname)
       if (message.type === 'say') say(socket, listenerId, chatLimit, message.text)
     })
 

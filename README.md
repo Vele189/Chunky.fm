@@ -172,7 +172,13 @@ code path as joining at 0:00.
 | `{ type: 'presence', listeners }` | On connect, and whenever someone joins, leaves or renames. |
 | `{ type: 'chat', messages }` | On connect (the tail of the conversation), and one per new message. |
 | `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
-| `{ type: 'error', message }` | Unrecognised frame; the connection stays open. |
+| `{ type: 'error', code, message }` | Anything the socket refused; the connection stays open. |
+
+`code` is machine-readable and `message` is prose, the same split as the `error`
+field on every HTTP refusal — a client telling `slow_down` from `not_joined`
+switches on the code rather than matching on English. The codes are
+`unrecognised_message`, `nickname_required`, `message_too_long`,
+`empty_message`, `command_over_http`, `not_joined`, `no_chat` and `slow_down`.
 
 The queue and the roster are separate messages rather than fields on `state`:
 playback changes several times a track and neither of the others does, so
@@ -185,6 +191,15 @@ folding them together would ship both on every seek.
 | `{ type: 'ping', t0 }` | Clock offset probe. |
 | `{ type: 'join', nickname }` | "Here is what to call me." |
 | `{ type: 'say', text }` | "Say this to the room." |
+
+Both of the frames a listener can repeat are paced per socket: five messages
+back to back (one earned back every 2s), and five *roster-changing* joins (one
+every 5s). A join that renames a socket to what it is already called broadcasts
+nothing and so costs nothing, which is what keeps a reconnect's rejoin free.
+Over the limit is a `slow_down` refusal, not a dropped connection. Chat is
+paced because the server writes it down; `join` because a roster goes out to
+every listener each time one changes, which is otherwise the cheapest way for
+one anonymous socket to make the station shout at the whole room.
 
 Browser clocks are wrong by seconds, so a client measures the offset NTP-style:
 send `t0`, receive `t1`, note `t2` on arrival, then
@@ -304,9 +319,18 @@ browser presents from then on.
 
 | Route | What |
 |---|---|
-| `POST /api/admin/session` | `{password}` → `200 {ok, expiresAt}` and the cookie, or `401`. |
+| `POST /api/admin/session` | `{password}` → `200 {ok, expiresAt}` and the cookie, `401`, or `429` once guesses are coming too fast. |
 | `GET /api/admin/session` | `{ok: true}` while the session holds, `401` once it doesn't. |
 | `DELETE /api/admin/session` | Signs out. Needs no credentials — dropping a cookie you hold isn't an attack. |
+
+Sign-in is paced per caller: five wrong passwords, then one earned back a
+minute, answered `429` with a `Retry-After`. The password is the whole admin
+gate, so the rate at which a stranger can test guesses is part of how strong it
+is — unpaced, a passphrase that would take centuries offline is a few hours of
+HTTP. Only *wrong* attempts are charged, and getting it right clears the count,
+so an admin who fumbles their own password twice is not then locked out of
+their own station. Nothing else is throttled: a session already issued is a
+credential its holder has proved.
 
 ```bash
 curl -c jar -X POST -H 'content-type: application/json' \
@@ -547,6 +571,7 @@ npm run qa:playback    # seeks, pause/resume/seek/stop, track changes
 npm run qa:reconnect   # kills the server underneath a listener and restarts it
 npm run qa:presence    # three listeners watch each other arrive and leave
 npm run qa:chat        # they talk, one joins late, one tries to speak as another
+npm run qa:chat-refusal # types faster than the room will take, and checks what it says
 npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 ```
 

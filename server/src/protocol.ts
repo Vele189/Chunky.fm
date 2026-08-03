@@ -54,9 +54,42 @@ export interface PongMessage {
   t1: number
 }
 
+/**
+ * Why the socket refused something.
+ *
+ * Snake_case, and the same idea as the `error` field on every HTTP refusal (see
+ * `lib/errors.ts`): a code the client switches on, with `message` left as prose
+ * for a human. The HTTP surface was made uniform first; a socket refusal that
+ * carried only prose left the other half of the API unreadable by machine, so a
+ * client wanting to tell "you are going too fast" from "say who you are" had to
+ * match on English.
+ */
+export type SocketErrorCode =
+  /** The frame was not JSON, or not a frame this station knows. */
+  | 'unrecognised_message'
+  /** A join whose nickname was empty once normalised. */
+  | 'nickname_required'
+  /** A message longer than the station stores. Refused, not truncated. */
+  | 'message_too_long'
+  /** A message that was nothing but whitespace. */
+  | 'empty_message'
+  /** A command-shaped frame. Those go over HTTP, where the admin gate is. */
+  | 'command_over_http'
+  /** Said something before saying who they are. */
+  | 'not_joined'
+  /** This station was built without a chat. */
+  | 'no_chat'
+  /** Doing that faster than the station will take it. */
+  | 'slow_down'
+
 export interface ErrorMessage {
   type: 'error'
+  code: SocketErrorCode
   message: string
+}
+
+export function errorMessage(code: SocketErrorCode, message: string): ErrorMessage {
+  return { type: 'error', code, message }
 }
 
 export type ServerMessage =
@@ -128,7 +161,7 @@ const COMMAND_TYPES = new Set([
 /** Either a message the socket will act on, or why it won't. */
 export type ParsedClientMessage =
   | { ok: true; message: ClientMessage }
-  | { ok: false; error: string }
+  | { ok: false; code: SocketErrorCode; error: string }
 
 export function stateMessage(snapshot: PlaybackSnapshot): StateMessage {
   return { type: 'state', ...snapshot }
@@ -147,7 +180,11 @@ export function chatMessages(messages: ChatMessage[]): ChatMessagesMessage {
 }
 
 export function parseClientMessage(raw: string): ParsedClientMessage {
-  const unrecognised = { ok: false, error: 'unrecognised message' } as const
+  const unrecognised = {
+    ok: false,
+    code: 'unrecognised_message',
+    error: 'unrecognised message',
+  } as const
 
   let parsed: unknown
   try {
@@ -167,7 +204,9 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
     // and the roster goes out to every listener — so the rules are enforced on
     // the side that owns the roster.
     const nickname = normalizeNickname(message.nickname)
-    if (nickname.length === 0) return { ok: false, error: 'a nickname is required' }
+    if (nickname.length === 0) {
+      return { ok: false, code: 'nickname_required', error: 'a nickname is required' }
+    }
     return { ok: true, message: { type: 'join', nickname } }
   }
   if (message.type === 'say' && typeof message.text === 'string') {
@@ -175,14 +214,24 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
     // be typed, so anything longer arrived from something hand-written, and
     // quietly publishing half of what it said would be worse than saying no.
     if ([...message.text].length > MESSAGE_MAX_LENGTH) {
-      return { ok: false, error: `a message is at most ${MESSAGE_MAX_LENGTH} characters` }
+      return {
+        ok: false,
+        code: 'message_too_long',
+        error: `a message is at most ${MESSAGE_MAX_LENGTH} characters`,
+      }
     }
     const text = normalizeMessageText(message.text)
-    if (text.length === 0) return { ok: false, error: 'an empty message is not a message' }
+    if (text.length === 0) {
+      return { ok: false, code: 'empty_message', error: 'an empty message is not a message' }
+    }
     return { ok: true, message: { type: 'say', text } }
   }
   if (typeof message.type === 'string' && COMMAND_TYPES.has(message.type)) {
-    return { ok: false, error: 'admin commands go over HTTP, not the socket' }
+    return {
+      ok: false,
+      code: 'command_over_http',
+      error: 'admin commands go over HTTP, not the socket',
+    }
   }
   return unrecognised
 }
