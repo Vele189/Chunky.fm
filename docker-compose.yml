@@ -1,0 +1,43 @@
+name: chunky-fm
+
+services:
+  # The backend, and the database with it: chunky.fm's store is SQLite, opened
+  # in-process by better-sqlite3, so there is no database server to run. What
+  # would be a db container elsewhere is the `chunky_data` volume here — it
+  # holds chunky.sqlite alongside the audio and artwork it refers to, and the
+  # three have to stay together to mean anything.
+  server:
+    build:
+      context: ./server
+    image: chunky-fm/server:latest
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required — copy .env.example to .env and set it}
+      AUDIO_STORAGE_DIR: /data
+      HOST: 0.0.0.0
+      PORT: "3000"
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-157286400}
+    volumes:
+      - chunky_data:/data
+    ports:
+      # Exposed so curl and the QA scripts can reach the API directly; the
+      # browser never needs it, everything goes through the web service.
+      # Host side stays off 3000 — see .env.example.
+      - "${SERVER_PORT:-13000}:3000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./client
+    image: chunky-fm/web:latest
+    ports:
+      - "${WEB_PORT:-18173}:80"
+    depends_on:
+      server:
+        # nginx resolves the upstream lazily, but waiting for health means the
+        # first page load already has an API behind it.
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  chunky_data:
+    name: chunky-fm_data

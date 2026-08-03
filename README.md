@@ -4,6 +4,55 @@ A single, permanent radio station. See [PLAN.md](PLAN.md) for the design.
 
 ## Running it
 
+In Docker, the whole station from one command:
+
+```bash
+./start.sh
+```
+
+It writes a `.env` with a generated `ADMIN_PASSWORD` the first time, builds both
+images, and waits until the station answers before telling you where it is —
+<http://localhost:18173> to listen, `/#admin` to run it.
+
+```bash
+./start.sh --build    # rebuild both images first
+./start.sh logs       # follow them
+./start.sh status     # what is up, and how healthy
+./start.sh stop       # stop, keeping the library
+```
+
+The published ports are `18173` (station) and `13000` (API) rather than the
+`5173`/`3000` that `npm run dev` uses, so the container stack and a dev server
+can be up at the same time without fighting over a port. Change them in `.env`
+(`WEB_PORT`, `SERVER_PORT`), or per-run: `WEB_PORT=18080 ./start.sh`. If either
+is already taken, `start.sh` says so by name instead of letting Docker fail with
+a container id.
+
+### What is actually running
+
+Two containers, not three. chunky.fm's database is SQLite, opened in-process by
+the server through `better-sqlite3` — there is no database server to start, and
+the thing a `db` container would own is a volume instead:
+
+| | |
+|---|---|
+| `server` | Fastify — API, `/ws`, and the SQLite file it opens directly. Always :3000 inside the network; published on `SERVER_PORT`. |
+| `web` | nginx serving the built client, proxying `/api` and `/ws` to `server` — the same job Vite's dev proxy does, so the client ships unchanged. |
+| `chunky-fm_data` | The volume behind `AUDIO_STORAGE_DIR`: `chunky.sqlite`, audio, artwork. |
+
+Those three parts of the volume only mean anything together — the rows name
+files, so back it up whole:
+
+```bash
+docker run --rm -v chunky-fm_data:/data -v "$PWD:/out" busybox \
+  tar czf /out/chunky-backup.tar.gz -C /data .
+```
+
+`./start.sh stop` and `--build` both leave it alone. To actually throw the
+library away: `docker compose down && docker volume rm chunky-fm_data`.
+
+### Without Docker
+
 Two processes in development — the server, and Vite for the client:
 
 ```bash
