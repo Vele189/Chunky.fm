@@ -10,6 +10,7 @@ import type {
   StateMessage,
   Wish,
 } from '../lib/protocol.js'
+import type { SkipTally } from '../lib/skips.js'
 import { StationConnection, type StationStatus } from '../lib/station.js'
 import { mergeWishes } from '../lib/wishes.js'
 
@@ -37,6 +38,16 @@ export interface Station {
    * in the book the admin reads.
    */
   myWishes: Wish[]
+  /**
+   * How much of the room wants the next one, and whether this listener is part
+   * of it. Null until the first tally arrives.
+   *
+   * `voted` is the station's answer rather than this page's memory of what it
+   * sent: a vote lives on the socket that cast it, so a reconnect starts this
+   * listener back at not-voted, and the frame that arrives on the new socket
+   * says exactly that.
+   */
+  skips: SkipTally | null
   /**
    * The last thing the socket refused, and a sequence number that goes up on
    * every refusal.
@@ -73,6 +84,7 @@ export function useStation(
   const [listeners, setListeners] = useState<Listener[] | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [myWishes, setMyWishes] = useState<Wish[]>([])
+  const [skips, setSkips] = useState<SkipTally | null>(null)
   const [socketError, setSocketError] = useState<SocketRefusal | null>(null)
   const [connection, setConnection] = useState<StationConnection | null>(null)
 
@@ -97,6 +109,12 @@ export function useStation(
         // sees: their own, as it was written down.
         if (message.type === 'wished') {
           setMyWishes((current) => mergeWishes(current, [message.wish]))
+        }
+        // Replaced, not merged: the tally is the whole truth about now, and the
+        // frame that carries it is addressed to this socket — `voted` in it is
+        // this listener's own standing, not the room's.
+        if (message.type === 'skips') {
+          setSkips({ trackId: message.trackId, votes: message.votes, voted: message.voted })
         }
         // Kept rather than dropped. A refusal is the *only* thing the server
         // says about a frame that went nowhere — a rate-limited message would
@@ -130,6 +148,7 @@ export function useStation(
     listeners,
     messages,
     myWishes,
+    skips,
     socketError,
     clearSocketError,
     connection,

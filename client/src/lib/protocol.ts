@@ -97,6 +97,23 @@ export interface WishedMessage {
   wish: Wish
 }
 
+/**
+ * How much of the room wants the next one, and where this listener stands.
+ *
+ * Sent on connect, on every vote, and whenever a track change clears the tally.
+ * `voted` is the station's answer rather than something the page remembers: a
+ * vote is dropped when the socket that cast it closes, so a client that kept its
+ * own flag would show a vote across a reconnect that the station no longer
+ * holds. `trackId` is what the votes are about — a tally never outlives the
+ * track it was cast against.
+ */
+export interface SkipsMessage {
+  type: 'skips'
+  trackId: number | null
+  votes: number
+  voted: boolean
+}
+
 export interface PongMessage {
   type: 'pong'
   t0: number
@@ -122,17 +139,18 @@ export type SocketErrorCode =
   | 'wish_too_long'
   | 'empty_wish'
   | 'no_wishes'
+  | 'nothing_playing'
   | 'slow_down'
 
 /**
  * Which frame a refusal is about, when it is about one.
  *
  * `slow_down` and `not_joined` can each come from more than one thing a
- * listener typed, and there are two composers on the page. Without this, a wish
- * refused for pace also puts "not sent" under the chat — telling someone a
- * message they never sent went nowhere.
+ * listener did — two composers and a vote button, all on one socket. Without
+ * this, a wish refused for pace also puts "not sent" under the chat, telling
+ * someone a message they never sent went nowhere.
  */
-export type SocketErrorAbout = 'join' | 'say' | 'wish'
+export type SocketErrorAbout = 'join' | 'say' | 'wish' | 'vote'
 
 export interface ErrorMessage {
   type: 'error'
@@ -169,6 +187,7 @@ export type ServerMessage =
   | PresenceMessage
   | ChatMessagesMessage
   | WishedMessage
+  | SkipsMessage
   | PongMessage
   | ErrorMessage
 
@@ -198,7 +217,25 @@ export interface WishMessage {
   text: string
 }
 
-export type ClientMessage = PingMessage | JoinMessage | SayMessage | WishMessage
+/**
+ * "I'd rather hear something else."
+ *
+ * Not `skip` — that is the admin's command, over HTTP, and this is not it. The
+ * frame carries where the listener now stands rather than "toggle", so sending
+ * it twice leaves one vote: safe to retry, and safe to tap twice on a slow
+ * connection. Which track it is about is the station's answer, not this page's.
+ */
+export interface VoteSkipMessage {
+  type: 'vote_skip'
+  voted: boolean
+}
+
+export type ClientMessage =
+  | PingMessage
+  | JoinMessage
+  | SayMessage
+  | WishMessage
+  | VoteSkipMessage
 
 export const audioUrl = (track: Track) => `/api/audio/${track.filename}`
 export const artworkUrl = (track: Track) =>

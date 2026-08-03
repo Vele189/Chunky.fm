@@ -32,6 +32,13 @@ import {
   type Wish,
   refusalAbout,
 } from './lib/protocol.js'
+import {
+  type SkipTally,
+  skipTallyLabel,
+  tallyFor,
+  voteButtonLabel,
+  voteRefusal,
+} from './lib/skips.js'
 import type { StationConnection } from './lib/station.js'
 import {
   isSendableWish,
@@ -66,6 +73,7 @@ export function App() {
     listeners,
     messages,
     myWishes,
+    skips,
     socketError,
     clearSocketError,
     connection,
@@ -210,6 +218,20 @@ export function App() {
         </section>
       )}
 
+      {/* Under the track it is about, and only for listeners: the admin has a
+          Skip button, and voting for something you can simply do is theatre.
+          The tally still reaches the panel — see AdminPanel. */}
+      {joined && !admin && track && (
+        <SkipVote
+          tally={tallyFor(skips, track.id)}
+          listeners={listeners?.length ?? 0}
+          connection={connection}
+          live={status === 'connected'}
+          refusal={refusalAbout(socketError, 'vote')}
+          clearRefusal={clearSocketError}
+        />
+      )}
+
       {joined && !admin && <UpNext queue={queue} />}
       {/* Shown on the admin route too: the panel has the queue covered, but
           nothing in it says who is out there or what they are saying. */}
@@ -245,6 +267,7 @@ export function App() {
         <AdminPanel
           state={state}
           queue={queue}
+          skips={tallyFor(skips, track?.id ?? null)}
           status={status}
           applyState={applyState}
           applyQueue={applyQueue}
@@ -308,6 +331,70 @@ function Listeners({ listeners }: { listeners: Listener[] | null }) {
           </li>
         ))}
       </ul>
+    </section>
+  )
+}
+
+interface SkipVoteProps {
+  /** As the station last described it, and only ever about the track that is on. */
+  tally: SkipTally
+  /** How many are in the room — the tally is a fraction of this. */
+  listeners: number
+  connection: StationConnection | null
+  live: boolean
+  /** The last refusal that was about a vote, if any. */
+  refusal: SocketRefusal | null
+  clearRefusal(): void
+}
+
+/**
+ * Voting on what is on.
+ *
+ * PLAN.md's last social piece: the room can say it would rather hear something
+ * else, everyone can see how many agree, and the count starts again with every
+ * track. What it deliberately is *not* is a control — no threshold here advances
+ * the station, because the socket carries nothing that drives the decks and a
+ * quorum that did would be exactly that, wearing a vote as a disguise. The tally
+ * is the room telling whoever runs the decks something; what happens next is a
+ * person's decision.
+ *
+ * Nothing is rendered optimistically, for the reason the chat renders nothing
+ * optimistically: the count and the state of this listener's own vote both come
+ * back from the station, so what is on screen is what the station holds — even
+ * across a reconnect, which drops the vote this page just cast.
+ */
+function SkipVote({ tally, listeners, connection, live, refusal, clearRefusal }: SkipVoteProps) {
+  function vote() {
+    if (!connection || !live) return
+    // Only this control's own notice — see the same line under the wishes.
+    if (refusal) clearRefusal()
+    // Where the listener now stands, not "toggle": a second press of a button
+    // that has not caught up yet leaves one vote rather than cancelling itself.
+    connection.send({ type: 'vote_skip', voted: !tally.voted })
+  }
+
+  const refusalNotice = refusal ? voteRefusal(refusal.error.code) : null
+
+  return (
+    <section className="skips" data-testid="skips">
+      <p className="skips__tally" data-testid="skips-tally" data-votes={tally.votes}>
+        {skipTallyLabel(tally.votes, listeners)}
+      </p>
+      <button
+        type="button"
+        className={`skips__vote${tally.voted ? ' skips__vote--in' : ''}`}
+        data-testid="skips-vote"
+        aria-pressed={tally.voted}
+        disabled={!live}
+        onClick={vote}
+      >
+        {voteButtonLabel(tally.voted)}
+      </button>
+      {refusalNotice && (
+        <p className="skips__refusal" role="status" data-testid="skips-refusal">
+          {refusalNotice}
+        </p>
+      )}
     </section>
   )
 }

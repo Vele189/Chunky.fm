@@ -5,6 +5,7 @@ import type {
   PresenceMessage,
   QueueMessage,
   ServerMessage,
+  SkipsMessage,
   StateMessage,
   WishedMessage,
 } from '../src/protocol.js'
@@ -93,6 +94,16 @@ export class TestClient {
 
   async nextChat(timeoutMs?: number): Promise<ChatMessagesMessage> {
     return (await this.waitFor((m) => m.type === 'chat', timeoutMs)) as ChatMessagesMessage
+  }
+
+  async nextSkips(timeoutMs?: number): Promise<SkipsMessage> {
+    return (await this.waitFor((m) => m.type === 'skips', timeoutMs)) as SkipsMessage
+  }
+
+  /** Votes on what is on, and waits for the tally that comes back. */
+  async voteSkip(voted = true): Promise<SkipsMessage> {
+    this.send({ type: 'vote_skip', voted })
+    return this.nextSkips()
   }
 
   /** Says something and waits for it to come back around. */

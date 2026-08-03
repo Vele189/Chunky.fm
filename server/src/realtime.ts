@@ -10,10 +10,12 @@ import {
   parseClientMessage,
   presenceMessage,
   queueMessage,
+  skipsMessage,
   stateMessage,
   wishedMessage,
 } from './protocol.js'
 import type { QueueEntry } from './queue.js'
+import { type SkipTally, SkipVotes } from './skips.js'
 import type { Station } from './station.js'
 import type { WishBook } from './wishes.js'
 
@@ -46,6 +48,10 @@ export interface RealtimeOptions {
   wishBurst?: number
   /** How long one of those costs to earn back. */
   wishRefillMs?: number
+  /** Tally-changing skip votes a socket may cast back to back. */
+  voteBurst?: number
+  /** How long one of those costs to earn back. */
+  voteRefillMs?: number
   log?: RealtimeLogger
 }
 
@@ -53,6 +59,8 @@ export interface RealtimeHandle {
   clientCount(): number
   /** Who has named themselves — a subset of the sockets `clientCount` counts. */
   listeners(): Listener[]
+  /** How much of the room wants the next one, and what they want it off. */
+  skips(): SkipTally
   broadcast(message: ServerMessage): void
   close(): Promise<void>
 }
@@ -79,6 +87,13 @@ const DEFAULT_JOIN_REFILL_MS = 5_000
  */
 const DEFAULT_WISH_BURST = 3
 const DEFAULT_WISH_REFILL_MS = 30_000
+/**
+ * Paced like `join`, and for the same reason: a vote that lands is a frame to
+ * every listener in the room. Changing your mind twice about one song is a
+ * person; doing it forty times is a socket making the station shout.
+ */
+const DEFAULT_VOTE_BURST = 5
+const DEFAULT_VOTE_REFILL_MS = 5_000
 
 function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
@@ -112,6 +127,8 @@ export function attachRealtime({
   joinRefillMs = DEFAULT_JOIN_REFILL_MS,
   wishBurst = DEFAULT_WISH_BURST,
   wishRefillMs = DEFAULT_WISH_REFILL_MS,
+  voteBurst = DEFAULT_VOTE_BURST,
+  voteRefillMs = DEFAULT_VOTE_REFILL_MS,
   log,
 }: RealtimeOptions): RealtimeHandle {
   const { playback, queue } = station
@@ -119,6 +136,10 @@ export function attachRealtime({
   // Sockets that have answered the most recent heartbeat.
   const responsive = new WeakSet<WebSocket>()
   const presence = new Presence()
+  const skips = new SkipVotes()
+  // Which listener a socket is, for the one frame that is addressed rather than
+  // broadcast: the skip tally tells each client whether its own vote is in.
+  const listenerIds = new WeakMap<WebSocket, number>()
   // Identifies a socket in the roster for as long as it lasts. Not reused: a
   // listener who reconnects is a new row, which is what "left and came back"
   // should look like.
@@ -141,6 +162,27 @@ export function attachRealtime({
     if (draining) return
     log?.info({ present: presence.size, listeners: wss.clients.size }, 'broadcasting presence')
     broadcast(presenceMessage(presence.list()))
+  }
+
+  /**
+   * The tally, to everyone, with each socket told where *it* stands.
+   *
+   * The one thing here sent socket by socket instead of serialised once. It has
+   * to be: `voted` is a different answer per listener, and the alternative — a
+   * bare count, with each client remembering its own vote — is a client that
+   * shows a vote the station threw away when the socket carrying it closed.
+   * Under thirty listeners, that is thirty small writes on a button press.
+   */
+  function broadcastSkips(): void {
+    // Nothing to tell a room that is on its way out — see `broadcastPresence`.
+    if (draining) return
+    const tally = skips.tally()
+    log?.info({ ...tally, listeners: wss.clients.size }, 'broadcasting skip votes')
+    for (const socket of wss.clients) {
+      if (socket.readyState !== WebSocket.OPEN) continue
+      const id = listenerIds.get(socket)
+      send(socket, skipsMessage(tally, id !== undefined && skips.has(id)))
+    }
   }
 
   /**
@@ -207,6 +249,46 @@ export function attachRealtime({
   }
 
   /**
+   * Records where a listener stands on what is playing, and tells the room.
+   *
+   * The roster is the gate, as it is for chat and wishes: a vote is one
+   * listener's, and a socket that has not said who it is is not a listener. It
+   * is also the only thing keeping the count meaningful — without it, a script
+   * could open sockets and vote from each without ever appearing in the room the
+   * tally is a fraction of.
+   *
+   * A vote that changes nothing — the same answer twice, a withdrawal from
+   * somebody who never voted — broadcasts nothing and so costs nothing, exactly
+   * as a re-join under an unchanged name does. That is what makes a client safe
+   * to retry with, and what stops a double tap from spending a listener's pace.
+   *
+   * And it stops here. The tally is broadcast; nothing in this function reaches
+   * for `station.advance()`, however many votes are in.
+   */
+  function voteSkip(
+    socket: WebSocket,
+    listenerId: number,
+    limit: RateLimit,
+    voted: boolean,
+  ): void {
+    if (presence.nicknameOf(listenerId) === null) {
+      send(socket, errorMessage('not_joined', 'name yourself before voting', 'vote'))
+      return
+    }
+    if (playback.track === null) {
+      send(socket, errorMessage('nothing_playing', 'there is nothing on to skip', 'vote'))
+      return
+    }
+    if (voted === skips.has(listenerId)) return
+    if (!limit.take()) {
+      send(socket, errorMessage('slow_down', 'slow down', 'vote'))
+      return
+    }
+
+    if (skips.cast(listenerId, voted)) broadcastSkips()
+  }
+
+  /**
    * Puts a socket on the roster under a name, and tells the room.
    *
    * Paced, because this is the one frame a listener can send that costs every
@@ -235,12 +317,14 @@ export function attachRealtime({
   wss.on('connection', (socket) => {
     responsive.add(socket)
     const listenerId = nextListenerId++
+    listenerIds.set(socket, listenerId)
     // Per socket, not per listener: the thing being paced is a connection, and
     // a bucket that outlived one would have to be cleaned up after sockets that
     // never come back.
     const chatLimit = new RateLimit({ burst: chatBurst, refillMs: chatRefillMs })
     const joinLimit = new RateLimit({ burst: joinBurst, refillMs: joinRefillMs })
     const wishLimit = new RateLimit({ burst: wishBurst, refillMs: wishRefillMs })
+    const voteLimit = new RateLimit({ burst: voteBurst, refillMs: voteRefillMs })
 
     // Drop straight into the moment: the snapshot alone is enough to align.
     send(socket, stateMessage(playback.snapshot()))
@@ -248,6 +332,10 @@ export function attachRealtime({
     // Who is already here. This socket is not on that list yet — it has not
     // said who it is — and joins it the moment it does.
     send(socket, presenceMessage(presence.list()))
+    // What the room already thinks of what is on. A fresh socket has voted for
+    // nothing, which is also the truth after a reconnect: the vote this listener
+    // cast went with the socket that cast it.
+    send(socket, skipsMessage(skips.tally(), false))
     // The conversation so far, so a joiner walks into a room mid-sentence
     // rather than an empty one. Also how a reconnecting client fills the gap.
     if (chat) send(socket, chatMessages(chat.recent()))
@@ -268,6 +356,7 @@ export function attachRealtime({
       if (message.type === 'join') join(socket, listenerId, joinLimit, message.nickname)
       if (message.type === 'say') say(socket, listenerId, chatLimit, message.text)
       if (message.type === 'wish') wish(socket, listenerId, wishLimit, message.text)
+      if (message.type === 'vote_skip') voteSkip(socket, listenerId, voteLimit, message.voted)
     })
 
     // Every way a socket can end arrives here — a tab closing, a network that
@@ -275,6 +364,10 @@ export function attachRealtime({
     // only place a listener needs to be taken off the roster.
     socket.on('close', () => {
       if (presence.leave(listenerId)) broadcastPresence()
+      // A vote leaves with the listener who cast it. Otherwise a tally counts
+      // people who are not in the room any more, and can sit above the roster
+      // it is a fraction of — "4 of 3 want the next one".
+      if (skips.cast(listenerId, false)) broadcastSkips()
     })
 
     socket.on('error', (err) => {
@@ -289,6 +382,10 @@ export function attachRealtime({
       'broadcasting playback state',
     )
     broadcast(stateMessage(snapshot))
+    // After the state, not before: the tally is about whatever is on now, and a
+    // client that was told the votes were cleared before it knew the track had
+    // changed would show an empty tally against the song that just ended.
+    if (skips.retarget(snapshot.track?.id ?? null)) broadcastSkips()
   }
   playback.on('change', onChange)
 
@@ -353,6 +450,7 @@ export function attachRealtime({
   return {
     clientCount: () => wss.clients.size,
     listeners: () => presence.list(),
+    skips: () => skips.tally(),
     broadcast,
     close() {
       closing ??= shutdown()

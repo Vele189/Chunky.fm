@@ -44,6 +44,8 @@ export interface BuildAppOptions {
   joinRefillMs?: number
   wishBurst?: number
   wishRefillMs?: number
+  voteBurst?: number
+  voteRefillMs?: number
   signInBurst?: number
   signInRefillMs?: number
 }
@@ -63,6 +65,8 @@ export async function buildApp({
   joinRefillMs,
   wishBurst,
   wishRefillMs,
+  voteBurst,
+  voteRefillMs,
   signInBurst,
   signInRefillMs,
 }: BuildAppOptions): Promise<FastifyInstance> {
@@ -122,6 +126,8 @@ export async function buildApp({
     joinRefillMs,
     wishBurst,
     wishRefillMs,
+    voteBurst,
+    voteRefillMs,
     log: app.log,
   })
 

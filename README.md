@@ -172,6 +172,7 @@ code path as joining at 0:00.
 | `{ type: 'presence', listeners }` | On connect, and whenever someone joins, leaves or renames. |
 | `{ type: 'chat', messages }` | On connect (the tail of the conversation), and one per new message. |
 | `{ type: 'wished', wish }` | To the socket that made a wish, and to nobody else. |
+| `{ type: 'skips', trackId, votes, voted }` | On connect, on every skip vote, and whenever a track change clears the tally. |
 | `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
 | `{ type: 'error', code, message, about? }` | Anything the socket refused; the connection stays open. |
 
@@ -180,12 +181,15 @@ field on every HTTP refusal — a client telling `slow_down` from `not_joined`
 switches on the code rather than matching on English. The codes are
 `unrecognised_message`, `nickname_required`, `message_too_long`,
 `empty_message`, `command_over_http`, `not_joined`, `no_chat`, `wish_too_long`,
-`empty_wish`, `no_wishes` and `slow_down`. `about` names the frame a refusal was
-for — `'join'`, `'say'` or `'wish'` — and is absent only when the frame was too
-malformed to say what it was trying to do; a page with two composers needs it to
-put "not sent" under the right one.
+`empty_wish`, `no_wishes`, `nothing_playing` and `slow_down`. `about` names the
+frame a refusal was for — `'join'`, `'say'`, `'wish'` or `'vote'` — and is absent
+only when the frame was too malformed to say what it was trying to do; a page
+with two composers and a vote button needs it to put "not sent" under the right
+one.
 
 `wished` is the only message here that is not a broadcast. See **Wishes**.
+`skips` is the only one sent socket by socket rather than serialised once, since
+`voted` is a different answer for each listener. See **Skip votes**.
 
 The queue and the roster are separate messages rather than fields on `state`:
 playback changes several times a track and neither of the others does, so
@@ -199,11 +203,13 @@ folding them together would ship both on every seek.
 | `{ type: 'join', nickname }` | "Here is what to call me." |
 | `{ type: 'say', text }` | "Say this to the room." |
 | `{ type: 'wish', text }` | "I'd love to hear this." Goes to the admin, not the room. |
+| `{ type: 'vote_skip', voted }` | "I'd rather hear something else." Counts; skips nothing. |
 
 Every frame a listener can repeat is paced per socket, with a bucket of its own:
 five messages back to back (one earned back every 2s), five *roster-changing*
-joins (one every 5s), and three wishes (one every 30s). Separate buckets, so
-being refused a wish never costs a listener their voice. A join that renames a
+joins (one every 5s), three wishes (one every 30s), and five *tally-changing*
+skip votes (one every 5s). Separate buckets, so being refused a wish never costs
+a listener their voice. A join that renames a
 socket to what it is already called broadcasts nothing and so costs nothing,
 which is what keeps a reconnect's rejoin free. Over the limit is a `slow_down`
 refusal, not a dropped connection. Chat and wishes are paced because the server
@@ -230,10 +236,11 @@ mutation lives behind `requireAdmin` on an HTTP route.
 state outward, and inward only what has nowhere else to go: a clock probe, which
 is meaningless anywhere but on the connection it is measuring; a nickname, which
 lives exactly as long as the socket does; a chat message, which has to reach
-everyone in the room the moment it is sent; and a wish, which has to be signed
-with the name its own socket is listed under — a `POST` would have to be told
-who was asking, and a request that names its own author can name someone else.
-None of the four drives the station. An admin action wants
+everyone in the room the moment it is sent; a wish, which has to be signed with
+the name its own socket is listed under — a `POST` would have to be told who was
+asking, and a request that names its own author can name someone else; and a
+skip vote, which is that same signature problem plus a tally that has to reach
+the room live. None of the five drives the station. An admin action wants
 exactly what HTTP already gives it: a request/response pair, a status code that
 says whether it worked, and — for upload — a body measured in megabytes. Adding
 a second, authenticated command channel over the socket would duplicate that
@@ -371,6 +378,48 @@ every socket refusal that is about something a listener typed carries
 for pace also puts "not sent" under the chat — telling someone a message they
 never sent went nowhere.
 
+### Skip votes
+
+The room's opinion of what is on, and PLAN.md's line for it in full: *tally skip
+votes as a set of socket IDs; clear it on every track change.* A listener sends
+`{type: 'vote_skip', voted}` and everyone gets back
+`{type: 'skips', trackId, votes, voted}`.
+
+**A vote skips nothing.** No threshold here advances the station, and that is a
+decision rather than an unfinished half: the socket carries nothing that drives
+the decks, and a quorum that did would be exactly such a frame wearing a vote as
+a disguise. PLAN.md puts *see skip tallies* on the admin surface — the tally is
+the room telling whoever runs the decks something, and what happens next is a
+person pressing Skip. A unanimous room is still a room.
+
+**The votes are a set of listeners, not a counter.** One listener counts once
+however many times they press it, and the frame carries where they now stand
+rather than "toggle" — so a retry after a refusal, or a second tap on a slow
+connection, leaves one vote instead of cancelling itself. A vote that changes
+nothing broadcasts nothing and so costs nothing, exactly as a re-join under an
+unchanged nickname does.
+
+**A vote lives on the socket that cast it.** It is dropped when that socket
+closes, which keeps a tally from counting people who left the room it is a
+fraction of — otherwise "4 of 3 want the next one". That is also why `voted` is
+the station's answer rather than something the page remembers: a client that kept
+its own flag would show a vote across a reconnect that the station let go with
+the old socket. It is the one field that differs per listener, and the reason
+this frame is the only one sent socket by socket instead of serialised once.
+Under thirty listeners, a stringify each is cheaper than a lie.
+
+**Cleared on every track change, and only on a track change.** A pause, a seek
+and a resume all leave the same song on, so the tally survives them — a count
+that a seek could wipe would let the person the room is voting at clear it by
+nudging the needle. The tally goes out *after* the state that cleared it, so no
+client blanks the count against the song that just ended.
+
+The roster is the gate, as it is for chat and wishes: a socket that has not said
+who it is cannot vote, or the count would stop being a fraction of the room —
+a script could open sockets and vote from each without ever appearing in it.
+Voting with nothing on the decks is refused by code (`nothing_playing`) rather
+than counted against whatever comes on next.
+
 ### `POST /api/playback` — admin
 
 Driving the decks by hand: `{action: 'play'|'pause'|'resume'|'seek'|'stop'
@@ -474,6 +523,7 @@ from then on the page follows the station.
 - `lib/nickname.ts` — the nickname: normalising it, and keeping it in localStorage.
 - `lib/chat.ts` — what is worth sending, and folding a batch into what is shown.
 - `lib/wishes.ts` — what is worth asking for, and what a refused wish should say.
+- `lib/skips.ts` — the skip tally: what it is about, and how it reads.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
 - `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
 - `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
@@ -563,6 +613,25 @@ The two composers share one socket, so each is handed only the refusals that
 carry its own `about` — `refusalAbout` in `lib/protocol.ts` is that filter, and
 it is what to look at if a refusal ever appears under the wrong box.
 
+### Voting on what's on
+
+Under the track, a line saying how much of the room wants the next one and a
+button to join them — `3 of 4 want the next one`, as a fraction of the roster
+rendered below it, because a bare count means nothing. Three out of four is the
+room; three out of thirty is three people.
+
+Nothing here is optimistic. Both the count *and* whether this listener's own vote
+is in come back from the station, so the button never claims a vote the station
+does not hold — including after a reconnect, which drops it. The tally is
+rendered only against the track it names (`tallyFor` in `lib/skips.ts`), so the
+moment between a `state` frame and the `skips` frame that follows it shows no
+count rather than the last song's.
+
+The vote button is the listener page's alone: the admin panel has a Skip button,
+and voting for something you can simply do is theatre. The tally still reaches
+the panel, next to that button — which is the only thing in the system that acts
+on it.
+
 ### Admin mode
 
 The controls live at **`/#admin`** (`/admin` works too, wherever the page is
@@ -605,6 +674,7 @@ frame the panel reorders, seen from the other side.
 | Queue ↑ ↓ ✕ | `POST /api/queue/move`, `DELETE /api/queue/:entryId`. |
 | Library **Queue** / **Play now** | Queue behind what's playing, or take the decks. |
 | Wishes **Mark handled** / **Undo** | `POST /api/wishes/:wishId`. A note to yourself, and reversible. |
+| Skip votes | Read-only, next to Skip. What the room wants; pressing it is still yours. |
 
 The wish book sits above the library, because a wish is read and then answered
 by queueing something from the list below it. It is the one part of the panel
@@ -655,7 +725,7 @@ doing anything if the dead zone drops below 40ms.
 ### Verifying it
 
 Sync — and anything else that only happens in a real browser — is what unit
-tests cannot judge, so there are eight scripts that drive real Chrome. Each needs
+tests cannot judge, so there are nine scripts that drive real Chrome. Each needs
 a running server, a running Vite dev server, and at least two uploaded tracks
 (one of them a few minutes long).
 
@@ -668,6 +738,7 @@ npm run qa:presence    # three listeners watch each other arrive and leave
 npm run qa:chat        # they talk, one joins late, one tries to speak as another
 npm run qa:chat-refusal # types faster than the room will take, and checks what it says
 npm run qa:wishes      # one listener asks, the room hears nothing, the admin marks it off
+npm run qa:skips       # three listeners vote, the room agrees, the next track starts fresh
 npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 ```
 
@@ -683,7 +754,10 @@ It checks that both listeners hear every command, show the same queue as the
 admin without a reload, and never grow a control. `qa:wishes` drives three tabs
 for the property no unit test can see: that a wish reaches the person who asked
 and the admin, and nobody else — with a chat message sent the same second as the
-control, so "the other listener saw nothing" means something.
+control, so "the other listener saw nothing" means something. `qa:skips` drives
+three for the properties that are about the room: one number three pages agree
+on live, each of them with its own answer to "is my vote in?", a vote that leaves
+with the tab that cast it, and a unanimous room that skips nothing.
 
 Between them these caught five bugs that every unit test passed straight
 through — see `docs/qa-notes.md`.

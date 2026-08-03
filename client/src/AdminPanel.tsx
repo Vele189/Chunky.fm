@@ -4,12 +4,19 @@ import { AdminError, type AdminApi, type PlaybackCommand, type WishBook } from '
 import { formatTime } from './lib/chat.js'
 import { formatClock } from './lib/position.js'
 import type { PlaybackSnapshot, QueueEntry, StateMessage, Track } from './lib/protocol.js'
+import { type SkipTally, skipVotesLabel } from './lib/skips.js'
 import type { StationStatus } from './lib/station.js'
 
 export interface AdminPanelProps {
   /** The station's own broadcast — the panel never keeps its own copy. */
   state: StateMessage | null
   queue: QueueEntry[] | null
+  /**
+   * What the room thinks of what is on. PLAN.md puts "see skip tallies" on the
+   * admin surface, and this is it: a number next to the Skip button, because
+   * the vote does not press it.
+   */
+  skips: SkipTally
   status: StationStatus
   /** Fold a command's own answer straight in; see useStation. */
   applyState(snapshot: PlaybackSnapshot): void
@@ -27,7 +34,14 @@ export interface AdminPanelProps {
  * the listener already has open, so a command issued from another tab, or a
  * track ending on its own, moves this panel too.
  */
-export function AdminPanel({ state, queue, status, applyState, applyQueue }: AdminPanelProps) {
+export function AdminPanel({
+  state,
+  queue,
+  skips,
+  status,
+  applyState,
+  applyQueue,
+}: AdminPanelProps) {
   const { status: session, api, error: sessionError, signIn, signOut } = useAdminSession()
 
   if (session === 'checking') {
@@ -47,6 +61,7 @@ export function AdminPanel({ state, queue, status, applyState, applyQueue }: Adm
       api={api}
       state={state}
       queue={queue}
+      skips={skips}
       connected={status === 'connected'}
       applyState={applyState}
       applyQueue={applyQueue}
@@ -106,6 +121,7 @@ interface ControlsProps {
   api: AdminApi
   state: StateMessage | null
   queue: QueueEntry[] | null
+  skips: SkipTally
   connected: boolean
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
@@ -116,6 +132,7 @@ function Controls({
   api,
   state,
   queue,
+  skips,
   connected,
   applyState,
   applyQueue,
@@ -282,6 +299,18 @@ function Controls({
         <span className="admin__now" data-testid="admin-now">
           {track ? `${track.title}${paused ? ' (paused)' : ''}` : 'off air'}
         </span>
+        {/* Next to Skip, because that is the button it is about — and the only
+            thing that acts on it. A tally is what the room wants; whether the
+            track comes off is still this panel's decision. */}
+        {track && (
+          <span
+            className={`admin__votes${skips.votes > 0 ? ' admin__votes--wanted' : ''}`}
+            data-testid="admin-skip-votes"
+            data-votes={skips.votes}
+          >
+            {skipVotesLabel(skips.votes)}
+          </span>
+        )}
       </div>
 
       <h3 className="admin__subheading">

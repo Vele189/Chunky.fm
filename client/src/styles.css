@@ -266,6 +266,62 @@ body {
   white-space: nowrap;
 }
 
+/* --- skip votes ------------------------------------------------------------
+ *
+ * Sits under the track it is about. One line of count and one button: the room
+ * saying what it wants, not a control — nothing here takes a track off.
+ */
+
+.skips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  border-top: 1px solid #26232e;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.skips__tally {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.skips__vote {
+  margin-left: auto;
+  border: 1px solid #2f2b39;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0.3rem 0.9rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.skips__vote:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+/* This listener's vote is in — the button now takes it back, and says so. */
+.skips__vote--in {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.skips__vote:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.skips__refusal {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ff8080;
+}
+
 /* --- wishes ---------------------------------------------------------------
  *
  * Deliberately quieter than the chat: a listener asks for one thing now and
@@ -583,6 +639,18 @@ body {
 .admin__now {
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.admin__votes {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
+/* Only once somebody has actually asked — a quiet room should not look like a
+   readout that needs answering. */
+.admin__votes--wanted {
+  color: var(--accent);
 }
 
 .admin__link {
