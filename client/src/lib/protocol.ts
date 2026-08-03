@@ -41,6 +41,18 @@ export interface QueueMessage {
   entries: QueueEntry[]
 }
 
+/** One listener on the roster. The id is the socket's, not the nickname's. */
+export interface Listener {
+  id: number
+  nickname: string
+}
+
+/** Who is listening. Sent on connect and whenever someone joins or leaves. */
+export interface PresenceMessage {
+  type: 'presence'
+  listeners: Listener[]
+}
+
 export interface PongMessage {
   type: 'pong'
   t0: number
@@ -52,14 +64,25 @@ export interface ErrorMessage {
   message: string
 }
 
-export type ServerMessage = StateMessage | QueueMessage | PongMessage | ErrorMessage
+export type ServerMessage =
+  | StateMessage
+  | QueueMessage
+  | PresenceMessage
+  | PongMessage
+  | ErrorMessage
 
 export interface PingMessage {
   type: 'ping'
   t0: number
 }
 
-export type ClientMessage = PingMessage
+/** "Here is what to call me." Sent after tuning in, and again on every reconnect. */
+export interface JoinMessage {
+  type: 'join'
+  nickname: string
+}
+
+export type ClientMessage = PingMessage | JoinMessage
 
 export const audioUrl = (track: Track) => `/api/audio/${track.filename}`
 export const artworkUrl = (track: Track) =>

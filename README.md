@@ -165,18 +165,20 @@ code path as joining at 0:00.
 |---|---|
 | `{ type: 'state', track, startedAt, pausedAt, serverTime }` | On connect, and on every playback change. |
 | `{ type: 'queue', entries }` | On connect, and on every queue change. |
+| `{ type: 'presence', listeners }` | On connect, and whenever someone joins, leaves or renames. |
 | `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
 | `{ type: 'error', message }` | Unrecognised frame; the connection stays open. |
 
-The queue is a separate message rather than a field on `state`: playback changes
-several times a track and the queue rarely does, so folding them together would
-ship the whole queue on every seek.
+The queue and the roster are separate messages rather than fields on `state`:
+playback changes several times a track and neither of the others does, so
+folding them together would ship both on every seek.
 
 **Client → server**
 
 | Message | Purpose |
 |---|---|
 | `{ type: 'ping', t0 }` | Clock offset probe. |
+| `{ type: 'join', nickname }` | "Here is what to call me." |
 
 Browser clocks are wrong by seconds, so a client measures the offset NTP-style:
 send `t0`, receive `t1`, note `t2` on arrival, then
@@ -185,8 +187,8 @@ sample with the lowest RTT** — the fastest round trip is the least contaminate
 by queueing delay. `t1` and `startedAt` are stamped from the same server clock,
 so the measured offset applies directly.
 
-Connections are anonymous and read-only: nothing anyone can send over the socket
-changes playback. That is also the socket's half of the admin gate — a socket
+Connections are read-only: nothing anyone can send over the socket changes
+playback. That is also the socket's half of the admin gate — a socket
 carrying a valid admin cookie gets no more than one carrying nothing, and frames
 that look like commands (`play`, `skip`, `enqueue`, …) are refused *by name*, so
 a client that tries is told where the controls actually are rather than left
@@ -194,7 +196,9 @@ guessing. There is no privileged frame here to authenticate, because every
 mutation lives behind `requireAdmin` on an HTTP route.
 
 **Commands go over HTTP, not the socket** — deliberately. The socket carries
-state outward and clock probes inward, and nothing else. An admin action wants
+state outward, and inward only what has nowhere else to go: a clock probe, which
+is meaningless anywhere but on the connection it is measuring, and a nickname,
+which lives exactly as long as the socket does. An admin action wants
 exactly what HTTP already gives it: a request/response pair, a status code that
 says whether it worked, and — for upload — a body measured in megabytes. Adding
 a second, authenticated command channel over the socket would duplicate that
@@ -205,6 +209,35 @@ be abused into mutating something.
 So the loop is: admin `POST`s, the server changes its state, and the change goes
 out to every client — including the admin's own page — on the socket they all
 already have open.
+
+### Presence
+
+The server keeps a socket → nickname map and broadcasts the whole roster
+whenever it changes. `listeners` is `[{id, nickname}]`, in join order.
+
+A socket is not a listener. A tab holds one open from the moment the page loads,
+which is before anyone has typed a name, so the roster is who has *said* who
+they are — `join` is what puts a listener on it, and the socket closing is what
+takes them off. There is no leave frame: closing is the only signal that also
+covers a tab closed, a laptop shut, and a network that simply stopped. A socket
+that vanishes without a close is dropped by the heartbeat, so a listener whose
+network died lingers for up to one heartbeat interval (30s) and no longer.
+
+The id is the socket's, which has two consequences worth knowing. Two listeners
+may pick the same nickname and are still two rows — the id is what keeps them
+apart, and what a client should key its list on. And a listener who reconnects
+comes back as a new row rather than reclaiming the old one: identity that a
+client could assert is identity a client could assert about *someone else*, and
+the roster is not worth an eviction primitive. Rosters go out whole rather than
+as joins and leaves, so a client renders the last frame and has nothing to
+reconcile.
+
+A `join` buys a row and nothing else. Nicknames are re-normalised server-side —
+collapsed, stripped of control characters, capped at 24 characters, and refused
+when what's left is empty — because the client's own normalising is a courtesy
+to the listener, not a guarantee to the server. Re-sending the name a socket
+already has costs no broadcast; sending a different one is a rename, and keeps
+the listener's place in the list.
 
 ### `POST /api/playback` — admin
 
@@ -304,6 +337,7 @@ from then on the page follows the station.
 - `lib/clock.ts` — clock offset estimation from ping/pong samples.
 - `lib/drift.ts` — what to do about an error of a given size.
 - `hooks/useServerClock.ts` — runs the handshake, exposes `serverNow()`.
+- `hooks/usePresence.ts` — says who this listener is, and says it again on reconnect.
 - `hooks/useSyncedAudio.ts` — aligns on every broadcast, and every 2s in between.
 - `AdminPanel.tsx` — the decks, for whoever runs the station.
 
@@ -329,6 +363,28 @@ what a listener finds when they come back is a name rather than whatever pasting
 went wrong. A browser that refuses storage — Safari's private mode throws on
 write, and blocked cookies throw on even touching `localStorage` — costs the
 listener a retype next visit and nothing else.
+
+### Who's listening
+
+Once tuned in, the page shows the room: everyone currently listening, by
+nickname, updating as people arrive and leave. It is the roster the socket
+broadcasts, rendered whole each time — rows keyed on the listener id, so two
+people called "sam" are two chips rather than one.
+
+The nickname reaches the server as a `join` frame sent *after* tuning in, not on
+connect: a socket opens with the page, and a name typed into the field is not
+yet someone in the room. `usePresence` waits for the connection to be open
+rather than merely to exist — a send on a socket that is still opening is thrown
+away in silence, and a join lost there would be a listener nobody can see, with
+nothing to retry it. It is the same trap the clock handshake fell into once,
+which is why both hooks are written against `connected` rather than `connection`.
+
+Hanging the join off `connected` is also what makes reconnection work: presence
+lives with the socket, a reconnect is a new socket, and the effect re-runs each
+time the connection comes back. So a listener who drops during an outage is put
+back on the roster by the same line that put them there in the first place, and
+a station that restarts finds its room refilling on its own. `npm run
+qa:presence` is that whole story, in three browsers.
 
 ### Admin mode
 
@@ -413,7 +469,7 @@ doing anything if the dead zone drops below 40ms.
 ### Verifying it
 
 Sync — and anything else that only happens in a real browser — is what unit
-tests cannot judge, so there are four scripts that drive real Chrome. Each needs
+tests cannot judge, so there are five scripts that drive real Chrome. Each needs
 a running server, a running Vite dev server, and at least two uploaded tracks
 (one of them a few minutes long).
 
@@ -422,13 +478,16 @@ cd client
 npm run verify:sync    # two listeners joining at different times stay together
 npm run qa:playback    # seeks, pause/resume/seek/stop, track changes
 npm run qa:reconnect   # kills the server underneath a listener and restarts it
+npm run qa:presence    # three listeners watch each other arrive and leave
 npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 ```
 
 They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
-`OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect` also
-starts and stops the server itself, so build it first (`cd server && npm run
-build`). `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
+`OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect` and
+`qa:presence` also start and stop the server itself, so build it first (`cd
+server && npm run build`) — telling a browser it is offline does *not* drop an
+established WebSocket, so taking the station away is the only way to test a
+disconnection for real. `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
 point it at something a few minutes long) and drives three tabs at once: an
 admin, a listener, and a second listener that joins after the queue was built.
 It checks that both listeners hear every command, show the same queue as the

@@ -12,7 +12,8 @@
     "verify:sync": "tsx scripts/two-browser-sync.ts",
     "qa:playback": "tsx scripts/qa-playback.ts",
     "qa:admin": "tsx scripts/qa-admin.ts",
-    "qa:reconnect": "tsx scripts/qa-reconnect.ts"
+    "qa:reconnect": "tsx scripts/qa-reconnect.ts",
+    "qa:presence": "tsx scripts/qa-presence.ts"
   },
   "dependencies": {
     "react": "^19.0.0",

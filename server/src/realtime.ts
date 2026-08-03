@@ -1,7 +1,14 @@
 import type { Server } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
 import type { PlaybackSnapshot } from './playback.js'
-import { type ServerMessage, parseClientMessage, queueMessage, stateMessage } from './protocol.js'
+import { type Listener, Presence } from './presence.js'
+import {
+  type ServerMessage,
+  parseClientMessage,
+  presenceMessage,
+  queueMessage,
+  stateMessage,
+} from './protocol.js'
 import type { QueueEntry } from './queue.js'
 import type { Station } from './station.js'
 
@@ -23,6 +30,8 @@ export interface RealtimeOptions {
 
 export interface RealtimeHandle {
   clientCount(): number
+  /** Who has named themselves — a subset of the sockets `clientCount` counts. */
+  listeners(): Listener[]
   broadcast(message: ServerMessage): void
   close(): Promise<void>
 }
@@ -39,12 +48,16 @@ function send(socket: WebSocket, message: ServerMessage): void {
 /**
  * Attaches the station's websocket surface to an existing HTTP server.
  *
- * Connections are anonymous and read-only, and that *is* the socket's half of
- * the admin gate: there is no privileged frame here to authenticate, because
- * every mutation lives behind `requireAdmin` on an HTTP route. A socket that
- * carries a valid admin cookie gets no more than one that carries nothing —
- * command-shaped frames are refused by name (see `parseClientMessage`), so the
- * only way to drive the station is a request that went through the gate.
+ * Connections are read-only, and that *is* the socket's half of the admin gate:
+ * there is no privileged frame here to authenticate, because every mutation
+ * lives behind `requireAdmin` on an HTTP route. A socket that carries a valid
+ * admin cookie gets no more than one that carries nothing — command-shaped
+ * frames are refused by name (see `parseClientMessage`), so the only way to
+ * drive the station is a request that went through the gate.
+ *
+ * A socket may name itself, and that is the whole of identity here: a nickname
+ * held in memory for as long as the socket lasts, which buys a row in the
+ * roster and no say over anything.
  */
 export function attachRealtime({
   server,
@@ -58,6 +71,13 @@ export function attachRealtime({
   const wss = new WebSocketServer({ server, path, maxPayload: MAX_PAYLOAD_BYTES })
   // Sockets that have answered the most recent heartbeat.
   const responsive = new WeakSet<WebSocket>()
+  const presence = new Presence()
+  // Identifies a socket in the roster for as long as it lasts. Not reused: a
+  // listener who reconnects is a new row, which is what "left and came back"
+  // should look like.
+  let nextListenerId = 1
+  // Set once shutdown starts, and read by the roster broadcast below.
+  let draining = false
 
   function broadcast(message: ServerMessage): void {
     // Serialise once, not once per listener.
@@ -67,12 +87,25 @@ export function attachRealtime({
     }
   }
 
+  function broadcastPresence(): void {
+    // Nothing to tell anyone during a shutdown: every socket left on the roster
+    // is on its way out, and announcing each departure to the others would be a
+    // roster broadcast per listener as the room empties.
+    if (draining) return
+    log?.info({ present: presence.size, listeners: wss.clients.size }, 'broadcasting presence')
+    broadcast(presenceMessage(presence.list()))
+  }
+
   wss.on('connection', (socket) => {
     responsive.add(socket)
+    const listenerId = nextListenerId++
 
     // Drop straight into the moment: the snapshot alone is enough to align.
     send(socket, stateMessage(playback.snapshot()))
     send(socket, queueMessage(queue.list()))
+    // Who is already here. This socket is not on that list yet — it has not
+    // said who it is — and joins it the moment it does.
+    send(socket, presenceMessage(presence.list()))
 
     socket.on('pong', () => responsive.add(socket))
 
@@ -87,6 +120,18 @@ export function attachRealtime({
         // Same clock that stamps startedAt — see PlaybackState.now().
         send(socket, { type: 'pong', t0: message.t0, t1: playback.now() })
       }
+      if (message.type === 'join' && presence.join(listenerId, message.nickname)) {
+        // Everyone, including the joiner: the roster they are now on is the
+        // same frame the rest of the room gets, so there is one code path.
+        broadcastPresence()
+      }
+    })
+
+    // Every way a socket can end arrives here — a tab closing, a network that
+    // vanished and was terminated by the heartbeat, a shutdown — so this is the
+    // only place a listener needs to be taken off the roster.
+    socket.on('close', () => {
+      if (presence.leave(listenerId)) broadcastPresence()
     })
 
     socket.on('error', (err) => {
@@ -128,6 +173,7 @@ export function attachRealtime({
   let closing: Promise<void> | null = null
 
   async function shutdown(): Promise<void> {
+    draining = true
     clearInterval(heartbeat)
     playback.off('change', onChange)
     queue.off('change', onQueueChange)
@@ -163,6 +209,7 @@ export function attachRealtime({
 
   return {
     clientCount: () => wss.clients.size,
+    listeners: () => presence.list(),
     broadcast,
     close() {
       closing ??= shutdown()

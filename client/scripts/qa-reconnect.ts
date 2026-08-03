@@ -3,15 +3,12 @@
  * page notices, recovers on its own, and resyncs when the station returns.
  *
  * This script owns the server process, so the server must be built first
- * (`cd server && npm run build`). Everything else comes from qa-env.
+ * (`cd server && npm run build`). Everything else — including starting and
+ * stopping the station — comes from qa-env.
  */
-import { type ChildProcess, spawn } from 'node:child_process'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import type { ChildProcess } from 'node:child_process'
 import { chromium } from 'playwright-core'
 import {
-  ADMIN_PASSWORD,
-  API_URL,
   AUDIO,
   type AudioState,
   CHROME_PATH,
@@ -20,43 +17,15 @@ import {
   PLAYING,
   STATUS,
   TRACK_ID,
+  health,
   playbackCommand,
+  startServer,
+  stopServer,
   tuneIn,
   wait,
 } from './qa-env.js'
 
-const HERE = path.dirname(fileURLToPath(import.meta.url))
-const SERVER_DIR = process.env.SERVER_DIR ?? path.resolve(HERE, '../../server')
-const STORAGE_DIR = process.env.AUDIO_STORAGE_DIR ?? path.resolve(SERVER_DIR, 'audio_storage')
-const PORT = new URL(API_URL).port || '3000'
-
 const checks = new Checks()
-
-async function health(expectUp: boolean, timeoutMs = 15_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    try {
-      await fetch(`${API_URL}/health`)
-      if (expectUp) return true
-    } catch {
-      if (!expectUp) return true
-    }
-    await wait(200)
-  }
-  return false
-}
-
-const startServer = (): ChildProcess =>
-  spawn('node', ['dist/index.js'], {
-    cwd: SERVER_DIR,
-    env: { ...process.env, ADMIN_PASSWORD, AUDIO_STORAGE_DIR: STORAGE_DIR, PORT },
-    stdio: 'ignore',
-  })
-
-const stopServer = (): Promise<void> =>
-  new Promise((resolve) => {
-    spawn('pkill', ['-f', 'dist/index\\.js']).on('exit', () => resolve())
-  })
 
 let restarted: ChildProcess | null = null
 const browser = await chromium.launch({

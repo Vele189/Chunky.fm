@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PlaybackSnapshot, QueueEntry, ServerMessage, StateMessage } from '../lib/protocol.js'
+import type {
+  Listener,
+  PlaybackSnapshot,
+  QueueEntry,
+  ServerMessage,
+  StateMessage,
+} from '../lib/protocol.js'
 import { StationConnection, type StationStatus } from '../lib/station.js'
 
 export function defaultStationUrl(): string {
@@ -12,6 +18,8 @@ export interface Station {
   state: StateMessage | null
   /** What's coming up. Null until the first queue frame arrives. */
   queue: QueueEntry[] | null
+  /** Who else is here. Null until the first roster arrives. */
+  listeners: Listener[] | null
   connection: StationConnection | null
   /**
    * Fold in state the server just handed back over HTTP.
@@ -34,6 +42,7 @@ export function useStation(
   const [status, setStatus] = useState<StationStatus>('connecting')
   const [state, setState] = useState<StateMessage | null>(null)
   const [queue, setQueue] = useState<QueueEntry[] | null>(null)
+  const [listeners, setListeners] = useState<Listener[] | null>(null)
   const [connection, setConnection] = useState<StationConnection | null>(null)
 
   // Kept in a ref so a changing handler doesn't tear down the socket.
@@ -47,6 +56,7 @@ export function useStation(
       onMessage: (message) => {
         if (message.type === 'state') setState(message)
         if (message.type === 'queue') setQueue(message.entries)
+        if (message.type === 'presence') setListeners(message.listeners)
         messageHandler.current?.(message)
       },
     })
@@ -64,5 +74,5 @@ export function useStation(
   )
   const applyQueue = useCallback((entries: QueueEntry[]) => setQueue(entries), [])
 
-  return { status, state, queue, connection, applyState, applyQueue }
+  return { status, state, queue, listeners, connection, applyState, applyQueue }
 }

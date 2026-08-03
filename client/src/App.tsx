@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { AdminPanel } from './AdminPanel.js'
+import { usePresence } from './hooks/usePresence.js'
 import { useServerClock } from './hooks/useServerClock.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
@@ -13,7 +14,7 @@ import {
   saveNickname,
 } from './lib/nickname.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
-import { artworkUrl, type QueueEntry, type ServerMessage } from './lib/protocol.js'
+import { artworkUrl, type Listener, type QueueEntry, type ServerMessage } from './lib/protocol.js'
 
 const STATUS_LABEL = {
   connecting: 'tuning in…',
@@ -33,12 +34,18 @@ export function App() {
   // The clock needs to see pongs but the station owns the socket, so the
   // handler goes through a ref to break what would otherwise be a cycle.
   const routeToClock = useRef<(message: ServerMessage) => void>(() => undefined)
-  const { status, state, queue, connection, applyState, applyQueue } = useStation(
+  const { status, state, queue, listeners, connection, applyState, applyQueue } = useStation(
     undefined,
     (message) => routeToClock.current(message),
   )
   const admin = useAdminRoute()
   const clock = useServerClock(connection, { connected: status === 'connected' })
+  // Only once tuned in: a socket is open from the moment the page loads, and a
+  // name typed into the field is not yet a listener in the room.
+  usePresence(connection, {
+    connected: status === 'connected',
+    nickname: joined ? nickname : null,
+  })
   // Assigned after commit, not during render — a render React throws away
   // must not leave a handler wired up behind it.
   useEffect(() => {
@@ -170,6 +177,9 @@ export function App() {
       )}
 
       {joined && !admin && <UpNext queue={queue} />}
+      {/* Shown on the admin route too: the panel has the queue covered, but
+          nothing in it says who is out there. */}
+      {joined && <Listeners listeners={listeners} />}
 
       {/* Owned imperatively — React never sets currentTime or calls play(). */}
       <audio ref={audioRef} preload="auto" />
@@ -210,6 +220,39 @@ function UpNext({ queue }: { queue: QueueEntry[] | null }) {
           </li>
         ))}
       </ol>
+    </section>
+  )
+}
+
+/**
+ * Who else is here.
+ *
+ * The roster arrives whole on every change rather than as joins and leaves, so
+ * there is nothing to reconcile: render what the last frame said. Rows are
+ * keyed on the socket's id, not the nickname, because two listeners are allowed
+ * to pick the same name and both of them should show up.
+ *
+ * Null before the first roster arrives, and empty for the moment between tuning
+ * in and this listener's own join landing — neither is worth a heading.
+ */
+function Listeners({ listeners }: { listeners: Listener[] | null }) {
+  if (!listeners || listeners.length === 0) return null
+
+  return (
+    <section className="listeners" data-testid="listeners">
+      <h2 className="listeners__heading">
+        Listening now
+        <span className="listeners__count" data-testid="listener-count">
+          {listeners.length}
+        </span>
+      </h2>
+      <ul className="listeners__list">
+        {listeners.map((listener) => (
+          <li key={listener.id} className="listeners__name" data-listener={listener.id}>
+            {listener.nickname}
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

@@ -193,6 +193,163 @@ describe('queue broadcast', () => {
   })
 })
 
+/**
+ * The acceptance test for presence, at the socket: several listeners come and
+ * go, and everyone still connected is told who is in the room each time.
+ */
+describe('presence', () => {
+  /** A listener at the point where it has read everything sent on connect. */
+  async function arrive(): Promise<TestClient> {
+    const [client] = await connect()
+    await Promise.all([client!.nextState(), client!.nextQueue(), client!.nextPresence()])
+    return client!
+  }
+
+  it('sends the roster on connect, before anyone has named themselves', async () => {
+    const [client] = await connect()
+
+    expect((await client!.nextPresence()).listeners).toEqual([])
+    expect(harness.app.realtime.listeners()).toEqual([])
+  })
+
+  it('puts a listener on the roster when they say who they are', async () => {
+    const client = await arrive()
+
+    const roster = await client.join('sam')
+
+    expect(roster.listeners.map((l) => l.nickname)).toEqual(['sam'])
+    expect(harness.app.realtime.listeners().map((l) => l.nickname)).toEqual(['sam'])
+  })
+
+  it('tells everyone already listening about a listener who joins', async () => {
+    const first = await arrive()
+    await first.join('first')
+
+    const [second] = await connect()
+    // What the newcomer is handed on connect already has the room in it.
+    expect((await second!.nextPresence()).listeners.map((l) => l.nickname)).toEqual(['first'])
+
+    second!.send({ type: 'join', nickname: 'second' })
+
+    for (const client of [first, second!]) {
+      expect((await client.nextPresence()).listeners.map((l) => l.nickname)).toEqual([
+        'first',
+        'second',
+      ])
+    }
+  })
+
+  it('tells everyone still listening about one who leaves', async () => {
+    const staying = await arrive()
+    const leaving = await arrive()
+    await staying.join('staying')
+    await leaving.nextPresence()
+    await leaving.join('leaving')
+    await staying.nextPresence()
+
+    await leaving.close()
+
+    expect((await staying.nextPresence()).listeners.map((l) => l.nickname)).toEqual(['staying'])
+    await expect.poll(() => harness.app.realtime.listeners()).toHaveLength(1)
+  })
+
+  it('keeps the roster right through several arrivals and departures', async () => {
+    const [a, b, c] = await Promise.all([arrive(), arrive(), arrive()])
+    const names = async (client: TestClient) =>
+      (await client.nextPresence()).listeners.map((l) => l.nickname)
+
+    // One at a time, so what each listener sees is the roster as it was after
+    // that join and not a race between three sockets.
+    for (const [client, nickname, expected] of [
+      [a!, 'ana', ['ana']],
+      [b!, 'ben', ['ana', 'ben']],
+      [c!, 'cleo', ['ana', 'ben', 'cleo']],
+    ] as const) {
+      client.send({ type: 'join', nickname })
+      for (const watcher of [a!, b!, c!]) expect(await names(watcher)).toEqual(expected)
+    }
+
+    await b!.close()
+    expect(await names(a!)).toEqual(['ana', 'cleo'])
+    expect(await names(c!)).toEqual(['ana', 'cleo'])
+
+    await a!.close()
+    expect(await names(c!)).toEqual(['cleo'])
+    await expect.poll(() => harness.app.realtime.listeners().map((l) => l.nickname)).toEqual([
+      'cleo',
+    ])
+  })
+
+  it('keeps two listeners of the same name apart', async () => {
+    const first = await arrive()
+    const second = await arrive()
+
+    first.send({ type: 'join', nickname: 'sam' })
+    await second.nextPresence()
+    second.send({ type: 'join', nickname: 'sam' })
+
+    const roster = await second.nextPresence()
+    expect(roster.listeners.map((l) => l.nickname)).toEqual(['sam', 'sam'])
+    // Distinct ids, so a list keyed on them shows two rows and drops neither.
+    expect(new Set(roster.listeners.map((l) => l.id)).size).toBe(2)
+  })
+
+  it('lets a listener rename themselves without leaving and coming back', async () => {
+    const client = await arrive()
+    const joined = await client.join('sam')
+    const id = joined.listeners[0]!.id
+
+    const renamed = await client.join('samantha')
+
+    // Same row, new name — not a departure followed by an arrival.
+    expect(renamed.listeners).toEqual([{ id, nickname: 'samantha' }])
+  })
+
+  it('says nothing when a listener re-sends the name they already have', async () => {
+    const client = await arrive()
+    await client.join('sam')
+
+    client.send({ type: 'join', nickname: 'sam' })
+
+    await expect(client.nextPresence(150)).rejects.toThrow(/timed out/)
+  })
+
+  it('refuses a nickname that is not one, and leaves the roster alone', async () => {
+    const client = await arrive()
+    await client.join('sam')
+
+    client.send({ type: 'join', nickname: '   ' })
+
+    expect((await client.waitFor((m) => m.type === 'error')).type).toBe('error')
+    expect(harness.app.realtime.listeners().map((l) => l.nickname)).toEqual(['sam'])
+  })
+
+  it('does not count a connected socket that never named itself', async () => {
+    const lurker = await arrive()
+    const listener = await arrive()
+    await listener.join('sam')
+
+    expect(harness.app.realtime.clientCount()).toBe(2)
+    expect(harness.app.realtime.listeners()).toHaveLength(1)
+
+    // And a socket that leaves without ever joining is not an event.
+    await lurker.close()
+    await expect.poll(() => harness.app.realtime.clientCount()).toBe(1)
+    await expect(listener.nextPresence(150)).rejects.toThrow(/timed out/)
+  })
+
+  it('drops a listener whose network vanished, once the heartbeat notices', async () => {
+    const gone = await arrive()
+    await gone.join('gone')
+
+    // The heartbeat terminates a socket that stops answering; the roster is
+    // cleaned up from `close`, which a terminate raises like any other end.
+    gone.terminate()
+
+    await expect.poll(() => harness.app.realtime.listeners()).toEqual([])
+  })
+})
+
 describe('clock handshake', () => {
   it('answers a ping with the server clock and the echoed probe', async () => {
     const [client] = await connect()

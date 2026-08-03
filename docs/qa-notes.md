@@ -168,6 +168,17 @@ Fixed anyway, because "every seek goes through here" is only true if it is.
 
 ## Verified, and not a problem
 
+- **Telling a browser it is offline does not drop an established WebSocket.**
+  The first `qa:presence` used `context.setOffline(true)` to make a listener
+  vanish, and the roster kept showing them — not a presence bug: the socket was
+  never disconnected. Chrome keeps an open WebSocket alive under offline
+  emulation and goes on answering pings at the protocol level, so the server
+  correctly saw a live, responsive listener and the client never reconnected.
+  The check passed on the way back too, for the same reason — the stale row it
+  was waiting for had never left. Taking the server away, the way `qa:reconnect`
+  already did, is the only way to test a disconnection for real; both scripts
+  now share those helpers. Worth remembering: a QA check that produces the right
+  answer for the wrong reason is worse than no check.
 - **Encoded traversal under `/api/audio/` returns the SPA shell, not a 404.**
   nginx decodes `%2f` and normalises the path *before* it matches a location,
   so `/api/audio/..%2f..%2fchunky.sqlite` is `/chunky.sqlite` by the time

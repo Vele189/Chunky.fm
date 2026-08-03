@@ -1,4 +1,5 @@
 import type { PlaybackSnapshot } from './playback.js'
+import { type Listener, normalizeNickname } from './presence.js'
 import type { QueueEntry } from './queue.js'
 
 /** Full playback state. Sent on connect and on every change. */
@@ -12,6 +13,16 @@ export type StateMessage = PlaybackSnapshot & { type: 'state' }
 export interface QueueMessage {
   type: 'queue'
   entries: QueueEntry[]
+}
+
+/**
+ * Who is listening. Sent on connect and whenever the roster changes, and kept
+ * out of `state` for the same reason the queue is: presence turns over on its
+ * own schedule, and nobody needs the whole roster again because of a seek.
+ */
+export interface PresenceMessage {
+  type: 'presence'
+  listeners: Listener[]
 }
 
 /**
@@ -33,14 +44,27 @@ export interface ErrorMessage {
   message: string
 }
 
-export type ServerMessage = StateMessage | QueueMessage | PongMessage | ErrorMessage
+export type ServerMessage = StateMessage | QueueMessage | PresenceMessage | PongMessage | ErrorMessage
 
 export interface PingMessage {
   type: 'ping'
   t0: number
 }
 
-export type ClientMessage = PingMessage
+/**
+ * "Here is what to call me."
+ *
+ * The one frame a listener sends that the server keeps, and it still drives
+ * nothing: a nickname buys a row in the roster and no say over the decks. It is
+ * separate from connecting because a socket opens when the page loads, which is
+ * before anyone has typed a name — and because a reconnect has to say it again.
+ */
+export interface JoinMessage {
+  type: 'join'
+  nickname: string
+}
+
+export type ClientMessage = PingMessage | JoinMessage
 
 /**
  * Frames that read as an attempt to drive the station.
@@ -80,6 +104,10 @@ export function queueMessage(entries: QueueEntry[]): QueueMessage {
   return { type: 'queue', entries }
 }
 
+export function presenceMessage(listeners: Listener[]): PresenceMessage {
+  return { type: 'presence', listeners }
+}
+
 export function parseClientMessage(raw: string): ParsedClientMessage {
   const unrecognised = { ok: false, error: 'unrecognised message' } as const
 
@@ -94,6 +122,15 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
   const message = parsed as Record<string, unknown>
   if (message.type === 'ping' && typeof message.t0 === 'number' && Number.isFinite(message.t0)) {
     return { ok: true, message: { type: 'ping', t0: message.t0 } }
+  }
+  if (message.type === 'join' && typeof message.nickname === 'string') {
+    // Normalised here rather than taken as sent. The client caps and cleans a
+    // nickname before it stores one, but nothing about a socket obliges it to,
+    // and the roster goes out to every listener — so the rules are enforced on
+    // the side that owns the roster.
+    const nickname = normalizeNickname(message.nickname)
+    if (nickname.length === 0) return { ok: false, error: 'a nickname is required' }
+    return { ok: true, message: { type: 'join', nickname } }
   }
   if (typeof message.type === 'string' && COMMAND_TYPES.has(message.type)) {
     return { ok: false, error: 'admin commands go over HTTP, not the socket' }
