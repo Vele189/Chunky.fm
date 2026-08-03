@@ -108,6 +108,10 @@ audio_storage/
   chunky.sqlite
 ```
 
+The database holds `tracks` (the library), and `sessions` + `messages` (the
+chat — see below). Playback and the queue are not in it: they are session-scoped
+and die with the process by design.
+
 ### `POST /api/upload`
 
 Admin-only, one audio file per request as `multipart/form-data`.
@@ -166,6 +170,7 @@ code path as joining at 0:00.
 | `{ type: 'state', track, startedAt, pausedAt, serverTime }` | On connect, and on every playback change. |
 | `{ type: 'queue', entries }` | On connect, and on every queue change. |
 | `{ type: 'presence', listeners }` | On connect, and whenever someone joins, leaves or renames. |
+| `{ type: 'chat', messages }` | On connect (the tail of the conversation), and one per new message. |
 | `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
 | `{ type: 'error', message }` | Unrecognised frame; the connection stays open. |
 
@@ -179,6 +184,7 @@ folding them together would ship both on every seek.
 |---|---|
 | `{ type: 'ping', t0 }` | Clock offset probe. |
 | `{ type: 'join', nickname }` | "Here is what to call me." |
+| `{ type: 'say', text }` | "Say this to the room." |
 
 Browser clocks are wrong by seconds, so a client measures the offset NTP-style:
 send `t0`, receive `t1`, note `t2` on arrival, then
@@ -197,8 +203,10 @@ mutation lives behind `requireAdmin` on an HTTP route.
 
 **Commands go over HTTP, not the socket** — deliberately. The socket carries
 state outward, and inward only what has nowhere else to go: a clock probe, which
-is meaningless anywhere but on the connection it is measuring, and a nickname,
-which lives exactly as long as the socket does. An admin action wants
+is meaningless anywhere but on the connection it is measuring; a nickname, which
+lives exactly as long as the socket does; and a chat message, which has to reach
+everyone in the room the moment it is sent. None of the three drives the
+station. An admin action wants
 exactly what HTTP already gives it: a request/response pair, a status code that
 says whether it worked, and — for upload — a body measured in megabytes. Adding
 a second, authenticated command channel over the socket would duplicate that
@@ -238,6 +246,48 @@ when what's left is empty — because the client's own normalising is a courtesy
 to the listener, not a guarantee to the server. Re-sending the name a socket
 already has costs no broadcast; sending a different one is a rename, and keeps
 the listener's place in the list.
+
+### Chat
+
+Unlike playback, the queue and the roster, this one is written down:
+
+```sql
+sessions  (id, started_at, ended_at)
+messages  (id, session_id, nick, text, created_at)
+```
+
+A message is `{id, nickname, text, at}` on the wire, and frames carry a *batch*
+of them: the tail of the conversation on connect, and a batch of one for each
+new message. One frame type, one code path on the client — and because messages
+carry ids, a client that merges on id gets two properties for free. A reconnect
+replays history without duplicating a line, and whatever was said while it was
+away arrives in that replay instead of being a hole in the conversation.
+
+**Who said it is the server's answer, not the client's.** A `say` frame carries
+text and nothing else; the author is the nickname the sending socket is listed
+under on the roster. A frame that could name its own sender could sign someone
+else's name to a message. That also makes the roster the gate: a socket that has
+not joined has no name to sign with, and is told to name itself rather than
+being quietly ignored. A rename applies from then on — what was already said
+keeps the name it was said under, because `nick` is a copy, not a reference.
+
+**Sessions.** PLAN.md's availability story is session-based — you go live, you
+end it — and chat is scoped to a session, so "the chat" means this time on air
+rather than everything ever said. The admin controls for starting and ending one
+are a later task; for now a run of the process is a session, opened at startup
+and closed on shutdown. A restarted station is a new session with an empty room,
+and only the line that opens the session has to change when the admin can do it
+by hand.
+
+**Pacing.** Chat is the first thing a listener can send that the server writes
+down, so each socket gets a token bucket: five messages back to back, one earned
+back every two seconds. Without it, one client in a loop is an unbounded row
+count and a broadcast storm to everyone else. Buckets are per socket rather than
+per listener, so one listener talking never spends another's, and there is
+nothing to clean up after a socket that never comes back. Over-length messages
+are refused rather than truncated — the composer caps what can be typed, so
+anything longer came from something hand-written, and quietly publishing half of
+what it said would be worse than saying no.
 
 ### `POST /api/playback` — admin
 
@@ -331,6 +381,7 @@ from then on the page follows the station.
 
 - `lib/position.ts` — where the needle should be, given the tuple and a server time.
 - `lib/nickname.ts` — the nickname: normalising it, and keeping it in localStorage.
+- `lib/chat.ts` — what is worth sending, and folding a batch into what is shown.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
 - `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
 - `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
@@ -385,6 +436,22 @@ time the connection comes back. So a listener who drops during an outage is put
 back on the roster by the same line that put them there in the first place, and
 a station that restarts finds its room refilling on its own. `npm run
 qa:presence` is that whole story, in three browsers.
+
+### Talking
+
+The chat sits under the roster, and nothing in it is rendered optimistically:
+what was typed goes out, and appears when it comes back with the id and
+timestamp the server gave it. On a station where everyone is already connected
+to the same server that costs a round trip, and it buys a list that is the same
+list for everyone in the room — rather than a local-only line that a refused
+message would leave sitting there looking sent.
+
+The composer is disabled while the socket is down, for the reason the join frame
+waits for `connected`: a send on a closed socket is thrown away in silence, and
+a message that vanished would be worse than one that could not be typed. What
+arrives is merged by id, so a reconnect fills in what was missed without
+duplicating what is already on screen — `lib/chat.ts` is that merge, and it is
+the piece worth reading if the chat ever looks doubled or out of order.
 
 ### Admin mode
 
@@ -469,7 +536,7 @@ doing anything if the dead zone drops below 40ms.
 ### Verifying it
 
 Sync — and anything else that only happens in a real browser — is what unit
-tests cannot judge, so there are five scripts that drive real Chrome. Each needs
+tests cannot judge, so there are six scripts that drive real Chrome. Each needs
 a running server, a running Vite dev server, and at least two uploaded tracks
 (one of them a few minutes long).
 
@@ -479,13 +546,14 @@ npm run verify:sync    # two listeners joining at different times stay together
 npm run qa:playback    # seeks, pause/resume/seek/stop, track changes
 npm run qa:reconnect   # kills the server underneath a listener and restarts it
 npm run qa:presence    # three listeners watch each other arrive and leave
+npm run qa:chat        # they talk, one joins late, one tries to speak as another
 npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 ```
 
 They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
-`OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect` and
-`qa:presence` also start and stop the server itself, so build it first (`cd
-server && npm run build`) — telling a browser it is offline does *not* drop an
+`OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect`,
+`qa:presence` and `qa:chat` also start and stop the server itself, so build it
+first (`cd server && npm run build`) — telling a browser it is offline does *not* drop an
 established WebSocket, so taking the station away is the only way to test a
 disconnection for real. `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
 point it at something a few minutes long) and drives three tabs at once: an

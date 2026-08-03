@@ -63,6 +63,14 @@ export class Presence {
   }
 
   /**
+   * What to call this socket, or null if it has not said. This is where chat
+   * gets the name it signs a message with — a client never supplies its own.
+   */
+  nicknameOf(id: number): string | null {
+    return this.#listeners.get(id) ?? null
+  }
+
+  /**
    * Name a socket, or rename one that already has a name. False when nothing
    * changed — an unusable nickname, or the one this socket is already listed
    * under.

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { mergeMessages } from '../lib/chat.js'
 import type {
+  ChatMessage,
   Listener,
   PlaybackSnapshot,
   QueueEntry,
@@ -20,6 +22,8 @@ export interface Station {
   queue: QueueEntry[] | null
   /** Who else is here. Null until the first roster arrives. */
   listeners: Listener[] | null
+  /** The conversation, oldest first. Empty until the first chat frame arrives. */
+  messages: ChatMessage[]
   connection: StationConnection | null
   /**
    * Fold in state the server just handed back over HTTP.
@@ -43,6 +47,7 @@ export function useStation(
   const [state, setState] = useState<StateMessage | null>(null)
   const [queue, setQueue] = useState<QueueEntry[] | null>(null)
   const [listeners, setListeners] = useState<Listener[] | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connection, setConnection] = useState<StationConnection | null>(null)
 
   // Kept in a ref so a changing handler doesn't tear down the socket.
@@ -57,6 +62,11 @@ export function useStation(
         if (message.type === 'state') setState(message)
         if (message.type === 'queue') setQueue(message.entries)
         if (message.type === 'presence') setListeners(message.listeners)
+        // Merged rather than replaced: a batch is either the history or one new
+        // line, and both fold into what is already on screen the same way.
+        if (message.type === 'chat') {
+          setMessages((current) => mergeMessages(current, message.messages))
+        }
         messageHandler.current?.(message)
       },
     })
@@ -74,5 +84,5 @@ export function useStation(
   )
   const applyQueue = useCallback((entries: QueueEntry[]) => setQueue(entries), [])
 
-  return { status, state, queue, listeners, connection, applyState, applyQueue }
+  return { status, state, queue, listeners, messages, connection, applyState, applyQueue }
 }

@@ -99,11 +99,11 @@ describe('the socket, over a real connection', () => {
     await harness.cleanup()
   })
 
-  it('opens with state, then queue, then the roster, every time', async () => {
+  it('opens with the whole room — state, queue, roster, chat — every time', async () => {
     for (let i = 0; i < 5; i++) {
       const client = await TestClient.connect(harness.wsUrl)
-      await client.nextPresence() // the last of the three
-      expect(client.seen.map((m) => m.type)).toEqual(['state', 'queue', 'presence'])
+      await client.nextChat() // the last of the four
+      expect(client.seen.map((m) => m.type)).toEqual(['state', 'queue', 'presence', 'chat'])
       await client.close()
     }
   })

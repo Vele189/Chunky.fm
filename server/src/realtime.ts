@@ -1,9 +1,11 @@
 import type { Server } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
+import { type ChatLog, RateLimit } from './chat.js'
 import type { PlaybackSnapshot } from './playback.js'
 import { type Listener, Presence } from './presence.js'
 import {
   type ServerMessage,
+  chatMessages,
   parseClientMessage,
   presenceMessage,
   queueMessage,
@@ -20,11 +22,17 @@ export interface RealtimeLogger {
 export interface RealtimeOptions {
   server: Server
   station: Station
+  /** The session's chat. Omit and the socket refuses `say` frames. */
+  chat?: ChatLog
   path?: string
   /** How often to probe sockets for liveness. */
   heartbeatIntervalMs?: number
   /** How long a shutdown waits for close handshakes before forcing sockets shut. */
   closeGraceMs?: number
+  /** Messages a socket may send back to back before it has to wait. */
+  chatBurst?: number
+  /** How long one of those costs to earn back. */
+  chatRefillMs?: number
   log?: RealtimeLogger
 }
 
@@ -40,6 +48,9 @@ export interface RealtimeHandle {
 const MAX_PAYLOAD_BYTES = 4 * 1024
 const DEFAULT_HEARTBEAT_MS = 30_000
 const DEFAULT_CLOSE_GRACE_MS = 1_000
+/** A few lines in a row is how people talk; a stream of them is not. */
+const DEFAULT_CHAT_BURST = 5
+const DEFAULT_CHAT_REFILL_MS = 2_000
 
 function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
@@ -62,9 +73,12 @@ function send(socket: WebSocket, message: ServerMessage): void {
 export function attachRealtime({
   server,
   station,
+  chat,
   path = '/ws',
   heartbeatIntervalMs = DEFAULT_HEARTBEAT_MS,
   closeGraceMs = DEFAULT_CLOSE_GRACE_MS,
+  chatBurst = DEFAULT_CHAT_BURST,
+  chatRefillMs = DEFAULT_CHAT_REFILL_MS,
   log,
 }: RealtimeOptions): RealtimeHandle {
   const { playback, queue } = station
@@ -96,9 +110,43 @@ export function attachRealtime({
     broadcast(presenceMessage(presence.list()))
   }
 
+  /**
+   * Writes one message down and sends it to the room.
+   *
+   * The author is the nickname on the roster, looked up here rather than taken
+   * from the frame, so a message can only ever be signed with the name its own
+   * socket is listed under. That also makes the roster the gate: a socket that
+   * has not said who it is has nothing to sign with, and is told to name itself
+   * rather than being quietly ignored.
+   */
+  function say(socket: WebSocket, listenerId: number, limit: RateLimit, text: string): void {
+    if (!chat) {
+      send(socket, { type: 'error', message: 'this station has no chat' })
+      return
+    }
+    const nickname = presence.nicknameOf(listenerId)
+    if (nickname === null) {
+      send(socket, { type: 'error', message: 'name yourself before saying anything' })
+      return
+    }
+    if (!limit.take()) {
+      send(socket, { type: 'error', message: 'slow down' })
+      return
+    }
+
+    const message = chat.post(nickname, text)
+    log?.info({ id: message.id, listeners: wss.clients.size }, 'broadcasting chat message')
+    // A batch of one, in the same frame the history arrives in.
+    broadcast(chatMessages([message]))
+  }
+
   wss.on('connection', (socket) => {
     responsive.add(socket)
     const listenerId = nextListenerId++
+    // Per socket, not per listener: the thing being paced is a connection, and
+    // a bucket that outlived one would have to be cleaned up after sockets that
+    // never come back.
+    const chatLimit = new RateLimit({ burst: chatBurst, refillMs: chatRefillMs })
 
     // Drop straight into the moment: the snapshot alone is enough to align.
     send(socket, stateMessage(playback.snapshot()))
@@ -106,6 +154,9 @@ export function attachRealtime({
     // Who is already here. This socket is not on that list yet — it has not
     // said who it is — and joins it the moment it does.
     send(socket, presenceMessage(presence.list()))
+    // The conversation so far, so a joiner walks into a room mid-sentence
+    // rather than an empty one. Also how a reconnecting client fills the gap.
+    if (chat) send(socket, chatMessages(chat.recent()))
 
     socket.on('pong', () => responsive.add(socket))
 
@@ -125,6 +176,7 @@ export function attachRealtime({
         // same frame the rest of the room gets, so there is one code path.
         broadcastPresence()
       }
+      if (message.type === 'say') say(socket, listenerId, chatLimit, message.text)
     })
 
     // Every way a socket can end arrives here — a tab closing, a network that

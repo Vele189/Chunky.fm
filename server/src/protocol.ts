@@ -1,3 +1,4 @@
+import { type ChatMessage, MESSAGE_MAX_LENGTH, normalizeMessageText } from './chat.js'
 import type { PlaybackSnapshot } from './playback.js'
 import { type Listener, normalizeNickname } from './presence.js'
 import type { QueueEntry } from './queue.js'
@@ -26,6 +27,20 @@ export interface PresenceMessage {
 }
 
 /**
+ * Chat, as a batch rather than one message per frame.
+ *
+ * A joiner is handed the tail of the conversation, and a new message is a batch
+ * of one — same frame, same handling on the other side. Because messages carry
+ * ids, a client that merges on id gets two things for free: a reconnect replays
+ * history without duplicating anything, and whatever was said while it was away
+ * arrives in that replay instead of being a hole in the conversation.
+ */
+export interface ChatMessagesMessage {
+  type: 'chat'
+  messages: ChatMessage[]
+}
+
+/**
  * Reply to a clock probe. The client computes
  * `rtt = t2 - t0` and `offset = t1 - (t0 + rtt / 2)`, keeping the sample with
  * the lowest RTT — the fastest round trip is the least contaminated by
@@ -44,7 +59,13 @@ export interface ErrorMessage {
   message: string
 }
 
-export type ServerMessage = StateMessage | QueueMessage | PresenceMessage | PongMessage | ErrorMessage
+export type ServerMessage =
+  | StateMessage
+  | QueueMessage
+  | PresenceMessage
+  | ChatMessagesMessage
+  | PongMessage
+  | ErrorMessage
 
 export interface PingMessage {
   type: 'ping'
@@ -64,7 +85,20 @@ export interface JoinMessage {
   nickname: string
 }
 
-export type ClientMessage = PingMessage | JoinMessage
+/**
+ * "Say this to the room."
+ *
+ * Carries the text and nothing else — no author, no timestamp, no id. Those are
+ * the server's to decide: a frame that named its own sender would let a client
+ * sign someone else's name to a message, and the nickname on the roster is
+ * already the answer to who this socket is.
+ */
+export interface SayMessage {
+  type: 'say'
+  text: string
+}
+
+export type ClientMessage = PingMessage | JoinMessage | SayMessage
 
 /**
  * Frames that read as an attempt to drive the station.
@@ -108,6 +142,10 @@ export function presenceMessage(listeners: Listener[]): PresenceMessage {
   return { type: 'presence', listeners }
 }
 
+export function chatMessages(messages: ChatMessage[]): ChatMessagesMessage {
+  return { type: 'chat', messages }
+}
+
 export function parseClientMessage(raw: string): ParsedClientMessage {
   const unrecognised = { ok: false, error: 'unrecognised message' } as const
 
@@ -131,6 +169,17 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
     const nickname = normalizeNickname(message.nickname)
     if (nickname.length === 0) return { ok: false, error: 'a nickname is required' }
     return { ok: true, message: { type: 'join', nickname } }
+  }
+  if (message.type === 'say' && typeof message.text === 'string') {
+    // Over-length is refused rather than truncated: the composer caps what can
+    // be typed, so anything longer arrived from something hand-written, and
+    // quietly publishing half of what it said would be worse than saying no.
+    if ([...message.text].length > MESSAGE_MAX_LENGTH) {
+      return { ok: false, error: `a message is at most ${MESSAGE_MAX_LENGTH} characters` }
+    }
+    const text = normalizeMessageText(message.text)
+    if (text.length === 0) return { ok: false, error: 'an empty message is not a message' }
+    return { ok: true, message: { type: 'say', text } }
   }
   if (typeof message.type === 'string' && COMMAND_TYPES.has(message.type)) {
     return { ok: false, error: 'admin commands go over HTTP, not the socket' }

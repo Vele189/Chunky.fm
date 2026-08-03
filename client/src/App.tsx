@@ -6,6 +6,12 @@ import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { isAdminRoute } from './lib/admin.js'
 import { seekTo } from './lib/audio-element.js'
+import {
+  formatTime,
+  isSendableMessage,
+  MESSAGE_MAX_LENGTH,
+  normalizeMessageText,
+} from './lib/chat.js'
 import type { Correction } from './lib/drift.js'
 import {
   isValidNickname,
@@ -14,7 +20,14 @@ import {
   saveNickname,
 } from './lib/nickname.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
-import { artworkUrl, type Listener, type QueueEntry, type ServerMessage } from './lib/protocol.js'
+import {
+  artworkUrl,
+  type ChatMessage,
+  type Listener,
+  type QueueEntry,
+  type ServerMessage,
+} from './lib/protocol.js'
+import type { StationConnection } from './lib/station.js'
 
 const STATUS_LABEL = {
   connecting: 'tuning in…',
@@ -34,10 +47,8 @@ export function App() {
   // The clock needs to see pongs but the station owns the socket, so the
   // handler goes through a ref to break what would otherwise be a cycle.
   const routeToClock = useRef<(message: ServerMessage) => void>(() => undefined)
-  const { status, state, queue, listeners, connection, applyState, applyQueue } = useStation(
-    undefined,
-    (message) => routeToClock.current(message),
-  )
+  const { status, state, queue, listeners, messages, connection, applyState, applyQueue } =
+    useStation(undefined, (message) => routeToClock.current(message))
   const admin = useAdminRoute()
   const clock = useServerClock(connection, { connected: status === 'connected' })
   // Only once tuned in: a socket is open from the moment the page loads, and a
@@ -178,8 +189,11 @@ export function App() {
 
       {joined && !admin && <UpNext queue={queue} />}
       {/* Shown on the admin route too: the panel has the queue covered, but
-          nothing in it says who is out there. */}
+          nothing in it says who is out there or what they are saying. */}
       {joined && <Listeners listeners={listeners} />}
+      {joined && (
+        <Chat messages={messages} connection={connection} live={status === 'connected'} />
+      )}
 
       {/* Owned imperatively — React never sets currentTime or calls play(). */}
       <audio ref={audioRef} preload="auto" />
@@ -253,6 +267,87 @@ function Listeners({ listeners }: { listeners: Listener[] | null }) {
           </li>
         ))}
       </ul>
+    </section>
+  )
+}
+
+interface ChatProps {
+  messages: ChatMessage[]
+  connection: StationConnection | null
+  /** False while reconnecting — a send would go on the floor unannounced. */
+  live: boolean
+}
+
+/**
+ * The room, talking.
+ *
+ * Nothing is rendered optimistically: what was typed goes out, and appears when
+ * it comes back with the id and timestamp the server gave it. That costs a
+ * round trip on a station where everyone is already listening to the same
+ * server, and it buys a list that is the same list for everyone in the room —
+ * no local-only line that a refused message would leave sitting there looking
+ * sent.
+ */
+function Chat({ messages, connection, live }: ChatProps) {
+  const [draft, setDraft] = useState('')
+  const list = useRef<HTMLOListElement>(null)
+
+  // Follow the conversation. Reading back through it is a scroll away, but a
+  // new line arriving should not leave the listener looking at an old one.
+  useEffect(() => {
+    const element = list.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [messages])
+
+  function say(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const text = normalizeMessageText(draft)
+    if (text.length === 0 || !connection || !live) return
+    connection.send({ type: 'say', text })
+    setDraft('')
+  }
+
+  return (
+    <section className="chat" data-testid="chat">
+      <h2 className="chat__heading">Chat</h2>
+      {messages.length === 0 ? (
+        <p className="chat__empty">Nobody has said anything yet.</p>
+      ) : (
+        <ol className="chat__list" data-testid="chat-list" ref={list}>
+          {messages.map((message) => (
+            <li key={message.id} className="chat__line" data-message={message.id}>
+              <time className="chat__at" dateTime={new Date(message.at).toISOString()}>
+                {formatTime(message.at)}
+              </time>
+              <span className="chat__nick">{message.nickname}</span>
+              <span className="chat__text">{message.text}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <form className="chat__form" onSubmit={say}>
+        <label className="chat__label" htmlFor="chat-input">
+          Say something
+        </label>
+        <input
+          id="chat-input"
+          className="chat__input"
+          data-testid="chat-input"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={live ? 'say something' : 'reconnecting…'}
+          maxLength={MESSAGE_MAX_LENGTH}
+          autoComplete="off"
+          disabled={!live}
+        />
+        <button
+          type="submit"
+          className="chat__send"
+          disabled={!live || !isSendableMessage(draft)}
+        >
+          Send
+        </button>
+      </form>
     </section>
   )
 }

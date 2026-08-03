@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws'
 import type {
+  ChatMessagesMessage,
   ClientMessage,
   PresenceMessage,
   QueueMessage,
@@ -87,6 +88,16 @@ export class TestClient {
 
   async nextPresence(timeoutMs?: number): Promise<PresenceMessage> {
     return (await this.waitFor((m) => m.type === 'presence', timeoutMs)) as PresenceMessage
+  }
+
+  async nextChat(timeoutMs?: number): Promise<ChatMessagesMessage> {
+    return (await this.waitFor((m) => m.type === 'chat', timeoutMs)) as ChatMessagesMessage
+  }
+
+  /** Says something and waits for it to come back around. */
+  async say(text: string): Promise<ChatMessagesMessage> {
+    this.send({ type: 'say', text })
+    return this.nextChat()
   }
 
   /**

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { MESSAGE_MAX_LENGTH } from '../src/chat.js'
 import { PlaybackState } from '../src/playback.js'
 import type { ErrorMessage, PongMessage, ServerMessage } from '../src/protocol.js'
 import { type Harness, fakeClock, makeTrack, signIn, startHarness } from './helpers.js'
@@ -347,6 +348,162 @@ describe('presence', () => {
     gone.terminate()
 
     await expect.poll(() => harness.app.realtime.listeners()).toEqual([])
+  })
+})
+
+/**
+ * Chat at the socket: several listeners talking, and everything that has to
+ * hold while they do — that a message reaches everyone, that it is written
+ * down, and that nobody can sign it with a name that isn't theirs.
+ */
+describe('chat', () => {
+  /** A listener who has connected, read its opening frames, and named itself. */
+  async function tuneIn(nickname: string): Promise<TestClient> {
+    const [client] = await connect()
+    await Promise.all([
+      client!.nextState(),
+      client!.nextQueue(),
+      client!.nextPresence(),
+      client!.nextChat(),
+    ])
+    await client!.join(nickname)
+    return client!
+  }
+
+  it('sends an empty history to the first listener of the session', async () => {
+    const [client] = await connect()
+
+    expect((await client!.nextChat()).messages).toEqual([])
+  })
+
+  it('reaches every listener, with the sender named', async () => {
+    const sam = await tuneIn('sam')
+    const ana = await tuneIn('ana')
+    await sam.nextPresence() // ana's arrival
+
+    sam.send({ type: 'say', text: 'evening all' })
+
+    for (const client of [sam, ana]) {
+      const { messages } = await client.nextChat()
+      expect(messages).toHaveLength(1)
+      expect(messages[0]).toMatchObject({ nickname: 'sam', text: 'evening all' })
+      expect(messages[0]!.id).toEqual(expect.any(Number))
+      expect(messages[0]!.at).toEqual(expect.any(Number))
+    }
+  })
+
+  it('comes back to the sender too, so there is one code path for display', async () => {
+    const sam = await tuneIn('sam')
+
+    expect((await sam.say('talking to myself')).messages[0]).toMatchObject({
+      nickname: 'sam',
+      text: 'talking to myself',
+    })
+  })
+
+  it('hands a joiner the conversation so far', async () => {
+    const sam = await tuneIn('sam')
+    await sam.say('first')
+    await sam.say('second')
+
+    const [late] = await connect()
+
+    expect((await late!.nextChat()).messages.map((m) => `${m.nickname}: ${m.text}`)).toEqual([
+      'sam: first',
+      'sam: second',
+    ])
+  })
+
+  it('writes messages down, so a reconnect gets back what it missed', async () => {
+    const sam = await tuneIn('sam')
+    const ana = await tuneIn('ana')
+    await sam.nextPresence()
+
+    await ana.say('before the drop')
+    await sam.nextChat()
+
+    // Sam's connection dies; ana keeps talking to an emptier room.
+    await sam.close()
+    await expect.poll(() => harness.app.realtime.clientCount()).toBe(1)
+    await ana.say('while sam was away')
+
+    // The same listener comes back on a new socket, as the client does.
+    const [back] = await connect()
+    expect((await back!.nextChat()).messages.map((m) => m.text)).toEqual([
+      'before the drop',
+      'while sam was away',
+    ])
+  })
+
+  it('signs a message with the roster’s name, not the frame’s', async () => {
+    const sam = await tuneIn('sam')
+
+    sam.send(JSON.stringify({ type: 'say', text: 'not me', nickname: 'ana' }))
+
+    expect((await sam.nextChat()).messages[0]).toMatchObject({ nickname: 'sam', text: 'not me' })
+  })
+
+  it('follows a rename: what is said next carries the new name', async () => {
+    const sam = await tuneIn('sam')
+    await sam.say('as sam')
+    await sam.join('samantha')
+
+    expect((await sam.say('as samantha')).messages[0]).toMatchObject({ nickname: 'samantha' })
+    // And what was already said keeps the name it was said under.
+    expect(harness.chat.recent().map((m) => m.nickname)).toEqual(['sam', 'samantha'])
+  })
+
+  it('refuses a listener who has not named themselves', async () => {
+    const [lurker] = await connect()
+    await lurker!.nextChat()
+
+    lurker!.send({ type: 'say', text: 'hello?' })
+
+    const refusal = (await lurker!.waitFor((m) => m.type === 'error')) as ErrorMessage
+    expect(refusal.message).toMatch(/name yourself/)
+    expect(harness.chat.count()).toBe(0)
+  })
+
+  it('refuses an empty message, and one that is too long', async () => {
+    const sam = await tuneIn('sam')
+
+    for (const text of ['   ', 'x'.repeat(MESSAGE_MAX_LENGTH + 1)]) {
+      sam.send({ type: 'say', text })
+      expect((await sam.waitFor((m) => m.type === 'error')).type).toBe('error')
+    }
+
+    expect(harness.chat.count()).toBe(0)
+    // Still live: a real message goes through afterwards.
+    expect((await sam.say('still here')).messages[0]).toMatchObject({ text: 'still here' })
+  })
+
+  it('stops a listener sending faster than a person talks', async () => {
+    // A burst of two, and nothing earned back within the test's lifetime.
+    await harness.cleanup()
+    harness = await startHarness({}, { listen: true, chatBurst: 2, chatRefillMs: 60_000 })
+    const sam = await tuneIn('sam')
+
+    await sam.say('one')
+    await sam.say('two')
+    sam.send({ type: 'say', text: 'three' })
+
+    const refusal = (await sam.waitFor((m) => m.type === 'error')) as ErrorMessage
+    expect(refusal.message).toMatch(/slow down/)
+    // Refused before it was written, not after.
+    expect(harness.chat.recent().map((m) => m.text)).toEqual(['one', 'two'])
+  })
+
+  it('paces each socket on its own, not the room', async () => {
+    await harness.cleanup()
+    harness = await startHarness({}, { listen: true, chatBurst: 1, chatRefillMs: 60_000 })
+    const sam = await tuneIn('sam')
+    const ana = await tuneIn('ana')
+
+    await sam.say('mine')
+    await ana.nextChat() // ana hears it too; that is not her spending anything
+
+    // Sam has used his whole bucket up. Ana has said nothing, so hers is full.
+    expect((await ana.say('and mine')).messages[0]).toMatchObject({ nickname: 'ana' })
   })
 })
 

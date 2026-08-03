@@ -53,6 +53,24 @@ export interface PresenceMessage {
   listeners: Listener[]
 }
 
+/** Something someone said. `at` is server epoch ms. */
+export interface ChatMessage {
+  id: number
+  nickname: string
+  text: string
+  at: number
+}
+
+/**
+ * Chat, in batches: the tail of the conversation on connect, and a batch of one
+ * for each new message. Merged on id, so a reconnect's replay neither
+ * duplicates what is already shown nor leaves a hole where the outage was.
+ */
+export interface ChatMessagesMessage {
+  type: 'chat'
+  messages: ChatMessage[]
+}
+
 export interface PongMessage {
   type: 'pong'
   t0: number
@@ -68,6 +86,7 @@ export type ServerMessage =
   | StateMessage
   | QueueMessage
   | PresenceMessage
+  | ChatMessagesMessage
   | PongMessage
   | ErrorMessage
 
@@ -82,7 +101,13 @@ export interface JoinMessage {
   nickname: string
 }
 
-export type ClientMessage = PingMessage | JoinMessage
+/** "Say this to the room." The server decides who said it, and when. */
+export interface SayMessage {
+  type: 'say'
+  text: string
+}
+
+export type ClientMessage = PingMessage | JoinMessage | SayMessage
 
 export const audioUrl = (track: Track) => `/api/audio/${track.filename}`
 export const artworkUrl = (track: Track) =>

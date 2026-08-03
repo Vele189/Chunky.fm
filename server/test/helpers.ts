@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { vi } from 'vitest'
 import { buildApp } from '../src/app.js'
+import type { ChatLog } from '../src/chat.js'
 import type { Config } from '../src/config.js'
 import { type Db, openDb } from '../src/db.js'
 import type { Track } from '../src/lib/track.js'
@@ -21,6 +22,7 @@ export interface Harness {
   config: Config
   playback: PlaybackState
   station: Station
+  chat: ChatLog
   /** Only set when the harness was started with `listen: true`. */
   wsUrl: string
   cleanup(): Promise<void>
@@ -30,6 +32,9 @@ export interface HarnessOptions {
   playback?: PlaybackState
   heartbeatIntervalMs?: number
   backstopIntervalMs?: number
+  chatHistoryLimit?: number
+  chatBurst?: number
+  chatRefillMs?: number
   /** Bind a real port — required for anything that opens a websocket. */
   listen?: boolean
 }
@@ -40,6 +45,9 @@ export async function startHarness(
     playback = new PlaybackState(),
     heartbeatIntervalMs,
     backstopIntervalMs,
+    chatHistoryLimit,
+    chatBurst,
+    chatRefillMs,
     listen = false,
   }: HarnessOptions = {},
 ): Promise<Harness> {
@@ -65,6 +73,9 @@ export async function startHarness(
     playback,
     heartbeatIntervalMs,
     backstopIntervalMs,
+    chatHistoryLimit,
+    chatBurst,
+    chatRefillMs,
   })
 
   let wsUrl = ''
@@ -80,6 +91,7 @@ export async function startHarness(
     config,
     playback,
     station: app.station,
+    chat: app.chat,
     wsUrl,
     async cleanup() {
       await app.close()
