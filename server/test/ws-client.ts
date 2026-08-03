@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws'
-import type { ClientMessage, ServerMessage, StateMessage } from '../src/protocol.js'
+import type { ClientMessage, QueueMessage, ServerMessage, StateMessage } from '../src/protocol.js'
 
 const DEFAULT_TIMEOUT_MS = 2_000
 
@@ -72,6 +72,10 @@ export class TestClient {
 
   async nextState(timeoutMs?: number): Promise<StateMessage> {
     return (await this.waitFor((m) => m.type === 'state', timeoutMs)) as StateMessage
+  }
+
+  async nextQueue(timeoutMs?: number): Promise<QueueMessage> {
+    return (await this.waitFor((m) => m.type === 'queue', timeoutMs)) as QueueMessage
   }
 
   send(message: ClientMessage | string): void {

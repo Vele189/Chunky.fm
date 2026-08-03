@@ -7,10 +7,13 @@ import { PlaybackState } from './playback.js'
 import { type RealtimeHandle, attachRealtime } from './realtime.js'
 import { mediaRoutes } from './routes/media.js'
 import { playbackRoutes } from './routes/playback.js'
+import { queueRoutes } from './routes/queue.js'
 import { uploadRoutes } from './routes/upload.js'
+import { Station } from './station.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
+    station: Station
     playback: PlaybackState
     realtime: RealtimeHandle
   }
@@ -23,6 +26,7 @@ export interface BuildAppOptions {
   /** Supply your own state (and clock) in tests; production builds its own. */
   playback?: PlaybackState
   heartbeatIntervalMs?: number
+  backstopIntervalMs?: number
   closeGraceMs?: number
 }
 
@@ -32,6 +36,7 @@ export async function buildApp({
   logger,
   playback = new PlaybackState(),
   heartbeatIntervalMs,
+  backstopIntervalMs,
   closeGraceMs,
 }: BuildAppOptions): Promise<FastifyInstance> {
   await ensureStorageDirs(config)
@@ -48,18 +53,22 @@ export async function buildApp({
 
   app.get('/health', async () => ({ ok: true }))
 
+  const station = new Station({ playback, backstopIntervalMs })
+
   await app.register(uploadRoutes({ config, db }))
   await app.register(mediaRoutes({ config, db }))
-  await app.register(playbackRoutes({ config, db, playback }))
+  await app.register(playbackRoutes({ config, db, station }))
+  await app.register(queueRoutes({ config, db, station }))
 
   const realtime = attachRealtime({
     server: app.server,
-    playback,
+    station,
     heartbeatIntervalMs,
     closeGraceMs,
     log: app.log,
   })
 
+  app.decorate('station', station)
   app.decorate('playback', playback)
   app.decorate('realtime', realtime)
 
@@ -67,6 +76,7 @@ export async function buildApp({
   // the sockets have to be drained *before* Fastify tries to close it. Using
   // onClose here deadlocks shutdown for as long as anyone is listening.
   app.addHook('preClose', async () => {
+    station.close()
     await realtime.close()
   })
 

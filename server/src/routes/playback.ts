@@ -3,12 +3,12 @@ import type { Config } from '../config.js'
 import type { Db, TrackRow } from '../db.js'
 import { requireAdmin } from '../lib/auth.js'
 import { toTrack } from '../lib/track.js'
-import type { PlaybackState } from '../playback.js'
+import type { Station } from '../station.js'
 
 interface PlaybackDeps {
   config: Config
   db: Db
-  playback: PlaybackState
+  station: Station
 }
 
 interface CommandBody {
@@ -21,19 +21,19 @@ const BODY_SCHEMA = {
   type: 'object',
   required: ['action'],
   properties: {
-    action: { type: 'string', enum: ['play', 'pause', 'resume', 'seek', 'stop'] },
+    action: { type: 'string', enum: ['play', 'pause', 'resume', 'seek', 'stop', 'skip'] },
     trackId: { type: 'integer', minimum: 1 },
     positionMs: { type: 'integer', minimum: 0 },
   },
 } as const
 
 /**
- * The smallest admin surface that makes the sync spike testable: something has
- * to put a track on the decks before two browsers can be compared. The full
- * deck (queue, reorder, skip) is task #1451/#1454 — this is deliberately just
- * the verbs PlaybackState already has.
+ * Driving the decks by hand: the verbs PlaybackState has, plus `skip`, which is
+ * the same advance the end-of-track timer performs. What's queued up behind the
+ * current track lives at /api/queue.
  */
-export function playbackRoutes({ config, db, playback }: PlaybackDeps): FastifyPluginAsync {
+export function playbackRoutes({ config, db, station }: PlaybackDeps): FastifyPluginAsync {
+  const { playback } = station
   const findTrack = (id: number) =>
     db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as TrackRow | undefined
 
@@ -77,6 +77,11 @@ export function playbackRoutes({ config, db, playback }: PlaybackDeps): FastifyP
           }
           case 'stop':
             playback.stop()
+            break
+          case 'skip':
+            // Off air when the queue is empty — skipping the last track is
+            // the end of the set, not a reason to replay anything.
+            station.advance()
             break
         }
 

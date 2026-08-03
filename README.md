@@ -23,6 +23,14 @@ curl -H "Authorization: Bearer $ADMIN_PASSWORD" -H 'content-type: application/js
      -d '{"action":"play","trackId":1}' http://localhost:3000/api/playback
 ```
 
+Or queue tracks up and let the station run itself — the first one goes straight
+on the decks, the rest follow as each track ends:
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_PASSWORD" -H 'content-type: application/json' \
+     -d '{"trackId":1}' http://localhost:3000/api/queue
+```
+
 ## Server
 
 ```bash
@@ -104,8 +112,13 @@ code path as joining at 0:00.
 | Message | When |
 |---|---|
 | `{ type: 'state', track, startedAt, pausedAt, serverTime }` | On connect, and on every playback change. |
+| `{ type: 'queue', entries }` | On connect, and on every queue change. |
 | `{ type: 'pong', t0, t1 }` | In reply to a clock probe. |
 | `{ type: 'error', message }` | Unrecognised frame; the connection stays open. |
+
+The queue is a separate message rather than a field on `state`: playback changes
+several times a track and the queue rarely does, so folding them together would
+ship the whole queue on every seek.
 
 **Client → server**
 
@@ -125,10 +138,45 @@ playback. Admin control over the socket will need its own gate.
 
 ### `POST /api/playback` — admin
 
-The minimum needed to drive the decks: `{action: 'play'|'pause'|'resume'|'seek'
-|'stop', trackId?, positionMs?}`, admin-only, returns the new state. Every
-command broadcasts over `/ws` before the HTTP response returns. The queue and
-the full admin surface are tasks #1451 and #1454.
+Driving the decks by hand: `{action: 'play'|'pause'|'resume'|'seek'|'stop'
+|'skip', trackId?, positionMs?}`, admin-only, returns the new state. Every
+command broadcasts over `/ws` before the HTTP response returns. `skip` is the
+same advance the end-of-track timer performs — next queued track, or off air.
+The admin UI on top of this is task #1453/#1454.
+
+### The queue
+
+What's coming up lives in memory, not the DB: it's session-scoped and dies with
+the process along with the rest of playback state. Entries are addressed by
+**entry id, not position** — the queue shifts by itself every time a track ends,
+so "remove the third one" races with auto-advance and removes the wrong track.
+The same track may be queued more than once, and each sitting is its own entry.
+
+| Route | What |
+|---|---|
+| `GET /api/queue` | `{ entries }`. Open, like `GET /api/playback`. |
+| `POST /api/queue` | Admin. `{trackId}` → `201 {entry, entries}`. |
+| `POST /api/queue/move` | Admin. `{entryId, toIndex}`, clamped to the queue. |
+| `DELETE /api/queue/:entryId` | Admin. Drops one entry. |
+| `DELETE /api/queue` | Admin. Empties the queue; leaves the current track playing. |
+
+Queueing onto an **idle** station starts that track immediately — with nothing
+on the decks there is nothing to wait for. A *paused* station stays paused;
+that's the admin's decision, not an empty deck.
+
+### Advancing
+
+When a track ends the server moves to the next one on its own, so a station left
+alone keeps playing. The mechanism is a `setTimeout` for the time remaining,
+rescheduled from PlaybackState's `change` event — so a pause, a resume, a seek
+or a hand-picked track all re-arm it correctly.
+
+Behind that is a slower sweep (every 2s) that advances any track whose time is
+up. A `setTimeout` fires late under load, and if the event loop stalls long
+enough it may as well not have fired at all; the failure mode is dead air until
+someone notices. The station clock, not the timer, decides whether a track is
+over — a timer that fires early goes back to sleep for what's actually left.
+Overrun isn't carried over: the next track always starts at 0:00.
 
 ## Client
 

@@ -145,6 +145,47 @@ describe('state broadcast', () => {
   })
 })
 
+describe('queue broadcast', () => {
+  it('sends the queue on connect', async () => {
+    harness.station.enqueue(track) // idle station — starts playing, nothing queued
+    harness.station.enqueue(nextTrack)
+
+    const [client] = await connect()
+
+    expect((await client!.nextQueue()).entries.map((e) => e.track.id)).toEqual([nextTrack.id])
+  })
+
+  it('reaches every client when the queue changes', async () => {
+    const connected = await connect(2)
+    await Promise.all(connected.map((client) => client.nextQueue()))
+
+    const entry = harness.station.queue.add(nextTrack)
+
+    for (const client of connected) {
+      expect((await client.nextQueue()).entries.map((e) => e.track.id)).toEqual([nextTrack.id])
+    }
+
+    harness.station.queue.remove(entry.id)
+
+    for (const client of connected) {
+      expect((await client.nextQueue()).entries).toEqual([])
+    }
+  })
+
+  it('tells listeners the queue shrank when a track is pulled off it', async () => {
+    harness.station.enqueue(track)
+    harness.station.enqueue(nextTrack)
+
+    const [client] = await connect()
+    await Promise.all([client!.nextState(), client!.nextQueue()])
+
+    harness.station.advance()
+
+    expect((await client!.nextState()).track?.id).toBe(nextTrack.id)
+    expect((await client!.nextQueue()).entries).toEqual([])
+  })
+})
+
 describe('clock handshake', () => {
   it('answers a ping with the server clock and the echoed probe', async () => {
     const [client] = await connect()

@@ -1,7 +1,9 @@
 import type { Server } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
-import type { PlaybackSnapshot, PlaybackState } from './playback.js'
-import { type ServerMessage, parseClientMessage, stateMessage } from './protocol.js'
+import type { PlaybackSnapshot } from './playback.js'
+import { type ServerMessage, parseClientMessage, queueMessage, stateMessage } from './protocol.js'
+import type { QueueEntry } from './queue.js'
+import type { Station } from './station.js'
 
 export interface RealtimeLogger {
   info(obj: object, msg: string): void
@@ -10,7 +12,7 @@ export interface RealtimeLogger {
 
 export interface RealtimeOptions {
   server: Server
-  playback: PlaybackState
+  station: Station
   path?: string
   /** How often to probe sockets for liveness. */
   heartbeatIntervalMs?: number
@@ -43,12 +45,13 @@ function send(socket: WebSocket, message: ServerMessage): void {
  */
 export function attachRealtime({
   server,
-  playback,
+  station,
   path = '/ws',
   heartbeatIntervalMs = DEFAULT_HEARTBEAT_MS,
   closeGraceMs = DEFAULT_CLOSE_GRACE_MS,
   log,
 }: RealtimeOptions): RealtimeHandle {
+  const { playback, queue } = station
   const wss = new WebSocketServer({ server, path, maxPayload: MAX_PAYLOAD_BYTES })
   // Sockets that have answered the most recent heartbeat.
   const responsive = new WeakSet<WebSocket>()
@@ -66,6 +69,7 @@ export function attachRealtime({
 
     // Drop straight into the moment: the snapshot alone is enough to align.
     send(socket, stateMessage(playback.snapshot()))
+    send(socket, queueMessage(queue.list()))
 
     socket.on('pong', () => responsive.add(socket))
 
@@ -96,6 +100,12 @@ export function attachRealtime({
   }
   playback.on('change', onChange)
 
+  const onQueueChange = (entries: QueueEntry[]) => {
+    log?.info({ queued: entries.length, listeners: wss.clients.size }, 'broadcasting queue')
+    broadcast(queueMessage(entries))
+  }
+  queue.on('change', onQueueChange)
+
   // A listener whose network vanished leaves a socket that looks open forever.
   const heartbeat = setInterval(() => {
     for (const socket of wss.clients) {
@@ -116,6 +126,7 @@ export function attachRealtime({
   async function shutdown(): Promise<void> {
     clearInterval(heartbeat)
     playback.off('change', onChange)
+    queue.off('change', onQueueChange)
 
     const sockets = [...wss.clients]
     const allClosed = Promise.all(

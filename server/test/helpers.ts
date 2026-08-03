@@ -4,11 +4,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
+import { vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { Config } from '../src/config.js'
 import { type Db, openDb } from '../src/db.js'
 import type { Track } from '../src/lib/track.js'
 import { PlaybackState } from '../src/playback.js'
+import type { Station } from '../src/station.js'
 
 export const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
 export const ADMIN_PASSWORD = 'hunter2-for-tests'
@@ -18,6 +20,7 @@ export interface Harness {
   db: Db
   config: Config
   playback: PlaybackState
+  station: Station
   /** Only set when the harness was started with `listen: true`. */
   wsUrl: string
   cleanup(): Promise<void>
@@ -26,13 +29,19 @@ export interface Harness {
 export interface HarnessOptions {
   playback?: PlaybackState
   heartbeatIntervalMs?: number
+  backstopIntervalMs?: number
   /** Bind a real port — required for anything that opens a websocket. */
   listen?: boolean
 }
 
 export async function startHarness(
   overrides: Partial<Config> = {},
-  { playback = new PlaybackState(), heartbeatIntervalMs, listen = false }: HarnessOptions = {},
+  {
+    playback = new PlaybackState(),
+    heartbeatIntervalMs,
+    backstopIntervalMs,
+    listen = false,
+  }: HarnessOptions = {},
 ): Promise<Harness> {
   const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'chunky-test-'))
   const config: Config = {
@@ -49,7 +58,14 @@ export async function startHarness(
   }
 
   const db = openDb(config.dbPath)
-  const app = await buildApp({ config, db, logger: false, playback, heartbeatIntervalMs })
+  const app = await buildApp({
+    config,
+    db,
+    logger: false,
+    playback,
+    heartbeatIntervalMs,
+    backstopIntervalMs,
+  })
 
   let wsUrl = ''
   if (listen) {
@@ -63,6 +79,7 @@ export async function startHarness(
     db,
     config,
     playback,
+    station: app.station,
     wsUrl,
     async cleanup() {
       await app.close()
@@ -102,6 +119,26 @@ export function fakeClock(start = 1_700_000_000_000) {
     set(value: number) {
       current = value
     },
+  }
+}
+
+export type FakeClock = ReturnType<typeof fakeClock>
+
+/**
+ * Move the station clock and the timer wheel together.
+ *
+ * The two are independent — PlaybackState reads an injected clock, timers live
+ * on vitest's fake wheel — so stepping only one produces states that cannot
+ * happen in production. Stepping in slices keeps them close enough that a timer
+ * firing mid-window still sees a sane clock; anything that ends exactly on a
+ * slice boundary lands on the exact millisecond.
+ */
+export async function advanceAll(clock: FakeClock, ms: number, stepMs = 1_000): Promise<void> {
+  for (let left = ms; left > 0; ) {
+    const slice = Math.min(stepMs, left)
+    clock.advance(slice)
+    await vi.advanceTimersByTimeAsync(slice)
+    left -= slice
   }
 }
 

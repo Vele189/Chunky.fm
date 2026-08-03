@@ -23,6 +23,18 @@ export interface StateMessage {
   serverTime: number
 }
 
+/** A track waiting its turn. The id is the entry's, not the track's. */
+export interface QueueEntry {
+  id: number
+  track: Track
+}
+
+/** What's coming up. Sent on connect and whenever the queue changes. */
+export interface QueueMessage {
+  type: 'queue'
+  entries: QueueEntry[]
+}
+
 export interface PongMessage {
   type: 'pong'
   t0: number
@@ -34,7 +46,7 @@ export interface ErrorMessage {
   message: string
 }
 
-export type ServerMessage = StateMessage | PongMessage | ErrorMessage
+export type ServerMessage = StateMessage | QueueMessage | PongMessage | ErrorMessage
 
 export interface PingMessage {
   type: 'ping'
