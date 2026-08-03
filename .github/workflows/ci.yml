@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A PR that gets pushed to twice does not need the first run any more; a push to
+# master does, because that run is the record of whether master is green.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Both workspaces expose the same three scripts, so one matrix covers them.
+  # Node 20 is in there because package.json claims `>=20.12` and the containers
+  # ship 22 — without both, one of those two statements quietly stops being true.
+  checks:
+    name: ${{ matrix.workspace }} (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [server, client]
+        node: ['20', '22']
+    defaults:
+      run:
+        working-directory: ${{ matrix.workspace }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: ${{ matrix.workspace }}/package-lock.json
+
+      # `npm ci` rather than `npm install`: the lockfile is the input, and a run
+      # that silently resolved something newer would not be testing this commit.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      # Server: tsc to dist/. Client: tsc --noEmit then vite build. Both are the
+      # step the Dockerfiles run, so a break here is a break in the image too.
+      - name: Build
+        run: npm run build
+
+  # The property the whole project rests on: two listeners joining at different
+  # times land on the same instant of the song. Headless, no browser, ~2s — it
+  # runs on every push because it is the one thing that must never regress.
+  sync-check:
+    name: sync check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+
+      - name: Two listeners must agree
+        run: npm run sync-check
+
+  # Unit tests never see nginx, the native sqlite build, or the volume. This job
+  # does: it brings up the real compose stack and talks to it over the ports a
+  # browser would use.
+  stack:
+    name: docker compose stack
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_PASSWORD: ci-admin-password
+      WEB_PORT: '18173'
+      SERVER_PORT: '13000'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build images
+        run: docker compose build
+
+      # --wait honours the HEALTHCHECK in both Dockerfiles, so reaching the next
+      # step already means the server answered /health and nginx served a page.
+      - name: Start the station
+        run: docker compose up -d --wait --wait-timeout 180
+
+      # Everything below goes through the web container on purpose. Hitting the
+      # server directly would skip nginx, which is where the proxy rules that
+      # make /api and /health work in production actually live.
+      - name: Health, through nginx
+        run: |
+          curl -fsS "http://localhost:$WEB_PORT/health" | tee /dev/stderr | grep -q '"ok":true'
+
+      - name: Health, direct to the server port
+        run: |
+          curl -fsS "http://localhost:$SERVER_PORT/health" | grep -q '"ok":true'
+
+      - name: The page is served, and the bundle with it
+        run: |
+          page=$(curl -fsS "http://localhost:$WEB_PORT/")
+          grep -q 'id="root"' <<<"$page"
+          asset=$(grep -o '/assets/[^"]*\.js' <<<"$page" | head -1)
+          test -n "$asset" || { echo "no hashed bundle referenced by index.html"; exit 1; }
+          curl -fsS -o /dev/null "http://localhost:$WEB_PORT$asset"
+
+      - name: The API answers
+        run: |
+          curl -fsS "http://localhost:$WEB_PORT/api/tracks" | grep -q 'tracks'
+
+      # Proves ADMIN_PASSWORD reached the container and the cookie is issued —
+      # the wrong-password half matters just as much, since a misread password
+      # that let everyone in would still pass the happy path.
+      - name: Admin sign-in refuses the wrong password
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'content-type: application/json' \
+            -d '{"password":"definitely-not-it"}' \
+            "http://localhost:$WEB_PORT/api/admin/session")
+          test "$code" = 401 || { echo "expected 401, got $code"; exit 1; }
+
+      - name: Admin sign-in accepts the right one
+        run: |
+          curl -fsS -X POST \
+            -H 'content-type: application/json' \
+            -d "{\"password\":\"$ADMIN_PASSWORD\"}" \
+            -c cookies.txt \
+            "http://localhost:$WEB_PORT/api/admin/session" | grep -q '"ok":true'
+          grep -q chunky_admin cookies.txt || { echo "no session cookie set"; exit 1; }
+          curl -fsS -b cookies.txt "http://localhost:$WEB_PORT/api/admin/session" | grep -q '"ok":true'
+
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color --timestamps
+
+      # -v takes the named volume with it. Nothing here is worth keeping, and a
+      # leftover volume would give the next run a pre-populated library.
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans

@@ -412,3 +412,32 @@ admin without a reload, and never grow a control.
 
 Between them these caught five bugs that every unit test passed straight
 through — see `docs/qa-notes.md`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `master` and every pull
+request, in three jobs:
+
+- **checks** — typecheck, unit tests and build, for both workspaces, on Node 20
+  and Node 22. Two versions because `server/package.json` claims `>=20.12` while
+  the containers ship 22; testing only one of those leaves the other a guess.
+- **sync check** — `server/npm run sync-check`, the headless version of
+  `verify:sync`. Two listeners join a real server over real websockets at
+  different times and must compute the same playback position. It takes about
+  two seconds and it is the thing that must never regress.
+- **docker compose stack** — builds both images, brings the stack up with
+  `--wait` so the Dockerfile healthchecks have to pass, then drives it over the
+  published ports: `/health` through nginx and direct, the page plus its hashed
+  bundle, `/api/tracks`, and an admin sign-in that has to refuse the wrong
+  password before it accepts the right one. This is the only job that sees
+  nginx, the native `better-sqlite3` build and the volume.
+
+What CI does not run is the browser QA above — it needs a real Chrome and a
+library with a few minutes of audio in it, neither of which a runner has. Those
+stay manual, which is worth remembering when a change touches seeking or
+reconnection: the suite that would catch it is the one nobody is running for
+you.
+
+Dependency updates come in through `.github/dependabot.yml` — weekly for both
+lockfiles with minor and patch bumps grouped into a single PR, monthly for the
+action versions pinned in the workflow.
