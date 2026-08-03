@@ -22,8 +22,12 @@ export function App() {
   const { status, state, connection } = useStation(undefined, (message) =>
     routeToClock.current(message),
   )
-  const clock = useServerClock(connection)
-  routeToClock.current = clock.handleMessage
+  const clock = useServerClock(connection, { connected: status === 'connected' })
+  // Assigned after commit, not during render — a render React throws away
+  // must not leave a handler wired up behind it.
+  useEffect(() => {
+    routeToClock.current = clock.handleMessage
+  }, [clock.handleMessage])
 
   const [drift, setDrift] = useState<{ correction: Correction; diff: number } | null>(null)
   const onCorrection = useCallback(

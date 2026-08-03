@@ -21,6 +21,11 @@ export interface ServerClock {
 }
 
 export interface ServerClockOptions {
+  /**
+   * Whether the socket is actually open. Probing before it is would drop every
+   * packet on the floor — `send` on a connecting socket is a silent no-op.
+   */
+  connected: boolean
   probeCount?: number
   probeSpacingMs?: number
   resyncIntervalMs?: number
@@ -41,11 +46,12 @@ export interface ServerClockOptions {
 export function useServerClock(
   connection: StationConnection | null,
   {
+    connected,
     probeCount = DEFAULT_PROBE_COUNT,
     probeSpacingMs = DEFAULT_PROBE_SPACING_MS,
     resyncIntervalMs = DEFAULT_RESYNC_INTERVAL_MS,
     now = Date.now,
-  }: ServerClockOptions = {},
+  }: ServerClockOptions,
 ): ServerClock {
   const [offsetMs, setOffsetMs] = useState(0)
   const [rttMs, setRttMs] = useState<number | null>(null)
@@ -72,7 +78,16 @@ export function useServerClock(
   )
 
   useEffect(() => {
-    if (!connection) return
+    // Gated on the socket actually being open. Probing a connecting socket
+    // drops every packet silently, which left listeners unsynced — and so
+    // uncorrected — until the next resync half a minute later.
+    if (!connection || !connected) return
+
+    // A reconnect may follow a long outage or a sleeping device, so the old
+    // samples are not trustworthy any more. Periodic resyncs keep theirs.
+    samples.current = []
+    inFlight.current.clear()
+
     const timers: number[] = []
 
     const probeOnce = () => {
@@ -98,7 +113,7 @@ export function useServerClock(
       for (const timer of timers) window.clearTimeout(timer)
       inFlight.current.clear()
     }
-  }, [connection, probeCount, probeSpacingMs, resyncIntervalMs, now])
+  }, [connection, connected, probeCount, probeSpacingMs, resyncIntervalMs, now])
 
   const serverNow = useCallback(() => now() + offsetMs, [now, offsetMs])
 

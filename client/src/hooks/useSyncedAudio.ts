@@ -37,14 +37,17 @@ export function useSyncedAudio({
   driftIntervalMs = DEFAULT_DRIFT_CHECK_INTERVAL_MS,
   onCorrection,
 }: SyncedAudioOptions): void {
-  // Read through refs in the drift loop so it isn't torn down and restarted on
-  // every state broadcast — the interval should be genuinely continuous.
+  // Read through refs in the loops below so neither is torn down and restarted
+  // on every render — the drift interval should be genuinely continuous, and
+  // realignment should happen only when the station actually says something.
   const stateRef = useRef(state)
-  stateRef.current = state
   const serverNowRef = useRef(serverNow)
-  serverNowRef.current = serverNow
   const onCorrectionRef = useRef(onCorrection)
-  onCorrectionRef.current = onCorrection
+  useEffect(() => {
+    stateRef.current = state
+    serverNowRef.current = serverNow
+    onCorrectionRef.current = onCorrection
+  })
 
   useEffect(() => {
     const audio = audioRef.current
@@ -54,7 +57,12 @@ export function useSyncedAudio({
     setSource(audio, track ? audioUrl(track) : null)
     if (!track || !joined || !synced) return
 
-    seekTo(audio, expectedPositionSeconds(state, serverNow()))
+    // The clock is read through the ref on purpose. serverNow's identity
+    // changes every time the offset estimate improves, and keying this effect
+    // on it would hard-seek the element mid-song — exactly the audible glitch
+    // the rate nudge exists to avoid. Offset refinements are the drift loop's
+    // job, and it corrects them gently.
+    seekTo(audio, expectedPositionSeconds(state, serverNowRef.current()))
     audio.playbackRate = 1
 
     if (state.pausedAt === null) {
@@ -64,7 +72,7 @@ export function useSyncedAudio({
     } else {
       audio.pause()
     }
-  }, [audioRef, state, joined, synced, serverNow])
+  }, [audioRef, state, joined, synced])
 
   useEffect(() => {
     if (!joined || !synced) return

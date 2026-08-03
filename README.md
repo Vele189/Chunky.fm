@@ -179,12 +179,21 @@ doing anything if the dead zone drops below 40ms.
 
 ### Verifying it
 
+Sync is the one thing unit tests genuinely cannot judge, so there are three
+scripts that drive real Chrome. Each needs a running server, a running Vite dev
+server, and at least two uploaded tracks (one of them a few minutes long).
+
 ```bash
-cd client && npm run verify:sync
+cd client
+npm run verify:sync    # two listeners joining at different times stay together
+npm run qa:playback    # seeks, pause/resume/seek/stop, track changes
+npm run qa:reconnect   # kills the server underneath a listener and restarts it
 ```
 
-Drives two real Chrome browser contexts against a running server: one joins at
-the start, the other five seconds in, and both must land on the same instant.
-It then knocks one listener 0.4s out to prove the rate nudge engages and
-converges, and 3s out to prove the hard seek does. Needs a server, a Vite dev
-server, and a track playing — see the top of this file.
+They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
+`OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect` also
+starts and stops the server itself, so build it first (`cd server && npm run
+build`).
+
+Between them these caught four bugs that every unit test passed straight
+through — see `docs/qa-notes.md`.

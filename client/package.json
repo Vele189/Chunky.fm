@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify:sync": "tsx scripts/two-browser-sync.ts"
+    "verify:sync": "tsx scripts/two-browser-sync.ts",
+    "qa:playback": "tsx scripts/qa-playback.ts",
+    "qa:reconnect": "tsx scripts/qa-reconnect.ts"
   },
   "dependencies": {
     "react": "^19.0.0",

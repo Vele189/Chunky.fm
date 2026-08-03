@@ -119,6 +119,56 @@ describe('StationConnection', () => {
     expect(FakeSocket.opened).toHaveLength(1)
   })
 
+  it('gives up on a socket that never opens', () => {
+    // A proxy in front of a dead backend can hold the upgrade open with
+    // neither error nor close. Without a timeout the retry loop stalls here
+    // and the listener never comes back.
+    const timedOut = new StationConnection({
+      url: 'ws://station/ws',
+      socketFactory: fakeSocketFactory,
+      reconnectDelaysMs: [100],
+      connectTimeoutMs: 3_000,
+      onMessage: (message) => messages.push(message),
+      onStatus: (status) => statuses.push(status),
+    })
+    timedOut.connect()
+    expect(FakeSocket.opened).toHaveLength(1)
+
+    vi.advanceTimersByTime(3_000) // connect timeout fires
+    expect(statuses.at(-1)).toBe('offline')
+
+    vi.advanceTimersByTime(100) // backoff elapses
+    expect(FakeSocket.opened).toHaveLength(2)
+
+    timedOut.close()
+  })
+
+  it('does not double-handle a socket that closes after timing out', () => {
+    const timedOut = new StationConnection({
+      url: 'ws://station/ws',
+      socketFactory: fakeSocketFactory,
+      reconnectDelaysMs: [100],
+      connectTimeoutMs: 3_000,
+      onMessage: (message) => messages.push(message),
+      onStatus: (status) => statuses.push(status),
+    })
+    timedOut.connect()
+    const stale = FakeSocket.last
+
+    vi.advanceTimersByTime(3_000) // connect timeout
+    vi.advanceTimersByTime(100) // backoff, second socket opens
+    const afterRetry = FakeSocket.opened.length
+    expect(afterRetry).toBe(2)
+
+    stale.drop() // the abandoned socket finally reports closed
+    // Well inside the new socket's own connect timeout, so any additional
+    // socket here could only have come from the superseded one.
+    vi.advanceTimersByTime(200)
+
+    expect(FakeSocket.opened).toHaveLength(afterRetry)
+    timedOut.close()
+  })
+
   it('only sends on an open socket', () => {
     station.connect()
     station.send({ type: 'ping', t0: 1 }) // still connecting
