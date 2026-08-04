@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { type Availability, INITIALLY, nextAvailability } from '../lib/availability.js'
 import { mergeMessages } from '../lib/chat.js'
 import { mergePlays } from '../lib/history.js'
 import type {
@@ -22,7 +23,15 @@ export function defaultStationUrl(): string {
 }
 
 export interface Station {
+  /** The socket itself. What decides whether a send would land. */
   status: StationStatus
+  /**
+   * What this page can honestly say about the station — the same story with
+   * its history folded in, which is what a screen needs and a single status
+   * cannot give: whether an outage is one this page has ever seen the other
+   * side of. See `lib/availability.ts`.
+   */
+  reach: Availability
   state: StateMessage | null
   /** What's coming up. Null until the first queue frame arrives. */
   queue: QueueEntry[] | null
@@ -90,6 +99,7 @@ export function useStation(
   onMessage?: (message: ServerMessage) => void,
 ): Station {
   const [status, setStatus] = useState<StationStatus>('connecting')
+  const [reach, setReach] = useState<Availability>(INITIALLY)
   const [state, setState] = useState<StateMessage | null>(null)
   const [queue, setQueue] = useState<QueueEntry[] | null>(null)
   const [listeners, setListeners] = useState<Listener[] | null>(null)
@@ -105,9 +115,15 @@ export function useStation(
   messageHandler.current = onMessage
 
   useEffect(() => {
+    // A different url is a different station, and nothing this page learned
+    // about the last one is about this one.
+    setReach(INITIALLY)
     const station = new StationConnection({
       url,
-      onStatus: setStatus,
+      onStatus: (next) => {
+        setStatus(next)
+        setReach((current) => nextAvailability(current, next))
+      },
       onMessage: (message) => {
         if (message.type === 'state') setState(message)
         if (message.type === 'queue') setQueue(message.entries)
@@ -160,6 +176,7 @@ export function useStation(
 
   return {
     status,
+    reach,
     state,
     queue,
     listeners,

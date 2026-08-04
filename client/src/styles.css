@@ -4,6 +4,9 @@
   --fg: #f2efe9;
   --muted: #8d8798;
   --accent: #ffb238;
+  /* Something is wrong, but nothing is lost — warm rather than alarming, since
+     every state wearing this colour is one the page recovers from by itself. */
+  --warn: #ff8a65;
 }
 
 * {
@@ -54,8 +57,16 @@ body {
   color: var(--muted);
 }
 
-.status--connected {
+/* Named for what the page can see of the station, not for the socket's own
+   state — see lib/availability.ts. `reaching` keeps the muted default: a first
+   attempt in flight is not yet anything to report. */
+.status--live {
   color: var(--accent);
+}
+
+.status--dropped,
+.status--unreachable {
+  color: var(--warn);
 }
 
 .join {
@@ -186,6 +197,50 @@ body {
   padding: 4rem 0;
   text-align: center;
   color: var(--muted);
+}
+
+.off-air__headline {
+  margin: 0 0 0.5rem;
+  color: var(--fg);
+}
+
+.off-air__detail {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* The offline screen: same shape as off-air, because it stands in the same
+   place, but it is about the station being gone rather than quiet. */
+.outage {
+  padding: 4rem 0;
+  text-align: center;
+}
+
+.outage__headline {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  color: var(--warn);
+}
+
+.outage__detail {
+  margin: 0 auto;
+  max-width: 26rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Runs above a page that still has the last thing the station said on it. Sits
+   under the header rather than over the track, so it explains what is below
+   without covering it. */
+.stale {
+  margin: 0.75rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #46352f;
+  border-radius: 0.5rem;
+  background: #1d1720;
+  color: var(--warn);
+  font-size: 0.8rem;
+  text-align: center;
 }
 
 .up-next {

@@ -572,6 +572,7 @@ from then on the page follows the station.
 - `lib/skips.ts` — the skip tally: what it is about, and how it reads.
 - `lib/history.ts` — folding in what has been on, and what counts as *earlier*.
 - `lib/station.ts` — the websocket, with reconnect and backoff.
+- `lib/availability.ts` — whether there is a station there, and what to say when there isn't.
 - `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
 - `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
 - `lib/clock.ts` — clock offset estimation from ping/pong samples.
@@ -697,6 +698,48 @@ and voting for something you can simply do is theatre. The tally still reaches
 the panel, next to that button — which is the only thing in the system that acts
 on it.
 
+### When there is no station
+
+PLAN.md's offline screen. Everything above assumes a socket; without one the
+page is a column of empty boxes and a small grey word in the corner, which reads
+like something that broke rather than a station that went away.
+
+The page distinguishes three of those, because they call for three different
+things being said:
+
+- **Never reached it** — nothing has ever answered. The panel says *chunky.fm is
+  off the air*, and there is no Tune in button at all.
+- **Had it and lost it** — the socket dropped. Whatever the station last said
+  stays on screen, with a line above it saying it is from before the drop.
+- **There, and quiet** — the station is answering with nothing on the decks. The
+  page says both halves: nothing is on, and you are tuned in for whatever is.
+
+The distinction that costs something is the first two, and `lib/availability.ts`
+is where it lives. `StationStatus` is about one socket, which is the wrong grain
+for a screen: a page loaded against a dead server cycles `connecting → offline →
+connecting` forever as the backoff runs, so anything keyed on the raw status
+alternates between two messages once per retry while the truth — nothing has
+ever answered — never changes. So availability is a *fold* over the statuses
+rather than a mapping of them: `connecting` is not news, and leaves whatever the
+page had already concluded standing until the attempt resolves.
+
+Two things it deliberately does not do. There is no Retry button, because the
+connection is already retrying on a backoff and the only thing a button could do
+is what is happening anyway, while implying the page had given up and was
+waiting to be asked. And a drop does not blank the track: a short outage is the
+common one and the audio usually plays through it out of the buffer, so a page
+that cleared a song the listener can still hear would be worse than the outage —
+the line above it is what stops the frozen roster and dead tally from still
+reading as live.
+
+Tuning in is refused while the station is unreachable, and not only because the
+join frame would go on the floor. Browsers start audio from inside a user
+gesture and nowhere else, so a listener who spends their click on an absent
+station gets a page that says a track is on and no sound when it comes back:
+`play()` would be called from a broadcast handler rather than a click, and
+refused. Better to hold the button back and hand it over when there is a station
+to hand it to — which the page does on its own, without a reload.
+
 ### Admin mode
 
 The controls live at **`/#admin`** (`/admin` works too, wherever the page is
@@ -790,15 +833,18 @@ doing anything if the dead zone drops below 40ms.
 ### Verifying it
 
 Sync — and anything else that only happens in a real browser — is what unit
-tests cannot judge, so there are ten scripts that drive real Chrome. Each needs
-a running server, a running Vite dev server, and at least two uploaded tracks
-(one of them a few minutes long).
+tests cannot judge, so there are eleven scripts that drive real Chrome. Each
+needs a running server, a running Vite dev server, and at least two uploaded
+tracks (one of them a few minutes long). `qa:offline` is the exception on the
+first count: it starts by taking the server away, and needs one only to put it
+back.
 
 ```bash
 cd client
 npm run verify:sync    # two listeners joining at different times stay together
 npm run qa:playback    # seeks, pause/resume/seek/stop, track changes
 npm run qa:reconnect   # kills the server underneath a listener and restarts it
+npm run qa:offline     # loads the page against a dead station, then takes one away
 npm run qa:presence    # three listeners watch each other arrive and leave
 npm run qa:chat        # they talk, one joins late, one tries to speak as another
 npm run qa:chat-refusal # types faster than the room will take, and checks what it says
@@ -810,8 +856,8 @@ npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
 
 They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
 `OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect`,
-`qa:presence` and `qa:chat` also start and stop the server itself, so build it
-first (`cd server && npm run build`) — telling a browser it is offline does *not* drop an
+`qa:offline`, `qa:presence` and `qa:chat` also start and stop the server itself,
+so build it first (`cd server && npm run build`) — telling a browser it is offline does *not* drop an
 established WebSocket, so taking the station away is the only way to test a
 disconnection for real. `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
 point it at something a few minutes long) and drives three tabs at once: an
@@ -826,7 +872,12 @@ on live, each of them with its own answer to "is my vote in?", a vote that leave
 with the tab that cast it, and a unanimous room that skips nothing. `qa:history`
 is the two halves of that acceptance: a line appearing the moment a track
 changes without anyone touching the page, and the same list still there after a
-reload and for someone who only just arrived.
+reload and for someone who only just arrived. `qa:offline` is the only one that
+starts with no station at all: it loads the page against a dead server, watches
+the message hold still through several backoff attempts rather than flickering
+once per retry, waits for the page to tune itself in when the server appears,
+and then takes it away again underneath a playing listener — which has to read
+as a drop rather than as never having found it, and must not blank the track.
 
 Between them these caught five bugs that every unit test passed straight
 through — see `docs/qa-notes.md`.

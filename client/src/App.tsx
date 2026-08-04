@@ -6,6 +6,7 @@ import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { isAdminRoute } from './lib/admin.js'
 import { seekTo } from './lib/audio-element.js'
+import { type Availability, canTuneIn, outage, staleNotice, statusLabel } from './lib/availability.js'
 import {
   chatRefusal,
   draftAfterRefusal,
@@ -50,12 +51,6 @@ import {
   wishStatusLabel,
 } from './lib/wishes.js'
 
-const STATUS_LABEL = {
-  connecting: 'tuning in…',
-  connected: 'on air',
-  offline: 'reconnecting…',
-} as const
-
 export function App() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [joined, setJoined] = useState(false)
@@ -70,6 +65,7 @@ export function App() {
   const routeToClock = useRef<(message: ServerMessage) => void>(() => undefined)
   const {
     status,
+    reach,
     state,
     queue,
     listeners,
@@ -150,6 +146,10 @@ export function App() {
   const track = state?.track ?? null
   const artwork = track ? artworkUrl(track) : null
   const tuning = joined && !clock.synced
+  // Nothing left on the page that came from a station: either this listener
+  // never got one, or the outage arrived before the first frame did. There is
+  // no stale truth to keep showing, so the outage screen takes the whole panel.
+  const stranded = reach !== 'live' && (!clock.synced || state === null)
 
   return (
     <main className="station">
@@ -161,36 +161,47 @@ export function App() {
               listening as {nickname}
             </span>
           )}
-          <span className={`status status--${status}`}>{STATUS_LABEL[status]}</span>
+          <span className={`status status--${reach}`}>{statusLabel(reach)}</span>
         </div>
       </header>
 
+      {/* Above everything it is about. What is below stopped being live at the
+          drop — the roster, the tally and the clock all did — and a page that
+          kept presenting it as current would be the broken UI this replaces. */}
+      {joined && !stranded && <StaleNotice state={reach} />}
+
       {!joined ? (
-        <section className="join">
-          <p className="join__blurb">
-            One station. Everyone hears the same instant of the same song.
-          </p>
-          <form className="join__form" onSubmit={joinStation}>
-            <label className="join__label" htmlFor="nickname">
-              What should everyone call you?
-            </label>
-            <input
-              id="nickname"
-              className="join__input"
-              name="nickname"
-              value={nickname}
-              onChange={(event) => setNickname(event.target.value)}
-              placeholder="nickname"
-              maxLength={NICKNAME_MAX_LENGTH}
-              autoComplete="nickname"
-              autoFocus
-              required
-            />
-            <button type="submit" className="join__button" disabled={!isValidNickname(nickname)}>
-              Tune in
-            </button>
-          </form>
-        </section>
+        canTuneIn(reach) ? (
+          <section className="join">
+            <p className="join__blurb">
+              One station. Everyone hears the same instant of the same song.
+            </p>
+            <form className="join__form" onSubmit={joinStation}>
+              <label className="join__label" htmlFor="nickname">
+                What should everyone call you?
+              </label>
+              <input
+                id="nickname"
+                className="join__input"
+                name="nickname"
+                value={nickname}
+                onChange={(event) => setNickname(event.target.value)}
+                placeholder="nickname"
+                maxLength={NICKNAME_MAX_LENGTH}
+                autoComplete="nickname"
+                autoFocus
+                required
+              />
+              <button type="submit" className="join__button" disabled={!isValidNickname(nickname)}>
+                Tune in
+              </button>
+            </form>
+          </section>
+        ) : (
+          <Outage state={reach} />
+        )
+      ) : stranded ? (
+        <Outage state={reach} />
       ) : tuning ? (
         <section className="off-air">
           <p>tuning in…</p>
@@ -216,8 +227,14 @@ export function App() {
           />
         </section>
       ) : (
-        <section className="off-air">
-          <p>Nothing on the decks right now.</p>
+        // The station is there and answering; it just isn't playing anything.
+        // That reads exactly like a broken page unless the page says otherwise,
+        // so it says both halves: nothing is on, and you have missed nothing.
+        <section className="off-air" data-testid="off-air">
+          <p className="off-air__headline">Nothing on the decks right now.</p>
+          <p className="off-air__detail">
+            You're tuned in — whatever goes on next starts here on its own.
+          </p>
         </section>
       )}
 
@@ -280,6 +297,51 @@ export function App() {
         />
       )}
     </main>
+  )
+}
+
+/**
+ * The station is not there.
+ *
+ * PLAN.md's offline screen. What it is for is the case where every other part
+ * of this page is a lie: no socket, so no track, no roster, no chat, and a
+ * layout full of empty boxes that reads like a page that broke rather than a
+ * station that went away. This says which one it is.
+ *
+ * There is no Retry button and there deliberately never will be. The connection
+ * is already retrying on a backoff (`lib/station.ts`), so the only thing a
+ * button could do is exactly what is happening anyway, while implying the page
+ * had given up and was waiting to be told to try again.
+ */
+function Outage({ state }: { state: Availability }) {
+  const notice = outage(state)
+  if (!notice) return null
+
+  return (
+    <section className="outage" data-testid="outage" data-reach={state} role="status">
+      <p className="outage__headline">{notice.headline}</p>
+      <p className="outage__detail">{notice.detail}</p>
+    </section>
+  )
+}
+
+/**
+ * The station is not there, but the page still has what it last said.
+ *
+ * A drop of a second or two is the common one, and the audio usually plays
+ * straight through it out of the buffer — so blanking a track the listener can
+ * still hear would be worse than the outage. What the page must not do is go on
+ * presenting a frozen roster and a dead tally as live, and this line is the
+ * difference between the two.
+ */
+function StaleNotice({ state }: { state: Availability }) {
+  const notice = staleNotice(state)
+  if (!notice) return null
+
+  return (
+    <p className="stale" data-testid="stale-notice" data-reach={state} role="status">
+      {notice}
+    </p>
   )
 }
 
