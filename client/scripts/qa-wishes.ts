@@ -11,10 +11,10 @@
  * Needs a running server and a running Vite dev server. See README.
  */
 import { type Browser, type Page, chromium } from 'playwright-core'
-import { ADMIN_PASSWORD, API_URL, CHROME_PATH, CLIENT_URL, Checks, tuneIn, wait } from './qa-env.js'
+import { ADMIN_PASSWORD, API_URL, CHROME_PATH, STATION_URL, Checks, tuneIn, wait } from './qa-env.js'
 
 const checks = new Checks()
-const ADMIN_URL = `${CLIENT_URL}/#admin`
+const ADMIN_URL = `${STATION_URL}#admin`
 
 /**
  * The wish book is kept for the life of a session, so a second run of this
@@ -54,8 +54,8 @@ const browser = await chromium.launch({
 })
 
 try {
-  const sam = await openPage(browser, CLIENT_URL)
-  const ana = await openPage(browser, CLIENT_URL)
+  const sam = await openPage(browser, STATION_URL)
+  const ana = await openPage(browser, STATION_URL)
   await tuneIn(sam, 'sam')
   await tuneIn(ana, 'ana')
   await wait(1_000)
@@ -104,8 +104,10 @@ try {
   )
 
   // --- the admin reads it and marks it off ------------------------------------
+  // No tuning in: the console is the whole page at #admin, and whoever is
+  // running the decks is not in the room — the wish book reaches them over
+  // HTTP, not over a listener's socket.
   const admin = await openPage(browser, ADMIN_URL)
-  await tuneIn(admin, 'the dj')
   await admin.fill('[data-testid="admin-password"]', ADMIN_PASSWORD)
   await admin.getByRole('button', { name: 'Sign in' }).click()
   await wait(1_500)

@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url'
 import type { Page } from 'playwright-core'
 
 export const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173'
+/**
+ * The station itself, which is not the origin: `/` is the page in front of it.
+ * Every script here drives the app, so this is what they all open — see
+ * STATION_PATH in src/lib/routes.ts, which this has to agree with.
+ */
+export const STATION_URL = `${CLIENT_URL.replace(/\/+$/, '')}/listen`
 export const API_URL = process.env.API_URL ?? 'http://localhost:3000'
 export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'change-me'
 export const CHROME_PATH = process.env.CHROME_PATH ?? '/usr/bin/google-chrome'

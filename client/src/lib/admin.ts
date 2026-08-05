@@ -134,6 +134,17 @@ export class AdminApi {
   }
 
   /** The library. Public, but only the admin has anything to do with it. */
+  /**
+   * The station key, or null on an open station.
+   *
+   * Admin-only at the station, and that is the invitation policy: a listener's
+   * browser cannot rebuild an invite on its own, so the only way to be invited
+   * is for whoever holds the password to send one.
+   */
+  async invite(): Promise<{ key: string | null }> {
+    return this.#json<{ key: string | null }>('GET', '/api/invite')
+  }
+
   async tracks(): Promise<Track[]> {
     return (await this.#json<{ tracks: Track[] }>('GET', '/api/tracks')).tracks
   }

@@ -18,7 +18,7 @@ import type { ChildProcess } from 'node:child_process'
 import { type Page, chromium } from 'playwright-core'
 import {
   CHROME_PATH,
-  CLIENT_URL,
+  STATION_URL,
   Checks,
   PLAYING,
   STATUS,
@@ -65,7 +65,7 @@ try {
   await health(false)
 
   const page = await (await browser.newContext()).newPage()
-  await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
+  await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   // Long enough for the first attempt to fail and a retry or two to follow it,
   // which is the window the old build spent flickering between two messages.
   await wait(4_000)

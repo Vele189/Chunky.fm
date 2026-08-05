@@ -15,7 +15,7 @@
 import { type Browser, type Page, chromium } from 'playwright-core'
 import {
   CHROME_PATH,
-  CLIENT_URL,
+  STATION_URL,
   Checks,
   OTHER_TRACK_ID,
   TRACK_ID,
@@ -56,7 +56,7 @@ async function expectEarlier(page: Page, who: string, expected: number[]): Promi
 
 async function join(browser: Browser, nickname: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage()
-  await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
+  await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, nickname)
   return page
 }
@@ -111,17 +111,19 @@ try {
 
   // --- a track that comes back on is a second play ---------------------------------
   await playbackCommand({ action: 'play', trackId: TRACK_ID })
-  // The first track is on again, so it drops off the list; what is left is the
-  // one in between. Two plays of one track, and the history is not confused by
-  // it — the rows are keyed on the play, not the track.
-  await expectEarlier(ana, 'ana when the first track comes back on', [OTHER_TRACK_ID])
+  // The row for *this* play drops off, because it is what is on and the page is
+  // already showing it in full. The earlier play of the same track stays: it is
+  // part of what happened, and the rows are keyed on the play, not the track.
+  // See `playedEarlier`, and the unit test named for exactly this case.
+  await expectEarlier(ana, 'ana when the first track comes back on', [
+    OTHER_TRACK_ID,
+    TRACK_ID,
+  ])
 
   await playbackCommand({ action: 'play', trackId: OTHER_TRACK_ID })
-  await expectEarlier(ana, 'ana with all three plays behind her', [
-    TRACK_ID,
-    OTHER_TRACK_ID,
-  ])
-  await expectEarlier(ben, 'ben, watching the same evening', [TRACK_ID, OTHER_TRACK_ID])
+  const evening = [TRACK_ID, OTHER_TRACK_ID, TRACK_ID]
+  await expectEarlier(ana, 'ana with all three plays behind her', evening)
+  await expectEarlier(ben, 'ben, watching the same evening', evening)
 
   // --- a pause is not a play --------------------------------------------------------
   const before = await earlierIds(ana)

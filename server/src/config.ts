@@ -11,6 +11,15 @@ export interface Config {
   tmpDir: string
   dbPath: string
   adminPassword: string
+  /**
+   * What a listener has to present to reach the station at all, or null for a
+   * station anyone with the address can hear.
+   *
+   * Separate from the admin password because it guards a different thing and is
+   * shared with different people: this one goes out in a link to everybody
+   * invited, and rotating it locks all of them out at once, which is the point.
+   */
+  stationKey: string | null
   maxUploadBytes: number
   /**
    * Who is allowed to tell the station where a request really came from.
@@ -80,6 +89,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     tmpDir: path.join(storageDir, 'tmp'),
     dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(storageDir, 'chunky.sqlite'),
     adminPassword,
+    // Optional on purpose. Unset means the station is open to anyone with the
+    // address, which is what it has always been and what PLAN.md's "one
+    // permanent link" describes. Set it and the address stops being enough.
+    stationKey: env.STATION_KEY?.trim() || null,
     maxUploadBytes: intFromEnv(env.MAX_UPLOAD_BYTES, DEFAULT_MAX_UPLOAD_BYTES, 'MAX_UPLOAD_BYTES'),
     trustProxy: trustProxyFromEnv(env.TRUST_PROXY),
   }

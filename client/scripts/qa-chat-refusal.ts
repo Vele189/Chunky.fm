@@ -12,7 +12,7 @@
  * only by a broken client. Needs a running Vite dev server and a station.
  */
 import { chromium } from 'playwright-core'
-import { CHROME_PATH, CLIENT_URL, Checks, tuneIn, wait } from './qa-env.js'
+import { CHROME_PATH, STATION_URL, Checks, tuneIn, wait } from './qa-env.js'
 
 const checks = new Checks()
 
@@ -31,7 +31,7 @@ const mine = (lines: string[]) => lines.filter((line) => line.includes(TAG))
 async function main() {
   const browser = await chromium.launch({ executablePath: CHROME_PATH })
   const page = await browser.newPage()
-  await page.goto(CLIENT_URL)
+  await page.goto(STATION_URL)
   await tuneIn(page, 'fast talker')
   await wait(2_000)
 

@@ -14,7 +14,7 @@ import type { ChildProcess } from 'node:child_process'
 import { type Browser, type Page, chromium } from 'playwright-core'
 import {
   CHROME_PATH,
-  CLIENT_URL,
+  STATION_URL,
   Checks,
   STATUS,
   TRACK_ID,
@@ -65,7 +65,7 @@ async function join(browser: Browser, nickname: string): Promise<Page> {
   // A context each: separate localStorage, separate sockets — as many listeners
   // as far as the station is concerned.
   const page = await (await browser.newContext()).newPage()
-  await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
+  await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, nickname)
   console.log(`${nickname}: tuned in`)
   return page
@@ -107,7 +107,7 @@ try {
   // A tab that opens the page but never tunes in holds a socket open and is
   // still not a listener — the roster is who named themselves, not who connected.
   const lurker = await (await browser.newContext()).newPage()
-  await lurker.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
+  await lurker.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await wait(1_000)
   await expectRoster(ana, 'ana with a lurker connected', ['ana', 'ben', 'cleo'])
   await lurker.close()

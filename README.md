@@ -10,12 +10,15 @@ In Docker, the whole station from one command:
 ./start.sh
 ```
 
-It writes a `.env` with a generated `ADMIN_PASSWORD` the first time, builds both
-images, and waits until the station answers before telling you where it is —
-<http://localhost:18173> to listen, `/#admin` to run it.
+It writes a `.env` with a generated `ADMIN_PASSWORD` the first time, rebuilds
+whatever has changed since last time, and waits until the station answers before
+telling you where it is —
+<http://localhost:18173/listen> to listen, `/listen#admin` to run it. The bare
+<http://localhost:18173> is the page describing the station; see [the landing
+page](#the-landing-page).
 
 ```bash
-./start.sh --build    # rebuild both images first
+./start.sh --build    # the same, but pull fresh base images first
 ./start.sh logs       # follow them
 ./start.sh status     # what is up, and how healthy
 ./start.sh stop       # stop, keeping the library
@@ -63,7 +66,7 @@ cd client && npm install && npm run dev                           # :5173
 Vite proxies `/api` and `/ws` through to the server, so the client only ever
 talks to its own origin.
 
-Then open <http://localhost:5173/#admin> and sign in with `ADMIN_PASSWORD` to
+Then open <http://localhost:5173/listen#admin> and sign in with `ADMIN_PASSWORD` to
 upload tracks and run the station. The browser trades the password for a session
 cookie once and never sends it again; a shell has nowhere to keep a cookie, so
 the password itself is accepted on any admin request too:
@@ -525,6 +528,63 @@ in before it shows a single control.
 the QA scripts use. The browser is the thing that shouldn't be holding a shared
 secret for hours; a one-liner in a terminal has nowhere else to put it.
 
+### `/api/listen` — who may hear the station
+
+The same exchange one rung down, and the answer to "only the people I sent a
+link to". `STATION_KEY` is optional: leave it unset and the station is open to
+anyone with the address, which is what PLAN.md's one-permanent-link decision
+describes and what every existing deployment keeps doing on upgrade.
+
+Set it and the address stops being enough. Invites go out as
+`https://…/listen?k=<STATION_KEY>` — and `https://…/?k=<STATION_KEY>`, which is
+what older ones say, is redirected there with the key intact rather than being
+answered by the landing page. The browser presents the key once, gets back an
+HMAC-signed HttpOnly cookie good for a month, and the key comes straight out of
+the address bar — a secret left in a URL is a secret in the history, in every
+screenshot and in the `Referer` of every outbound link.
+
+| Route | What |
+|---|---|
+| `GET /api/listen` | `204` if this browser is admitted, `401` if not. Asked once on load, before anything opens a socket. |
+| `POST /api/listen` | `{key}` → `204` and the cookie, `401` for a key that is not this station's, `429` once tries come too fast. |
+| `GET /api/invite` | Admin-only. `{key}` — the station key, or `null` on an open station. What the console's Share button builds a link out of. |
+
+What the key actually guards is the socket and the audio: `/ws` is refused at
+the handshake, and `/api/tracks`, `/api/audio/*` and `/api/artwork/*` are all
+behind the same gate. The socket is the important one — everything a listener
+sees arrives on it — and it is refused with a `401` on the upgrade rather than
+closed a moment later, because a client cannot tell a closed socket from a
+station that dropped, and would sit there reconnecting into the refusal forever.
+
+The signing key is derived from `STATION_KEY` itself, so **rotating it ends
+every invite at once** — which is how you un-invite somebody. There is no
+per-person revocation; a single shared key is the whole model.
+
+**Share** in the console header is where invites come from. It asks the station
+for the key and assembles the link against the address bar the console is
+actually on — behind nginx or Railway the server does not reliably know that,
+and the browser does. The link is shown as well as copied: sharing and clipboard
+access both need a secure context, so on a LAN address over plain HTTP neither
+exists, and seeing what you are about to send somebody beats a button claiming
+it worked.
+
+`GET /api/invite` is admin-only, and that is the entire invitation policy. A
+listener's browser cannot rebuild an invite on its own — the cookie is HttpOnly
+and the key was taken out of the address bar when they arrived — so being
+invited means somebody holding the password sent you a link. Handing the key to
+anyone already admitted would let one invite quietly invite everybody else.
+
+Whoever runs the decks never needs an invite: admin credentials satisfy the
+listener gate too, and `#admin` is deliberately outside it altogether — needing
+an invite to reach the sign-in form would lock the owner out of their own
+station, with no way to issue themselves one. And the console is never advertised to anyone else — the
+Listener/Admin control in the top bar and the mark at the foot of the rail are
+both rendered only for a browser already holding an admin session. That is not
+a lock, and is not doing any security work: `#admin` still reaches the sign-in
+form if you type it, and every route that does anything is gated on the server.
+It is the page declining to show a door to the hundred per cent of visitors it
+would refuse.
+
 ### The queue
 
 What's coming up lives in memory, not the DB: it's session-scoped and dies with
@@ -561,9 +621,11 @@ Overrun isn't carried over: the next track always starts at 0:00.
 
 ## Client
 
-React + Vite, one page. The listener names themselves and taps **Tune in** —
-which is also the user gesture browsers require before audio may start — and
-from then on the page follows the station.
+React + Vite. The station itself is one page, served at `/listen`: the listener
+names themselves and taps **Tune in** — which is also the user gesture browsers
+require before audio may start — and from then on the page follows the station.
+At `/` there is a second, much smaller document in front of it; see [the landing
+page](#the-landing-page).
 
 - `lib/position.ts` — where the needle should be, given the tuple and a server time.
 - `lib/nickname.ts` — the nickname: normalising it, and keeping it in localStorage.
@@ -581,6 +643,544 @@ from then on the page follows the station.
 - `hooks/usePresence.ts` — says who this listener is, and says it again on reconnect.
 - `hooks/useSyncedAudio.ts` — aligns on every broadcast, and every 2s in between.
 - `AdminPanel.tsx` — the decks, for whoever runs the station.
+
+### The landing page
+
+`/` is a second document — `landing.html`, entered at `src/landing/main.tsx` —
+that answers "what is this" for somebody who has not been let in yet. It has no
+socket, no clock and no audio element in its bundle, which is the point: it has
+to describe the station on the days the station is not up.
+
+It stands at the bare address because that is where somebody who has only heard
+the name arrives. The station itself is one name in, at **`/listen`**
+(`STATION_PATH` in `lib/routes.ts`) — nothing inside the app depends on that,
+since every link the rail and the topbar draw is a bare fragment that works at
+whatever path the document came from. What depends on it is everything
+*outside*: the landing page's two ways in, the invite link the console hands
+out, and the QA scripts.
+
+The one thing the root may not swallow is an invite. A private station's link is
+`/?k=<key>`, and links handed out before the doorway moved are still in people's
+messages — serving those the landing page would hand the key to a document with
+no code in it to redeem it. So a request for `/` **carrying a key** is sent on
+to `/listen` with the key intact, and only a request without one gets the
+landing page. (`if ($arg_k != "")`, not `if ($arg_k)`: the latter is nginx's own
+idea of truth, and would read a key of literally `0` as no key at all.)
+
+The fragment is the one part of a request nginx never sees, so `/#admin` — the
+console's address for the whole of the project so far, and in whatever bookmark
+whoever runs the decks is using — arrives at the landing page looking like any
+other visit. `src/landing/main.tsx` honours it anyway: any fragment `routeInHash`
+recognises is replaced with the same route on `/listen`. Fragments the page owns,
+like `#clockwork`, name no route and are left alone. `/welcome`, where the
+landing page used to live, is a 301 to `/`.
+
+All of that lives in two places that have to agree: `nginx.conf`, and a small
+plugin in `vite.config.ts` that does the same three things for `npm run dev` and
+`vite preview`. They agree for the same reason the `/api` and `/ws` proxies do —
+the client ships unchanged, so what happens at the front door in front of a dev
+server has to be what happens in production, or the first place anyone notices a
+difference is production. `/listen` itself needs no rule in either: Vite's SPA
+fallback and nginx's `try_files … /index.html` both already answer an unknown
+path with the station, which is what it is.
+
+The one place the station links back to it is the doorway, on the `refused`
+screen: somebody standing outside a private station is the only visitor who does
+not already know what they have been sent. The `unreachable` screen does not
+link to it — an invite that works and a station that is away is somebody
+waiting, not somebody asking.
+
+The design is shared rather than copied, which is what stops the page in front
+of the product drifting a shade off the product:
+
+| | |
+|---|---|
+| `src/tokens.css` | Every colour, radius and face. Imported by both stylesheets and owned by neither. |
+| `src/shared.css` | The objects both pages draw: the turntable, the LIVE badge, the level meter, the wordmark, the white pill. |
+| `src/styles.css` | The station — the shell, the rail, the panels, the console. |
+| `src/landing/landing.css` | Arrangement only. It specifies no colour, radius or face of its own. |
+
+The record behind the headline is not a picture of the deck; it is
+`Turntable.tsx`'s own `Deck`, and the LIVE badge and level meter further down are
+its `OnAir` and `Waveform`, rendered from the same components the listener page
+uses. Every one of them sits inside an `aria-hidden` block, because each is
+normally a *report* — red means on the air right now, the record turns because
+audio is running — and this page has no station behind it to report on. Shown as
+a picture of the deck working, they are honest; shown as live instruments beside
+the headline, they would be claiming something the page cannot know.
+
+#### One word that will not sit still
+
+*Music is **infinite** now* uses [Aceternity UI's Squiggly
+Text](https://ui.aceternity.com/components/squiggly-text) — Lucas Bebber's
+trick: five SVG filters, each `feTurbulence` noise fed into an
+`feDisplacementMap`, cycled fast enough that the letters appear to wriggle.
+Nothing actually moves; it is five stills shown in turn.
+
+One word rather than the line, and it is the right one — the sentence is about a
+thing that will not hold still or stop, and *infinite* is where that lands.
+Squiggling the whole headline would just be a wobbly headline.
+
+Two departures, both about frames this page has other plans for. The original
+derives the current filter from motion's clock, which is a callback on every one
+of sixty frames a second to pick a value that changes twelve times a second; an
+interval at the step duration writes the same filter at the same moments for a
+twentieth of the cost. And it stops when the section is off screen — an SVG
+filter swap re-rasterises the text it is applied to, which is not free, and it
+was doing it four screens away. Same `useOnScreen` as the gramophone and the
+globe.
+
+It does not run at all under `prefers-reduced-motion`. Text that wobbles
+continuously is near the top of the list of things that setting exists for.
+
+#### The room, revealed
+
+*And the room around it* is [Aceternity UI's Sticky Scroll
+Reveal](https://ui.aceternity.com/components/sticky-scroll-reveal): three things
+to read down the left of its own scroll container, the one nearest a breakpoint
+at `index / count` brought to full opacity while the others sit at 0.3, and one
+sticky panel held against the right edge showing whatever that item is about — a nickname, then
+the room talking, then the room disagreeing. All three panels are real features:
+the join screen, the chat, the skip tally.
+
+Being its own scroller is the good part of the design. The element it measures
+is one whose height nobody changes, so unlike the floating bar and the standing
+panel it cannot be thrown by the document growing underneath it.
+
+**What is not ported is how it reads that scroller.** The original goes through
+`useScroll({ container, offset })`, and the progress that came back did not line
+up with the `index / count` breakpoints the same file then compares it against:
+the middle item of three was never the nearest to anything, so the panel went
+straight from the first to the last and a third of the section was unreachable.
+`scrollTop / (scrollHeight − clientHeight)` is the fraction those breakpoints
+are expressed in, so it reads that.
+
+**The sticky side is a deck.** It is [Aceternity UI's Card
+Stack](https://ui.aceternity.com/components/card-stack), with the original's
+arithmetic kept: the card at position `i` sits `i × 10px` higher, at
+`1 − i × 0.06` scale, `length − i` deep, transform origin at the top so the ones
+behind peek out above the face rather than growing out of the middle of it.
+
+The one departure is what turns it. The original runs a `setInterval` that moves
+the last card to the front every five seconds, which is right for a stack
+decorating a page on its own. This one is inside a reveal that already knows
+which of its three things you are reading, so the deck is cut to that instead —
+scrolling deals the next card.
+
+Two things it needed that the original does not. The card face has to be
+**opaque**: at `--panel`'s 70% you can read the skip tally and the join screen
+through the conversation sitting on top of them. And the deck sits *inside* the
+sticky box rather than being it — sharing one element meant `.stack` and
+`.sticky-reveal__panel` both declaring `position` and `width`, and whichever came
+later in the stylesheet won. That collapsed the column of text once and killed
+the stickiness once before I split them.
+
+Two other changes. The original animates the container between three
+slate-to-black backgrounds and the panel between three saturated gradients —
+cyan/emerald, pink/indigo, orange/yellow. Unlike the glare card's foil these are
+not a hover; they would be on screen the whole time somebody is reading, so the
+change of state is kept and drawn in the design's own greys. And the panels are
+hidden rather than unmounted when inactive: the conversation in one of them is
+filling as the page scrolls, and a panel rebuilt on every change would keep
+starting the evening again.
+
+The panel is pinned right with `margin-left: auto` rather than by letting the
+text column push it there: the column is capped at 42ch, so on a wide section it
+stops growing long before the panel runs out of room, and the pair would drift
+into the middle together. The container's right padding is zero and the
+scrollbar gets `scrollbar-gutter: stable`, so a scrollbar appearing does not
+shove the panel back in.
+
+The middle panel is drawn as a chat conversation — an avatar, a bubble, a name
+and the second of the record it was said at, with consecutive lines from one
+person losing the repeated face. The station has no picture of anybody, so the
+avatar is the one thing it can honestly draw: the first letter of the nickname.
+
+The lines land **one at a time**. The playhead says how many are *due* — how
+many the record has gone past — and `useOneByOne` walks the count up to that, a
+line every 420ms. Due is not the same as said: arriving at the section with the
+record already at 2:13 makes five lines due in the same frame, and five bubbles
+appearing together is a transcript rather than a conversation. The same applies
+to a hard scroll, which would otherwise dump four at once. Backwards is not
+paced — scrolling up takes the playhead with it and lines fall back out, and
+running that in reverse a step at a time would be the room un-saying things at a
+stately pace while the reader is already somewhere else. `nextStep` is the pure
+half of it, so the pacing is tested without a clock.
+
+It follows itself down as lines arrive, which needs one non-obvious thing. A
+line opens from `0fr` to `1fr`, so at the moment it is said the row is still
+flat and `scrollHeight` does not include it — scrolling to the bottom lands at a
+bottom that has not happened. A timer set to the transition's length works until
+somebody changes it in the stylesheet; a `ResizeObserver` on the rows fires when
+they have actually finished opening, whatever the CSS says, and costs nine
+observations.
+
+(Aceternity's own *Chat Conversation* illustration block is behind Pro —
+`shadcn add` returns *"You are not authorized to access the item"* and the
+registry 401s, where free components on the same endpoint return 200. This is
+built from its public description rather than ported from its source.)
+
+One bug worth remembering, because it is easy to write again. The scroll effect
+must depend on `items.length`, not on `items`. The array is built inline by the
+caller, so it is a new one every render — and this section re-renders on every
+scroll frame, because the conversation panel follows the page's playhead. On
+`items`, the listener was torn down and re-added constantly and any scroll event
+landing in the gap was lost: the active item would stop changing until something
+else forced a re-render.
+
+#### The wishes
+
+The card is the one from [Aceternity UI's features
+section](https://ui.aceternity.com/components/feature-sections-free): a surface
+grading from the panel colour down into the sheet, a large radius, and a
+suggestion of graph paper in the upper-left corner. The paper is the original's
+two masks doing the work — a linear one fading the grid downward and a radial
+one fading it away from the top edge, so it reads as a corner rather than a
+texture over the card.
+
+One departure. The original picks its filled cells with `Math.random()` in the
+render body, so every re-render re-rolls the pattern. On a page whose sections
+re-render as you scroll, the squares would twitch; `GridPattern` takes a seed
+instead, so each card has an arrangement of its own and keeps it.
+
+Four wishes rather than six, in a 2×2 — each card is large enough to read at a
+glance, and four is a wall somebody finishes.
+
+An earlier pass had these cards carrying Aceternity's Canvas Reveal Effect with
+the wish hidden until you pointed at a card. It is a good effect and it was the
+wrong one here: these four sentences *are* the section's argument, and a wall
+that says nothing until you touch it says nothing at all on a phone.
+
+#### The panel that stands up
+
+*What the room asks for* sits inside [Aceternity UI's Container Scroll
+Animation](https://ui.aceternity.com/components/container-scroll-animation), in
+the demo's own pattern: a centred title above a device-frame card that starts
+laid back 20°, comes upright as you scroll it into place, and settles from 1.05
+to 1 while the title drifts up 100px. It is the one centred thing on a
+left-aligned page, which is also why it reads as a moment rather than another
+block — the wishes are the most surprising thing the station does.
+
+Two departures. The bezel uses `--raised-soft` and `--raised` rather than the
+original's `#6C6C6C` and `#222222`, so the frame is the same grey as the deck in
+the hero instead of looking like a screenshot of somebody else's site. And the
+card is not a fixed 30/40rem: the original's content is an image, which crops
+happily, and ours is text — text in an `overflow-hidden` box at a height nobody
+measured is text with its last line sliced off. It takes the height of what is
+in it, with a floor.
+
+**The one that mattered.** The original drives everything from
+`useScroll({ target })`, which caches where the element sits in the document and
+re-measures on resize. That is right on a page of fixed height and wrong on this
+one: the room panel opens a row every time the playhead reaches another line, so
+everything below it moves down without a resize ever firing, the cached offsets
+go stale, and the progress comes out as a step — the card sat at 20° through the
+whole section and then snapped flat in one frame. `getBoundingClientRect` on a
+rAF-throttled scroll listener is the same quantity from live geometry, and
+cannot be stale. (This is the second component on the page to hit that; the
+floating bar has the same problem and the same answer.)
+
+#### Two objects that were always drawing
+
+Both three.js scenes — the hero gramophone and the globe — rendered every frame
+for the entire length of the document, whether or not anybody could see them.
+The cost lands on everything else that wants a frame: the bar's resize, the
+pile, the reveal.
+
+`useOnScreen` stops them. Measured idle cost at 1440×900, under a software
+renderer so the absolute numbers are pessimistic but the ratios are real:
+
+| where | drawing | frame |
+|---|---|---|
+| top of the page | both | 217ms |
+| past the hero | globe only | 100ms |
+| bottom of the page | neither | 16.7ms |
+
+The gramophone skips the draw when it is away; the globe uses
+react-three-fiber's `frameloop="never"`, which stops the loop without unmounting
+the scene — rebuilding it would refetch nothing but would cost a stutter every
+time it came back. The clock keeps running in both cases, so an object returns
+at the angle it would have reached rather than the one it left at.
+
+The gramophone also draws at 30fps rather than 60. A full turn takes twenty-six
+seconds, so it moves about a seventh of a degree per frame — half of those
+frames are indistinguishable from the one before and every one of them costs the
+same as a real one.
+
+And the sections that do not read the playhead are `memo`ised. `Landing`
+re-renders on every scroll frame, so without it a moving playhead re-rendered
+nine sleeves, twelve glare cards, the globe wrapper and the bar — the last of
+which holds a spring that should not be interrupted. Its props are built once at
+the module for the same reason.
+
+#### The bar
+
+[Aceternity UI's Resizable Navbar](https://ui.aceternity.com/components/resizable-navbar):
+full width at the top of the page, and past 100px of scroll it animates into a
+floating pill — width, a 20px drop, a backdrop blur and a shadow, all on one
+spring. The hovered item is a single pill that slides between the links on a
+shared `layoutId` rather than one background fading in per link.
+
+It replaces two things the page used to have separately, a sticky masthead and a
+floating bar that came back on scroll-up. One bar is easier to reason about than
+two that have to agree about which of them is on screen.
+
+**Shrunk, it is glass.** `backdrop-filter: blur(22px) saturate(180%)` — and the
+saturate is the half people leave out: blur alone gives you frosted plastic, and
+pushing the colour of whatever is behind gives you glass. What passes under this
+bar is album art and a lit gramophone, which is exactly the sort of thing worth
+saturating. Over that sits a tint at 55% (thinner than it looks like it should
+be — a bar that reads as glass at 55% reads as paint at 80%), a sheen down from
+the top edge and a highlight off the upper-left shoulder, both painted as part of
+the element's own background so they sit under the words rather than across them.
+The edge is three hairlines: a ring all the way round, a brighter line along the
+top where a light source catches the bevel, and a dark one along the bottom where
+the far edge falls away.
+
+The filter is applied at one strength the whole time rather than animated in. It
+is not composited, so changing it would repaint the bar every frame of the
+resize — and at the top of the page there is nothing behind it but the sheet, so
+a filter there costs nothing and shows nothing either. What arrives with the
+shrink is the tint, the sheen and the edge.
+
+**Two things had to change about how it is animated, and both are visible.**
+
+The original animates `boxShadow` from `"none"` to a five-part shadow. That pair
+cannot be interpolated, so motion writes one frame and abandons the whole
+`animate` object — the bar never resizes, never drops and never blurs, because
+every property in the batch goes down with the shadow. Making the pair
+interpolable gets it working, and then you can see the second problem: a
+box-shadow is not a composited property, so interpolating one repaints the
+element every frame, and one of its five parts is a 1px white `inset` ring. A
+hairline being colour-interpolated *and* re-rasterised at a new width sixty times
+a second shimmers along its edge — a glitchy-looking border, because it is one.
+So the lift lives on `.navbar__body::after` and arrives on `opacity`, which the
+compositor can do without repainting anything. The blur is on the whole time for
+the same reason: `backdrop-filter` is not composited either, and over a
+near-black page there is nothing behind the bar to blur at the top of the
+document anyway.
+
+**And the cap belongs on the wrapper, not the bar.** With `max-width: 1080px` on
+the bar itself, the first quarter of the shrink did nothing — `100%` of a 1440px
+window is 1440, clamped to 1080, so the spring ran from 100% to about 75% with
+the bar visibly frozen and then jumped when the percentage finally fell below the
+cap. On the wrapper the percentages are of a box that is already 1080 wide, so
+the first frame moves: `1080 → 1031 → 933 → 856 → … → 626`, largest single-frame
+step 25px of a 454px move.
+
+Two smaller departures. The original imports two icons from `@tabler/icons-react`
+for the mobile toggle and does not list it as a dependency, so `shadcn add`
+leaves you with a build error; two nine-line SVGs cost less than the package. And
+it passes `{ target, offset }` to `useScroll` when it only reads `scrollY`, which
+is the window's either way — dropping them removes a measurement this page has
+twice been bitten by and changes nothing.
+
+It also shrinks further than the original, which goes to 40% with an 800px floor:
+on most screens the floor wins and the bar barely moves. This page is capped at
+1080px and has no floor, so the shrink is one you can see — 1080px to 626px.
+
+Which is why the links are **in flow rather than absolutely centred**. The
+original places them with `absolute; inset: 0`, so they are laid out without
+reference to the wordmark or the buttons either side of them. That is fine while
+the bar is wide and wrong the moment it is not: at 626px the centred group ran
+straight into *Run the decks* and the two read as one word. A flex item cannot
+overlap its siblings, and the links are still centred — in the space that is
+actually theirs rather than in a box they share with two other things.
+
+The decks label drops to its icon on `[data-shrunk='true']` as well as at a
+narrow window. The attribute is the only signal that can see a 626px bar inside
+a 1440px window; no media query can.
+
+#### The evening's six steps
+
+*How an evening runs* is six [Aceternity UI Glare
+Cards](https://ui.aceternity.com/components/glare-card) in an [Infinite Moving
+Cards](https://ui.aceternity.com/components/infinite-moving-cards) row — the
+pointer-driven tilt, the white glare that follows the cursor, and the rainbow
+foil under it with its four stacked gradients and its blend modes, going past
+forever. The glare effect is entirely CSS custom properties; all
+`GlareCard.tsx` does in JavaScript is measure the pointer and write six numbers
+(`--m-x/y`, `--r-x/y`, `--bg-x/y`).
+
+The row holds the six twice and translates itself by exactly half its width, so
+the second lap arrives where the first started and the loop has no seam (`- 8px`
+is half the gap, which the 50% would otherwise count twice). Two things about
+`InfiniteMovingCards.tsx` are not the original's, and both are because of what
+is in the row rather than preference:
+
+- **The second lap is rendered, not cloned.** The original walks the DOM and
+  `cloneNode(true)`s every card into the same list, which is fine for its own
+  cards because they are markup. Ours are `GlareCard`s, and a cloned node has no
+  React on it — half the cards in the row would sit there dead, not tilting, not
+  catching the light, for no reason a visitor could work out.
+- **It pauses on focus and on touch, not only on hover.** A glare card only
+  shows you anything while a pointer is on it, so one that slid out from under
+  the cursor would be the one thing on the page you cannot look at. `:focus-within`
+  covers a keyboard and `:active` covers a finger, which has no hover at all.
+
+The second lap is `aria-hidden` — it is the same six things said twice, and a
+screen reader being read the evening's six steps twelve times is the loop
+leaking out of the visual layer it belongs in. Under `prefers-reduced-motion`
+the row stops, the duplicate lap is dropped and the container becomes a plain
+scrollable row, which is what it was before it moved.
+
+Two departures. The radius is 18px rather than 48px, because everything on this
+site is drawn at 14–22px and a 48px corner on a 236px card is a lozenge. And
+worth being explicit about the foil: `tokens.css` allows this design one accent
+(white) and one signal (red, meaning on the air right now), and a rainbow is
+neither — but the original already keeps `--opacity` at 0 until hover, so the
+page a visitor reads is still monochrome and the foil is something they find.
+
+Two things were changed rather than ported. The original blends its *content*
+layer with `soft-light` too, which is right for the artwork in its demo and
+wrong for words — body text over a dark surface goes to something you lean in to
+read. Only the glare and the foil blend here. And its pointermove handler
+contains a `console.log(state.current)`, which fires on every frame the cursor
+is over a card.
+
+The cards are `div`s and these six are an ordered list — the sequence is the
+content — so each one stays inside its `li` rather than replacing it.
+
+#### The globe
+
+Beside the sentence, a globe with twelve listeners' arcs all landing on the one
+station. `World.tsx` is a port of [Aceternity UI's GitHub
+Globe](https://ui.aceternity.com/components/github-globe) — three-globe's hex
+polygons, the dashed animated arcs, the rings firing at their origins — with
+four deliberate departures:
+
+- **Colour.** The demo is a blue globe with cyan, blue and indigo arcs. This
+  design has one accent (white) and one signal (red, meaning on the air right
+  now, which nothing else may borrow). So the globe is monochrome and there is
+  no red anywhere near it.
+- **Where the arcs go.** The demo draws a mesh of city-to-city routes, which is
+  the picture of a network. This is not a network — it is one station and one
+  link — so every arc lands on the same point. Twelve of them, because the
+  limits section says *around thirty listeners, not thirty thousand*, and a
+  globe implying otherwise would be advertising a different product.
+- **No drei, and no hand-built camera.** The original spins the globe with an
+  `OrbitControls` that has pan, zoom and rotate all switched off — a whole
+  dependency for `autoRotate`, which is one line in `useFrame`. Its camera is
+  built with a hardcoded 1.2 aspect ratio, which draws the sphere as an ellipse
+  in any box that is not that shape; described to the `Canvas` instead,
+  react-three-fiber keeps the aspect in step with the box.
+- **`arcDashGap`.** The original's 15 leaves each arc dark for ~95% of its cycle
+  (1.6 here). On a demo with fifty arcs something is always lit; with twelve the
+  globe is mostly empty.
+
+The component imports `@/data/globe.json`, which shadcn does not install and you
+are expected to supply. `npm run assets:countries` builds it: Natural Earth 110m
+(public domain, from three-globe's own examples) with every property stripped —
+the globe reads geometry and nothing else — and coordinates cut to three decimal
+places, about 100m and far under one hex at resolution 3. 477 KB to 183 KB.
+
+Two of the things that script does are not for size. `hexPolygonsData` runs every
+ring through **h3-js**, which is stricter about geometry than a renderer is: a
+zero-length edge throws `E_FAILED`, which surfaces as an uncaught *"The operation
+failed but a more specific error is not available (code: 1)"* and silently drops
+the countries after the bad ring. Rounding coordinates is what makes those edges.
+So consecutive duplicate points are removed, and rings left with fewer than four
+points are dropped along with any polygon left without an outer ring. At two
+decimal places one ring in Natural Earth collapses that way; at three, none do.
+
+Loaded the same way as the hero model: WebGL is probed first, then the whole
+thing arrives on a dynamic import once the page is readable. It is the largest
+chunk on the site by far, and none of it is in the landing bundle.
+
+#### The pile of records
+
+*The Moment* is the globe and one sentence side by side, under them the
+evening's sleeves on a table across the full width of the page, and under those
+the level meter, centred. They can be picked up and thrown. Full width
+because there are nine of them — four sat in a column beside the sentence, and
+nine want a table.
+
+Every sleeve is the same sleeve. The record that is on is the one at the front
+of the pile and nothing else — no badge on it, no clock, no head count. It is a
+record, and a record does not report anything; the LIVE mark beside the sentence
+and the bar along the bottom of the page are where this page says what is
+happening, and saying it a third time would be the pile pretending to be an
+interface rather than a stack of records on a table.
+
+`DraggableCard.tsx` is a port of [Aceternity UI's Draggable
+Card](https://ui.aceternity.com/components/draggable-card), which arrives via
+`npx shadcn add` and is written for Tailwind. This is not a shadcn project and
+has no Tailwind, so the physics is kept exactly — the same spring (stiffness
+100, damping 20, mass 0.5), the same ±300px→∓25° tilt, the same glare, the same
+velocity-carried throw — and every utility class is a rule in `landing.css`
+drawn from `tokens.css` instead. It needs `motion`, which is the one dependency
+in the landing bundle rather than behind a dynamic import.
+
+One departure from the original: `dragEnabled`. A dragged element swallows the
+gesture that started on it, so on a touch screen a pile covering half a column
+is a pile that stops the page scrolling under a thumb. Drag is on for
+`(hover: hover) and (pointer: fine)` and off everywhere else, where the pile is
+a pile of records to look at.
+
+The sleeves are `SLEEVES` — `BEEN_ON` filtered to the records the page has cover
+art for, rather than a second list. One evening drawn twice, so the pile cannot
+come to disagree with the written-down evening further down the page; the tests
+in `test/session.test.ts` are what hold that. `npm run assets:albums` squares
+the scans and takes them to WebP at 640.
+
+Where each one lies is `PILE` in `Landing.tsx`, in percentages of the table
+rather than pixels, so one arrangement holds its shape from a phone to a wide
+monitor instead of being three scatters in three media queries. Below 720px the
+table shows the six most recent and below 560px the five, because nine sleeves
+across a phone is not a pile but a heap — every card at its floor size, every
+one behind another, and nowhere for a caption like *The Miseducation of Lauryn
+Hill* to go. Nothing is lost by it: the whole evening is listed in *What has
+been on* a few screens down, sleeve or no sleeve.
+
+#### The object in the hero
+
+A gramophone, turned slowly behind the headline, rendered with three.js. It
+replaces the flat `Deck` that used to sit there — but only once it has arrived,
+and only on a machine that can draw it. `Gramophone.tsx` checks for WebGL before
+it fetches anything, imports three and the model dynamically so neither is in
+the landing bundle, and keeps the `Deck` on screen until the model is ready. A
+machine with no WebGL downloads neither and keeps the deck for good. The page
+has never needed the model, so nothing about the page waits for it, breaks
+without it, or reserves a hole where it would have gone.
+
+The file arrived from Sketchfab at **30.8 MB** — 31k triangles, which is
+nothing, and 25 PNG textures, which was all of it. `npm run assets:models` is
+the command that takes it to ~1 MB: textures to WebP at 1024, geometry
+quantized. Quantization rather than Draco deliberately — Draco needs a decoder
+fetched at runtime, and nothing in this app reaches off its own origin. The
+original lives in `client/assets-src/` and is not copied into the image; the
+optimized one lives in `src/assets/models/` and is imported with `?url`, so
+Vite hashes its filename and the `immutable` cache header on `location /assets/`
+is telling the truth about it.
+
+Like everything else on this page it is `aria-hidden` and reports nothing: it
+turns because gramophones turn, not because a station is playing.
+
+#### The page is a song
+
+The document is scrubbed through five and a half minutes of one record: the top
+is 0:00, the bottom is the last bar, and `useScrubbedSession` turns the scroll
+offset into a position. That number drives two things — the slim player fixed to
+the bottom of the window, and the room panel in *And the room around it*, whose
+lines arrive as the playhead reaches the second each was said at. By the time
+somebody has read the page they have moved through a song with a room talking
+around them, which is the product, felt rather than described. Arriving at the
+room section part-way through the conversation is the point rather than a bug:
+it is what walking into a station mid-song is like.
+
+The arithmetic under it — `scrubbed`, `saidBy`, `clock`, `through` — is pure and
+lives in `landing/session.ts` beside the invented session it operates on, so
+what the page is doing is testable without a window (`test/session.test.ts`).
+
+Everything on that page is made up, and has to be: it cannot ask the station
+anything, which is the whole reason it exists. What it may not do is *look* like
+a report. So the bar is `aria-hidden` and carries the words **sample session**
+next to the badge — on this site a red dot means on the air right now, and a bar
+borrowing that meaning to advertise with would be the one thing on the page
+actively lying. The invented head count is checked against the station's real
+ceiling in the tests for the same reason: a landing page boasting five figures
+would be advertising a different product from the one the limits section
+describes two screens further down.
 
 ### Joining
 
@@ -742,8 +1342,8 @@ to hand it to — which the page does on its own, without a reload.
 
 ### Admin mode
 
-The controls live at **`/#admin`** (`/admin` works too, wherever the page is
-served with an SPA fallback). Off that route nothing admin renders, and the
+The controls live at **`/listen#admin`** (`/admin` works too, wherever the page
+is served with an SPA fallback). Off that route nothing admin renders, and the
 route alone reveals nothing: the panel shows a password form until the server
 has accepted a session at `/api/admin/session`. A wrong password gets the form
 back, and so does a `401` mid-session — which is what happens when the session
@@ -852,7 +1452,16 @@ npm run qa:wishes      # one listener asks, the room hears nothing, the admin ma
 npm run qa:skips       # three listeners vote, the room agrees, the next track starts fresh
 npm run qa:history     # tracks appear in Earlier as they change, and survive a reload
 npm run qa:admin       # sign in, upload, queue, reorder, drive the decks
+
+npm run qa:all         # all eleven, restarting the station between each
 ```
+
+Prefer `qa:all` for a full pass. Run back-to-back by hand they interfere with
+each other: the roster, the skip tally, the chat and the evening's history all
+live in the session, and most of these scripts open by asserting on an empty
+one — so whichever goes second fails on the first one's leftovers. `qa:all`
+restarts the station before each script, which is the only thing that gives
+them the empty room they are written against.
 
 They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
 `OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect`,

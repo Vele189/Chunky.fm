@@ -2,8 +2,8 @@
 #
 # Start chunky.fm: the backend, its database, and the frontend.
 #
-#   ./start.sh              build if needed, start everything, wait for healthy
-#   ./start.sh --build      force a rebuild of both images first
+#   ./start.sh              rebuild what has changed, start everything, wait
+#   ./start.sh --build      the same, but pull fresh base images first
 #   ./start.sh logs         follow the logs of the running station
 #   ./start.sh status       what is up, and how healthy
 #   ./start.sh stop         stop the containers, keep the library
@@ -173,13 +173,24 @@ start() {
   server_port=$(env_value SERVER_PORT); server_port=${server_port:-13000}
   check_ports "$web_port" "$server_port"
 
+  # `--pull` is the only part of a rebuild a local layer cache cannot decide for
+  # itself: whether node:22-bookworm-slim still means what it meant last month.
+  # The build below will hit the cache for everything this leaves in place.
   if [[ $force_build == yes ]]; then
-    info "Building images"
+    info "Refreshing base images"
     compose build --pull
   fi
 
-  info "Starting the station"
-  compose up -d --remove-orphans
+  # `--build` every time, deliberately.
+  #
+  # Compose's own idea of whether an image is needed is only whether the tag
+  # exists — `image:` in docker-compose.yml names one, so a plain `up` after an
+  # edit starts the last image built and says nothing about it. That is a change
+  # that appears to have had no effect, in the one place it is hardest to doubt:
+  # the thing you started to look at the change. Whereas the cost of building
+  # every time, when nothing has changed, is a cache lookup per layer.
+  info "Building and starting the station"
+  compose up -d --build --remove-orphans
 
   info "Waiting for services"
   wait_for_health server "backend + sqlite" || die "startup failed"
@@ -187,8 +198,9 @@ start() {
 
   say
   say "  ${bold}chunky.fm is on air${reset}"
-  say "    listen   ${bold}http://localhost:${web_port}${reset}"
-  say "    admin    ${bold}http://localhost:${web_port}/#admin${reset}"
+  say "    listen   ${bold}http://localhost:${web_port}/listen${reset}"
+  say "    admin    ${bold}http://localhost:${web_port}/listen#admin${reset}"
+  say "    about    http://localhost:${web_port}"
   say "    api      http://localhost:${server_port}"
   say "    library  docker volume ${bold}chunky-fm_data${reset} ${dim}(sqlite + audio + artwork)${reset}"
   say

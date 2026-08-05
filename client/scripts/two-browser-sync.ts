@@ -7,7 +7,9 @@
  */
 import { chromium, type Page } from 'playwright-core'
 
-const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173'
+// The station, not the origin: `/` is the page in front of it. Kept in step
+// with STATION_PATH in src/lib/routes.ts.
+const CLIENT_URL = `${(process.env.CLIENT_URL ?? 'http://localhost:5173').replace(/\/+$/, '')}/listen`
 const CHROME = process.env.CHROME_PATH ?? '/usr/bin/google-chrome'
 const TOLERANCE_MS = 150
 

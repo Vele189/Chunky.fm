@@ -12,6 +12,9 @@ services:
     image: chunky-fm/server:latest
     environment:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required — copy .env.example to .env and set it}
+      # Optional, and empty means an open station — see .env.example. Set it and
+      # listening needs a link carrying the key; rotating it ends every invite.
+      STATION_KEY: ${STATION_KEY:-}
       AUDIO_STORAGE_DIR: /data
       HOST: 0.0.0.0
       PORT: "3000"

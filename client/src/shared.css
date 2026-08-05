@@ -1,0 +1,334 @@
+@import './tokens.css';
+
+/* chunky.fm — the objects both pages draw.
+ *
+ * The turntable, the LIVE badge and the level meter are the station's face: the
+ * listener page puts them at the top of the deck column, and the landing page
+ * puts the same three in its hero. They live here rather than in styles.css so
+ * that a change to the record's size or the badge's red reaches both at once —
+ * the components in Turntable.tsx are already shared, and a shared component
+ * whose stylesheet was copied would drift the first time either was touched.
+ */
+
+/* --- the deck --------------------------------------------------------------
+ *
+ * The turntable, at the design's exact 340px with a 300px well inside it. Fixed
+ * rather than fluid: a record that changed size with the window would stop
+ * looking like an object sitting on a page.
+ */
+
+.deck {
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  padding: 20px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, #404040 0%, #262626 50%, #171717 100%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 10%),
+    0 25px 50px rgb(0 0 0 / 25%);
+}
+
+.deck__well {
+  position: relative;
+  display: grid;
+  flex: 1;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--ring);
+}
+
+.deck__record {
+  display: grid;
+  place-items: center;
+  width: 246px;
+  height: 246px;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--pill);
+  background: #000000;
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 5%);
+  /* Where the design left it. The animation below takes over from here. */
+  transform: rotate(95.82deg);
+}
+
+/* A record at 33⅓ would be a blur at this size, so it turns at a speed you can
+   read as turning. It stops — rather than slowing to a stylish halt — because
+   what it is reporting is that the audio stopped. */
+@keyframes deck-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.deck[data-spinning='true'] .deck__record {
+  animation: deck-spin 4s linear infinite;
+}
+
+.deck__label {
+  width: 84px;
+  height: 84px;
+  border-radius: var(--pill);
+  object-fit: cover;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 10%)) drop-shadow(0 1px 1px rgb(0 0 0 / 10%));
+}
+
+.deck__label--blank {
+  background: linear-gradient(135deg, #e5e5e5 0%, #a1a1a1 100%);
+}
+
+.deck__spindle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--pill);
+  background: #171717;
+}
+
+/* The arm is drawn where the design puts it — pivot at the top right of the
+   well, bar reaching up and out over the edge. It lifts when nothing is on. */
+.deck__pivot {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--pill);
+  background: var(--faint);
+  box-shadow: 0 0 0 1px #404040;
+}
+
+.deck__arm {
+  position: absolute;
+  top: -47.62px;
+  left: -102.9px;
+  display: grid;
+  place-items: center;
+  width: 116.773px;
+  height: 67.156px;
+  transition: transform 400ms ease;
+  transform-origin: 88% 74%;
+}
+
+.deck[data-spinning='false'] .deck__arm {
+  transform: rotate(-14deg);
+}
+
+.deck__arm-bar {
+  width: 128px;
+  height: 8px;
+  border-radius: var(--pill);
+  background: var(--muted);
+  transform: rotate(28deg);
+}
+
+/* --- the LIVE badge ------------------------------------------------------- */
+
+.onair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.onair__badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--pill);
+  background: var(--live-wash);
+  box-shadow: inset 0 0 0 1px rgb(251 44 54 / 30%);
+  color: var(--live-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16.5px;
+}
+
+.onair__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--pill);
+  background: var(--live);
+}
+
+/* Off the air the badge keeps its shape and loses its colour: the space it
+   takes up should not move when the station stops. */
+.onair__badge--off {
+  background: var(--raised);
+  box-shadow: none;
+  color: var(--muted);
+}
+
+.onair__badge--off .onair__dot {
+  background: var(--faint);
+}
+
+.onair__where {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
+.onair__where img {
+  display: block;
+}
+
+/* --- the level meter ------------------------------------------------------ */
+
+.levels {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+}
+
+.levels__mark {
+  flex: none;
+  color: var(--live-text);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.levels__mark--off {
+  color: var(--faint);
+}
+
+.levels__bars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  height: 32px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.levels__bar {
+  flex: none;
+  width: 3px;
+  border-radius: var(--pill);
+  background: var(--fg);
+  transform-origin: center;
+  /* Flat when nothing is playing: a meter that kept dancing over silence would
+     be the one thing on this page actively lying. */
+  transform: scaleY(0.18);
+  transition: transform 200ms ease;
+}
+
+@keyframes levels-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.levels[data-live='true'] .levels__bar {
+  animation: levels-pulse 900ms ease-in-out infinite alternate;
+}
+
+/* Some listeners have asked their machine not to animate things. The record
+   and the meter both carry meaning, so they keep their two states — they just
+   stop moving between them. */
+@media (prefers-reduced-motion: reduce) {
+  .deck[data-spinning='true'] .deck__record,
+  .levels[data-live='true'] .levels__bar {
+    animation: none;
+  }
+
+  .levels[data-live='true'] .levels__bar {
+    transform: scaleY(1);
+  }
+
+  .deck__arm {
+    transition: none;
+  }
+}
+
+/* --- the wordmark --------------------------------------------------------
+ *
+ * The station's name, in the two weights the design gives it: the word in
+ * white and the suffix in grey. It is a heading on the station and on the
+ * doorway, and plain text on the landing page's masthead — so it is styled by
+ * class rather than by element. */
+
+.wordmark {
+  flex: none;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.45px;
+  line-height: 27px;
+  color: var(--fg);
+}
+
+.wordmark a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.wordmark__tld {
+  color: var(--faint);
+}
+
+/* --- buttons ---------------------------------------------------------------
+ *
+ * One white pill for the thing this control group is for, and quiet ones for
+ * everything beside it. Same shape as the listener page's send buttons.
+ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--fg);
+  color: #171717;
+  font: 600 12px/18px var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button img {
+  display: block;
+}
+
+/* Some of these are anchors — the way out of the doorway, the two on the
+   landing page — and a pill with an underline through it stops reading as a
+   pill. The colour is set above; only the browser's underline has to go. */
+a.button {
+  text-decoration: none;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--fg-dim);
+}
+
+.button--quiet {
+  background: var(--raised);
+  color: var(--fg-dim);
+}
+
+.button--quiet:hover:not(:disabled) {
+  background: var(--raised-soft);
+}
+
+.button:disabled {
+  background: var(--raised);
+  color: var(--faint);
+  cursor: not-allowed;
+}

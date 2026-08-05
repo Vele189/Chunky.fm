@@ -1,4 +1,4 @@
-import type { Server } from 'node:http'
+import type { IncomingHttpHeaders, Server } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
 import { type ChatLog, RateLimit } from './chat.js'
 import type { PlayLog } from './history.js'
@@ -36,6 +36,14 @@ export interface RealtimeOptions {
   /** The session's history. Omit and the station keeps no record of what was on. */
   plays?: PlayLog
   path?: string
+  /**
+   * Decides whether an upgrade is allowed to become a socket at all.
+   *
+   * A predicate rather than the config, so realtime does not have to know what
+   * a station key is — and so the tests can open sockets without one. Omit it
+   * and every upgrade is admitted, which is the open station.
+   */
+  admit?(headers: IncomingHttpHeaders): boolean
   /** How often to probe sockets for liveness. */
   heartbeatIntervalMs?: number
   /** How long a shutdown waits for close handshakes before forcing sockets shut. */
@@ -124,6 +132,7 @@ export function attachRealtime({
   wishes,
   plays,
   path = '/ws',
+  admit,
   heartbeatIntervalMs = DEFAULT_HEARTBEAT_MS,
   closeGraceMs = DEFAULT_CLOSE_GRACE_MS,
   chatBurst = DEFAULT_CHAT_BURST,
@@ -137,7 +146,17 @@ export function attachRealtime({
   log,
 }: RealtimeOptions): RealtimeHandle {
   const { playback, queue } = station
-  const wss = new WebSocketServer({ server, path, maxPayload: MAX_PAYLOAD_BYTES })
+  const wss = new WebSocketServer({
+    server,
+    path,
+    maxPayload: MAX_PAYLOAD_BYTES,
+    // Refused at the handshake, before a socket exists. Closing it a moment
+    // later would work too, but the client cannot tell that apart from the
+    // station dropping — and would sit there reconnecting into it forever,
+    // telling the listener the station was down when it is only shut to them.
+    // A 401 on the upgrade is unambiguous, and `ws` sends one for `false`.
+    verifyClient: admit ? (info: { req: { headers: IncomingHttpHeaders } }) => admit(info.req.headers) : undefined,
+  })
   // Sockets that have answered the most recent heartbeat.
   const responsive = new WeakSet<WebSocket>()
   const presence = new Presence()

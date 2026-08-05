@@ -8,7 +8,9 @@ import { registerErrorHandlers } from './lib/errors.js'
 import { ensureStorageDirs } from './lib/storage.js'
 import { PlaybackState } from './playback.js'
 import { type RealtimeHandle, attachRealtime } from './realtime.js'
+import { mayListen } from './lib/auth.js'
 import { adminRoutes } from './routes/admin.js'
+import { listenRoutes } from './routes/listen.js'
 import { mediaRoutes } from './routes/media.js'
 import { playbackRoutes } from './routes/playback.js'
 import { queueRoutes } from './routes/queue.js'
@@ -123,6 +125,7 @@ export async function buildApp({
   })
 
   await app.register(adminRoutes({ config, signInBurst, signInRefillMs }))
+  await app.register(listenRoutes({ config }))
   await app.register(uploadRoutes({ config, db }))
   await app.register(mediaRoutes({ config, db }))
   await app.register(playbackRoutes({ config, db, station }))
@@ -132,6 +135,9 @@ export async function buildApp({
   const realtime = attachRealtime({
     server: app.server,
     station,
+    // The socket is the station: refusing it is what makes a private station
+    // private, since everything a listener sees arrives on it.
+    admit: (headers) => mayListen(config, headers),
     chat,
     wishes,
     plays,

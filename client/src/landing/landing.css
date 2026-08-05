@@ -1,0 +1,2427 @@
+@import '../tokens.css';
+@import '../shared.css';
+
+/* chunky.fm — the page in front of the station.
+ *
+ * Drawn from the same values and the same objects as the station, because that
+ * is the only way a landing page stays honest: the deck in the hero is the deck
+ * on the listener page, the LIVE badge is the LIVE badge, and the white pill
+ * that says "Tune in" is the white pill that sends a message in the chat.
+ * Nothing here re-specifies a colour, a radius or a face.
+ *
+ * What is new below is only arrangement, and the arrangement has one rule: one
+ * idea per screen. The station is a room you sit in, where everything has to be
+ * visible at once; this is a thing you are read to, at the pace of somebody
+ * scrolling, and the sections are spaced so that you rarely see two of them
+ * whole. That is why the gaps are large enough to look like mistakes in a
+ * screenshot and do not read as gaps at all on a real screen.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg-soft);
+  font: 400 14px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* The page is scrolled to its own anchors, and landing under the sticky bar
+   would hide the heading. */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 96px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* --- the sheet -------------------------------------------------------------
+ *
+ * Every section is its own band down the page rather than rows inside one
+ * column, so a section can be given the whole width when it wants it (the room,
+ * the moment) without the others losing their measure. `.landing > main > *`
+ * carries the common gutter and cap; sections that want more say so.
+ */
+
+.landing {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  /* The bar along the bottom is fixed, and the last thing on the page should
+     not end up underneath it. */
+  padding-bottom: 72px;
+}
+
+.landing > main > section {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+/* The rhythm. Large on purpose — see the note at the top of the file. */
+.landing > main > section + section {
+  margin-top: 200px;
+}
+
+@media (max-width: 940px) {
+  .landing > main > section {
+    padding: 0 24px;
+  }
+
+  .landing > main > section + section {
+    margin-top: 140px;
+  }
+}
+
+@media (max-width: 560px) {
+  .landing > main > section {
+    padding: 0 20px;
+  }
+
+  .landing > main > section + section {
+    margin-top: 104px;
+  }
+}
+
+/* --- the bar ---------------------------------------------------------------
+ *
+ * Aceternity UI's Resizable Navbar. Everything about when it shrinks is in
+ * ResizableNavbar.tsx — width, the drop, the blur and the shadow are all
+ * animated there on one spring. This is what it is made of.
+ *
+ * It replaces two things: a sticky masthead and a floating bar that came back on
+ * scroll-up. One bar is easier to reason about than two that have to agree about
+ * which of them is on screen.
+ */
+
+/* The cap lives here, not on the bar.
+ *
+ * With `max-width: 1080px` on the bar itself, the first quarter of the width
+ * animation did nothing: `100%` of a 1440px window is 1440, clamped to 1080, so
+ * the spring ran from 100% to about 75% with the bar visibly frozen and then
+ * jumped when the percentage finally dropped below the cap. On the wrapper the
+ * percentages are of a box that is already 1080 wide, so the very first frame
+ * moves. */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.navbar__body,
+.navbar__mobile {
+  margin: 0 auto;
+}
+
+.navbar__body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 12px 12px 20px;
+  border-radius: var(--pill);
+}
+
+/* The edge, on a layer of its own.
+ *
+ * Both bars carry it. It holds the drop shadow and the inset hairlines, and it
+ * arrives on `opacity` — which the compositor can do without repainting — rather
+ * than by interpolating a five-part `box-shadow` on the element while its width
+ * is changing underneath it. That is what made the hairline shimmer: a 1px ring
+ * being re-rasterised at a new width and a new colour on the same frame. On its
+ * own layer the ring is drawn once at each size and simply faded.
+ *
+ * Three hairlines rather than one, which is most of what makes a pane of glass
+ * look like glass: a ring all the way round, a brighter line along the top where
+ * a light source catches the bevel, and a dark one along the bottom where the
+ * far edge falls away. */
+.navbar__body::after,
+.navbar__mobile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 14%),
+    inset 0 1px 0 rgb(255 255 255 / 22%),
+    inset 0 -1px 0 rgb(0 0 0 / 30%),
+    0 1px 1px rgb(0 0 0 / 20%),
+    0 0 24px rgb(0 0 0 / 22%),
+    0 16px 68px rgb(0 0 0 / 34%);
+  opacity: 0;
+  transition: opacity 260ms ease;
+  pointer-events: none;
+}
+
+.navbar__body[data-shrunk='true']::after,
+.navbar__mobile[data-shrunk='true']::after {
+  opacity: 1;
+}
+
+/* --- the glass ------------------------------------------------------------
+ *
+ * `backdrop-filter` is the whole trick, and the `saturate` is the half of it
+ * people leave out: blur alone gives you frosted plastic, and pushing the colour
+ * of whatever is behind gives you glass. What passes under this bar is album art
+ * and a lit gramophone, which is exactly the sort of thing worth saturating.
+ *
+ * At one strength the whole time rather than animated in. It is not a composited
+ * property, so changing it would repaint the bar every frame of the resize — and
+ * at the top of the page there is nothing behind it but the sheet, so a filter
+ * there costs nothing and shows nothing either. */
+.navbar__body,
+.navbar__mobile {
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  transition:
+    background-color 260ms ease,
+    background-image 260ms ease;
+}
+
+/* Shrunk, it is a pane held above the page.
+ *
+ * The tint is thinner than it looks like it should be — glass is mostly what is
+ * behind it, and a bar that reads as glass at 55% reads as paint at 80%. Over
+ * the tint, two gradients painted as part of the element's own background so
+ * they sit under the words rather than across them: a sheen down from the top
+ * edge, and a highlight off the upper-left shoulder, which is what stops it
+ * looking like a flat pane and starts it looking like a curved one. */
+.navbar__body[data-shrunk='true'],
+.navbar__mobile[data-shrunk='true'] {
+  background-color: rgb(24 24 27 / 55%);
+  background-image:
+    linear-gradient(to bottom, rgb(255 255 255 / 10%), rgb(255 255 255 / 0%) 55%),
+    radial-gradient(130% 200% at 16% -60%, rgb(255 255 255 / 8%), rgb(255 255 255 / 0%) 62%);
+}
+
+/* Full width it is the top of the sheet, and should not look like a strip laid
+   on one: barely a tint, and none of the glass. */
+.navbar__body[data-shrunk='false'],
+.navbar__mobile[data-shrunk='false'] {
+  background-color: rgb(10 10 10 / 55%);
+  background-image: none;
+}
+
+.navbar__brand {
+  flex: none;
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* In flow, not absolutely placed.
+ *
+ * The original centres these over the whole bar with `absolute; inset: 0`, which
+ * works only while the bar is wide: they are laid out without reference to the
+ * wordmark or the buttons, so once it shrinks to a pill the centred group walks
+ * straight into "Run the decks" and the two read as one word. A flex item cannot
+ * overlap its siblings, and the links are still centred — in the space that is
+ * actually theirs rather than in a box they share with two other things. */
+.navbar__items {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.navbar__link {
+  position: relative;
+  flex: none;
+  padding: 8px 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 200ms ease;
+}
+
+.navbar__link:hover {
+  color: var(--fg);
+}
+
+/* One pill, moved between the links by `layoutId` — not a background fading in
+   under each of them. See the note in ResizableNavbar.tsx. */
+.navbar__hover {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--pill);
+  background: rgb(255 255 255 / 8%);
+}
+
+.navbar__label {
+  position: relative;
+  z-index: 1;
+}
+
+.navbar__ways {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  z-index: 1;
+}
+
+.navbar__aside {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--pill);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.navbar__aside:hover {
+  background: var(--raised);
+  color: var(--fg-dim);
+}
+
+.navbar__aside img {
+  display: block;
+}
+
+/* --- the narrow one -------------------------------------------------------- */
+
+.navbar__mobile {
+  display: none;
+  flex-direction: column;
+  padding: 10px 16px;
+  border-radius: 0;
+}
+
+.navbar__mobile[data-shrunk='true'] {
+  border-radius: 18px;
+}
+
+.navbar__mobile-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.navbar__toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--raised);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.navbar__toggle:hover {
+  background: var(--raised-soft);
+}
+
+.navbar__drawer {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 0 6px;
+}
+
+.navbar__drawer-link {
+  padding: 12px 10px;
+  border-radius: 12px;
+  color: var(--fg-dim);
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.navbar__drawer-link:hover {
+  background: var(--raised);
+}
+
+.navbar__drawer-link--quiet {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+@media (max-width: 940px) {
+  .navbar__body {
+    display: none;
+  }
+
+  .navbar__mobile {
+    display: flex;
+  }
+}
+
+/* The label goes and the icon stays: the destination is still reachable, and the
+   words are what the links beside it need the room for.
+ *
+ * Twice, on two different signals. The media query is for a narrow window. The
+ * attribute is for a narrow *bar* — it shrinks to 626px while the window is
+ * still 1440, which no media query can see. */
+.navbar__body[data-shrunk='true'] .navbar__aside-label,
+.navbar__mobile[data-shrunk='true'] .navbar__aside-label {
+  display: none;
+}
+
+.navbar__body[data-shrunk='true'] .navbar__aside,
+.navbar__mobile[data-shrunk='true'] .navbar__aside {
+  gap: 0;
+  padding: 0 9px;
+}
+
+@media (max-width: 1100px) {
+  .navbar__aside-label {
+    display: none;
+  }
+
+  .navbar__aside {
+    gap: 0;
+    padding: 0 9px;
+  }
+}
+
+/* --- the white pill --------------------------------------------------------
+ *
+ * `.button` out of shared.css is 30px, sized for a control sitting in a row of
+ * other controls. A call to action is the only thing in its row, so it gets the
+ * larger size the design already gives a pill that is the point of the screen.
+ */
+
+.button--large {
+  height: 48px;
+  padding: 0 26px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* --- the hero --------------------------------------------------------------
+ *
+ * Nearly empty, and the tallest thing on the page. One sentence, one paragraph,
+ * one pill. The record sits behind the words rather than beside them: at this
+ * type size a two-column hero would put the headline in a gutter, and the deck
+ * is a texture here rather than an exhibit.
+ */
+
+.hero {
+  position: relative;
+  display: grid;
+  align-content: center;
+  /* The record is absolutely positioned and deliberately runs off the right
+     edge, which on a narrow window is the page growing a horizontal scrollbar.
+     Clipped here rather than on the body: `overflow` on an ancestor is what
+     silently kills `position: sticky`, and the bar and the reveal's panel both
+     depend on it. Nothing in this section is sticky. */
+  overflow: hidden;
+  min-height: min(880px, 92vh);
+  /* Room under the pill for the scroll cue, which is positioned against the
+     bottom of the section — without it the two land on each other at the
+     window heights where the copy is tallest. */
+  padding: 40px 0 120px;
+}
+
+/* The box the object lives in.
+ *
+ * Given a real width and height rather than being sized by its contents,
+ * because what goes in it is a canvas — `Gramophone` measures this box to size
+ * its drawing buffer, and a box that took its height from the canvas would
+ * leave both at zero. */
+.hero__stage {
+  position: absolute;
+  top: 50%;
+  right: -12%;
+  width: min(780px, 64vw);
+  height: min(780px, 82vh);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.gram {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.gram__stage,
+.gram__fallback {
+  position: absolute;
+  inset: 0;
+  transition: opacity 900ms ease;
+}
+
+.gram__stage {
+  opacity: 0;
+}
+
+.gram__stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Behind the sentence rather than beside it, so it is a texture and not an
+   exhibit. Not so dim that the horn stops reading as a horn. */
+.gram[data-shown='true'] .gram__stage {
+  opacity: 0.62;
+}
+
+/* The flat deck, holding the space until the model arrives — and keeping it for
+   good on a machine that cannot draw one. Dimmer than the model because it is a
+   flat shape rather than a lit object, and matches at that weight. */
+.gram__fallback {
+  display: grid;
+  place-items: center;
+  opacity: 0.3;
+}
+
+.gram[data-shown='true'] .gram__fallback {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gram__stage,
+  .gram__fallback {
+    transition: none;
+  }
+}
+
+.hero__copy {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 32px;
+}
+
+/* The measure belongs to the headline alone. On the copy block it would drag
+   the paragraph under it into the same narrow column, which at 19px is four
+   words a line. */
+.hero__headline {
+  max-width: 13ch;
+  font-size: clamp(44px, 7.4vw, 92px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--fg);
+  text-wrap: balance;
+}
+
+.hero__blurb {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: clamp(16px, 1.5vw, 19px);
+  line-height: 1.6;
+}
+
+/* The scroll cue. It is a link rather than a decoration because it is the one
+   instruction the page gives, and an instruction you cannot follow by pressing
+   is a poor instruction. */
+.hero__onward {
+  position: absolute;
+  bottom: 40px;
+  left: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.hero__onward:hover {
+  color: var(--muted);
+}
+
+.hero__arrow {
+  display: block;
+  width: 1px;
+  height: 28px;
+  background: linear-gradient(to bottom, var(--faint), transparent);
+}
+
+@keyframes onward {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(5px);
+    opacity: 0.35;
+  }
+}
+
+.hero__arrow {
+  animation: onward 2.6s ease-in-out infinite;
+}
+
+@media (max-width: 940px) {
+  /* Kept roughly square, which matters more here than the size does: the camera
+     frames the model to whatever shape this box is, so the tall narrow box a
+     phone would otherwise give it crops the gramophone to an unreadable slice
+     of horn. Square, it is a whole small object behind the words. */
+  .hero__stage {
+    top: 46%;
+    right: -14%;
+    width: min(560px, 104vw);
+    height: min(560px, 52vh);
+  }
+
+  /* And quieter, because in one column it is behind the sentence rather than
+     beside it, and behind the sentence it has to give way. */
+  .gram[data-shown='true'] .gram__stage {
+    opacity: 0.26;
+  }
+
+  .gram__fallback {
+    opacity: 0.16;
+  }
+
+  .hero__copy {
+    max-width: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .hero {
+    min-height: 86vh;
+  }
+
+  .hero__onward {
+    left: 20px;
+  }
+}
+
+/* --- the moment ------------------------------------------------------------
+ *
+ * The player, and the sentence beside it. The panel is the station's `.card`
+ * material at the size of an exhibit, because it is one: this is the product
+ * being shown rather than described, and it is the first thing after the hero
+ * for that reason.
+ */
+
+/* The globe and the sentence side by side, then the table under both, then the
+   meter. The table is not in the two-column row: nine sleeves need the whole
+   width, and a nine-record pile squeezed into half of it is a heap. */
+.moment {
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+}
+
+.moment__top {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+  gap: 48px;
+  align-items: center;
+}
+
+/* The box the globe lives in, sized here so nothing moves when it finally
+   arrives in it — see `Globe`, which fetches nothing until the page is
+   readable and nothing at all on a machine that cannot draw one.
+  
+   Square, because the camera frames the sphere to whatever shape this is: a
+   box taller than it is wide crops the globe to a band. */
+.globe {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  opacity: 0;
+  transition: opacity 1200ms ease;
+  /* It turns on its own and cannot be spun — see the OrbitControls in
+     World.tsx — so it should not eat a drag that was meant for the page. */
+  pointer-events: none;
+}
+
+.globe[data-shown='true'] {
+  opacity: 1;
+}
+
+.globe canvas {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .globe {
+    transition: none;
+  }
+}
+
+@media (max-width: 940px) {
+  .moment__top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+
+  /* Behind the sentence's shoulder rather than beside it, and smaller: in one
+     column a full-size globe is a screen the reader has to scroll past to get
+     to the words. */
+  .globe {
+    max-width: 320px;
+  }
+}
+
+/* --- the cards ------------------------------------------------------------
+ *
+ * Aceternity UI's Draggable Card, in this project's materials. The component is
+ * in DraggableCard.tsx and keeps the original's physics exactly; what was a
+ * string of Tailwind utilities there is these two rules here.
+ *
+ * `transform-style: preserve-3d` and the perspective on the stage are the two
+ * that are not cosmetic — without them the tilt is a flat shear rather than a
+ * card leaning away from the pointer.
+ */
+
+.card3d-stage {
+  perspective: 3000px;
+}
+
+.card3d {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--raised);
+  /* The original's `shadow-2xl`. Deeper than anything else on this page,
+     deliberately: these are the only objects on it that leave the sheet. */
+  box-shadow:
+    var(--ring-strong),
+    0 25px 50px -12px rgb(0 0 0 / 60%);
+  transform-style: preserve-3d;
+  cursor: grab;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.card3d:active {
+  cursor: grabbing;
+}
+
+.card3d__glare {
+  position: absolute;
+  inset: 0;
+  background: var(--fg);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Nothing to grab, so nothing that says it can be grabbed. See `dragEnabled`. */
+.pile[data-drag='false'] .card3d {
+  cursor: default;
+}
+
+/* --- the pile -------------------------------------------------------------
+ *
+ * The evening's records on a table, the one that is on sitting on top. Absolute
+ * positions out of `PILE` in Landing.tsx; this only decides how big a sleeve is
+ * and how big the table is.
+ */
+
+.pile {
+  position: relative;
+  /* Tall enough for the lowest row of sleeves at the offsets in `PILE` to sit on
+     the table rather than hang off the bottom of it — and no taller, or the
+     bottom of the table is a band of nothing. */
+  min-height: 560px;
+}
+
+/* Every sleeve is the same sleeve. The one that is on is the one at the front
+   of the pile and nothing else — see the note on `Moment` in Landing.tsx.
+   
+   Sized as a fraction of the table, like the positions in `PILE`, so the whole
+   arrangement holds its shape at any width. The floor is where a sleeve stops
+   being a recognisable record; the ceiling is where nine of them stop fitting. */
+.sleeve {
+  position: absolute;
+  width: clamp(104px, 17.5%, 186px);
+  padding: 9px 9px 11px;
+}
+
+.sleeve__art {
+  display: block;
+  width: 100%;
+  /* Not optional. The tag carries `width`/`height` so the sleeve reserves its
+     space before the file lands, and those attributes are presentational hints:
+     with both of them set, the used height is 640px and `aspect-ratio` is never
+     consulted. `height: auto` is what hands the ratio back the decision. */
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  object-fit: cover;
+  /* The card is the drag target; the image inside it must not start a native
+     image drag of its own the moment a pointer goes down on it. */
+  pointer-events: none;
+}
+
+/* The caption under the sleeve, where the original puts its title. Album over
+   artist, because on a pile of records the sleeve is the thing being named. */
+.sleeve__what {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 10px 2px 0;
+}
+
+.sleeve__album {
+  color: var(--fg-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.sleeve__artist {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.moment__said {
+  min-width: 0;
+}
+
+.moment__lead {
+  margin: 0;
+  color: var(--fg);
+  font-size: clamp(24px, 2.8vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.16;
+  text-wrap: balance;
+}
+
+/* Three short denials, stacked, each on its own line — they are a rhythm rather
+   than a list, so they lose the bullets and keep the beat. */
+.moment__nots {
+  margin: 28px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.moment__nots li {
+  padding: 7px 0;
+  color: var(--fg-dim);
+  font-size: 18px;
+  box-shadow: inset 0 -1px 0 0 rgb(255 255 255 / 5%);
+}
+
+.moment__tail {
+  margin: 0;
+  max-width: 44ch;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.68;
+}
+
+/* Centred under the table.
+ *
+ * `fit-content` rather than a width: the meter is a flex row whose bars are
+ * `flex: 1`, so in any box wider than they need they sit against the left of it
+ * and the thing reads as off-centre however the box is aligned. Sized to what it
+ * actually draws, `margin: 0 auto` puts it where it looks like it should be.
+ *
+ * Pulled up, because the table it sits under has an empty band at the bottom by
+ * design — the lowest record does not reach the edge of it — and the section's
+ * own gap on top of that would leave the meter adrift. */
+.moment__levels {
+  width: fit-content;
+  margin: -24px auto 0;
+}
+
+/* The sleeves scale themselves — see the clamp above — so the first thing to do
+   at a narrow width is give the table less height to fill. */
+@media (max-width: 940px) {
+  .pile {
+    min-height: 440px;
+  }
+}
+
+/* And then to put some of them away.
+ *
+ * Nine sleeves across a phone is not a pile, it is a heap: at that width the
+ * cards are down to their floor size, every one of them is behind another, and
+ * a caption like "The Miseducation of Lauryn Hill" has nowhere to go. So the
+ * table shows the most recent six, and then the most recent five, which is
+ * still a pile of records and is still true — the whole evening is listed in
+ * *What has been on* a few screens down, sleeve or no sleeve.
+ *
+ * `display: none` rather than hidden: the three that go are the three loading
+ * lazily, so on a phone they are never fetched at all. */
+@media (max-width: 720px) {
+  .pile {
+    min-height: 430px;
+  }
+
+  .sleeve:nth-child(n + 7) {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .moment {
+    gap: 40px;
+  }
+
+  .pile {
+    min-height: 400px;
+  }
+
+  .sleeve:nth-child(n + 6) {
+    display: none;
+  }
+
+  .sleeve__album {
+    font-size: 11.5px;
+  }
+
+  .sleeve__artist {
+    font-size: 11px;
+  }
+}
+
+/* --- why -------------------------------------------------------------------
+ *
+ * The only section making an argument, so it is the only one set as a column of
+ * sentences with nothing beside them. No panel, no icon, no numbers.
+ */
+
+/* No min-height: the band above and below already gives it a screen to itself,
+   and centring inside a tall box on top of that opened a second gap that read
+   as the page having lost its place. */
+.why {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 900px;
+}
+
+/* --- the squiggle ---------------------------------------------------------
+ *
+ * Aceternity UI's Squiggly Text. The wriggle is five SVG filters swapped on a
+ * timer — see SquigglyText.tsx. This is only the two boxes it needs.
+ */
+
+.squiggly {
+  display: inline-block;
+  /* A displacement map pushes glyphs outside their own box. Without room to be
+     pushed into, the tops and tails of the letters are clipped by the line. */
+  padding: 0 0.06em;
+}
+
+/* The filters themselves are definitions, not a picture. They take no space and
+   nothing may lay out around them. */
+.squiggly__filters {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.why__line {
+  margin: 0;
+  max-width: 26ch;
+  color: var(--fg);
+  font-size: clamp(28px, 4vw, 46px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.14;
+  text-wrap: balance;
+}
+
+.why__line--quiet {
+  max-width: 34ch;
+  color: var(--faint);
+  font-size: clamp(20px, 2.4vw, 30px);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.32;
+}
+
+/* The turn. Set apart by space rather than by colour — everything above it is
+   the world as it is, and this is the one line that is about the station. */
+.why__turn {
+  margin: 28px 0 0;
+  color: var(--fg);
+  font-size: clamp(28px, 4vw, 46px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.14;
+}
+
+/* --- how an evening runs ---------------------------------------------------
+ *
+ * Six steps read across rather than down, because they are a sequence and a
+ * column of six would read as a feature list. Below the point where six fit,
+ * they become a scrolling row rather than reflowing into a grid: a grid would
+ * put step 4 under step 1 and quietly lose the order that is the whole content.
+ */
+
+/* --- the moving row -------------------------------------------------------
+ *
+ * Aceternity UI's Infinite Moving Cards. The row holds the items twice and
+ * translates itself by exactly half its width, so the second lap arrives where
+ * the first one started and the loop has no seam. `- 8px` is half the gap,
+ * which the 50% would otherwise count twice.
+ */
+
+.scroller {
+  position: relative;
+  overflow: hidden;
+  /* The ends fade out rather than being cut, so cards arrive and leave instead
+     of appearing at an edge. */
+  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+}
+
+.scroller__track {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  gap: 16px;
+  width: max-content;
+  min-width: 100%;
+  /* Room for the tilt: a card leaning toward the viewer is drawn outside its own
+     box, and the `overflow: hidden` above would otherwise clip it flat. */
+  margin: 0;
+  padding: 22px 0 26px;
+  list-style: none;
+  animation: scroll var(--scroll-duration, 40s) var(--scroll-direction, forwards) linear infinite;
+  will-change: transform;
+}
+
+@keyframes scroll {
+  to {
+    transform: translateX(calc(-50% - 8px));
+  }
+}
+
+/* Hover is the original's. Focus is for a keyboard, and `:active` for a finger,
+   which has no hover at all — see the note in InfiniteMovingCards.tsx. */
+.scroller[data-pause='true']:hover .scroller__track,
+.scroller[data-pause='true']:focus-within .scroller__track,
+.scroller[data-pause='true']:active .scroller__track {
+  animation-play-state: paused;
+}
+
+/* The original's 17/21. Portrait, like a card in a hand. */
+.scroller__item {
+  flex: none;
+  width: clamp(212px, 22vw, 268px);
+  aspect-ratio: 17 / 21;
+}
+
+.scroller__item .glare {
+  height: 100%;
+}
+
+.works__row {
+  margin-top: 40px;
+}
+
+/* Asked not to animate, this becomes what it was before it moved: a row you
+   push along yourself. The second lap goes with the animation — it exists only
+   to make the loop seamless, and a row that does not loop does not need it. */
+@media (prefers-reduced-motion: reduce) {
+  .scroller {
+    overflow-x: auto;
+    mask-image: none;
+    scrollbar-width: thin;
+  }
+
+  .scroller__track {
+    width: auto;
+    animation: none;
+    scroll-snap-type: x proximity;
+  }
+
+  .scroller__item[aria-hidden='true'] {
+    display: none;
+  }
+
+  .scroller__item {
+    scroll-snap-align: start;
+  }
+}
+
+/* --- the glare card -------------------------------------------------------
+ *
+ * Aceternity UI's Glare Card, in this project's materials. The component is in
+ * GlareCard.tsx and keeps the original's effect exactly; what was a wall of
+ * Tailwind arbitrary values there is these rules here.
+ *
+ * The stack, bottom to top, all four sharing one grid cell:
+ *
+ *   .glare        the perspective box. Holds every custom property.
+ *   .glare__tilt  the thing that actually turns, on --r-x and --r-y.
+ *   .glare__face  the card's own surface and the words on it.
+ *   .glare__glow  a white radial under the pointer.
+ *   .glare__foil  the rainbow, and it is only visible on hover.
+ */
+
+.glare {
+  position: relative;
+  isolation: isolate;
+  contain: layout style;
+  perspective: 600px;
+  transition: transform var(--duration) var(--easing);
+  will-change: transform;
+}
+
+.glare__tilt {
+  display: grid;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius);
+  box-shadow: var(--ring-strong);
+  transform: rotateY(var(--r-x)) rotateX(var(--r-y));
+  transform-origin: center;
+  transition: transform var(--duration) var(--easing);
+  will-change: transform;
+}
+
+/* The one hover rule the whole effect hangs off: the foil and the glow come up
+   from nothing, and the card stops easing so it tracks the pointer exactly. */
+.glare:hover .glare__tilt {
+  --duration: 200ms;
+  --easing: linear;
+  --opacity: 0.6;
+}
+
+.glare__face,
+.glare__glow,
+.glare__foil {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  clip-path: inset(0 0 0 0 round var(--radius));
+}
+
+.glare__face {
+  display: grid;
+  background: var(--raised);
+}
+
+/* The original blends the content layer with soft-light too, which is right for
+   the artwork its demo puts on a card and wrong for words: soft-light over a
+   dark surface takes body text down to something you have to lean in to read.
+   The glare and the foil above it still blend, so the effect is unchanged —
+   only the text stays the colour it was set in. */
+.glare__content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 24px 22px 26px;
+}
+
+.glare__glow {
+  background: radial-gradient(
+    farthest-corner circle at var(--m-x) var(--m-y),
+    rgb(255 255 255 / 80%) 10%,
+    rgb(255 255 255 / 65%) 20%,
+    rgb(255 255 255 / 0%) 90%
+  );
+  opacity: var(--opacity);
+  mix-blend-mode: soft-light;
+  transition: opacity var(--duration) var(--easing);
+  will-change: background;
+}
+
+.glare__foil {
+  position: relative;
+  background: var(--pattern), var(--rainbow), var(--diagonal), var(--shade);
+  opacity: var(--opacity);
+  mix-blend-mode: color-dodge;
+  transition: opacity var(--duration) var(--easing);
+  will-change: background;
+}
+
+/* The second pass over the same four backgrounds, at different sizes and
+   offsets and blended the other way. This is what makes the foil shift as a
+   sheet rather than four gradients moving independently. */
+.glare__foil::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: inherit;
+  background-size: var(--foil-size), 200% 400%, 800%, 200%;
+  background-position:
+    center,
+    0% var(--bg-y),
+    calc(var(--bg-x) * -1) calc(var(--bg-y) * -1),
+    var(--bg-x) var(--bg-y);
+  background-blend-mode: soft-light, hue, hard-light;
+  mix-blend-mode: exclusion;
+}
+
+/* Some machines have been asked not to animate. The tilt and the foil are both
+   decoration, so both simply stop; the card keeps its own materials. */
+@media (prefers-reduced-motion: reduce) {
+  .glare,
+  .glare__tilt,
+  .glare__glow,
+  .glare__foil {
+    transition: none;
+  }
+
+  .glare__tilt {
+    transform: none;
+  }
+}
+
+.step__n {
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.step__title {
+  font-size: 16px;
+  line-height: 1.32;
+  color: var(--fg);
+}
+
+.step__body {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.62;
+}
+
+/* --- section furniture -----------------------------------------------------
+ *
+ * The station frames every section the same way — a heading with something
+ * quiet beside it, then the content. This is that shape at the larger size a
+ * page being read rather than watched wants.
+ */
+
+.section__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+/* The 36px rounded square the rail uses for its marks, holding the same icons
+   at the same 18px. */
+.section__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 14px;
+  background: var(--raised);
+  box-shadow: var(--ring);
+}
+
+.section__mark img {
+  display: block;
+}
+
+.section__title {
+  font-size: clamp(24px, 2.6vw, 32px);
+  line-height: 1.16;
+  letter-spacing: -0.025em;
+  color: var(--fg);
+}
+
+.section__lede {
+  max-width: 62ch;
+  margin: 0 0 20px;
+  color: var(--fg-dim);
+  font-size: 17px;
+  line-height: 1.62;
+}
+
+.section__body {
+  max-width: 62ch;
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.section__body:last-child {
+  margin-bottom: 0;
+}
+
+.section__body em {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+/* --- the room --------------------------------------------------------------
+ *
+ * Prose on the left, the conversation on the right, and the conversation is the
+ * one thing on the page that moves with the reader. See Landing.tsx.
+ */
+
+/* --- the sticky reveal ----------------------------------------------------
+ *
+ * Aceternity UI's Sticky Scroll Reveal. The whole thing is its own scroll
+ * container — that is the component, not an accident — with the items down the
+ * left and one panel stuck beside them that changes as the active item does.
+ */
+
+.room__reveal {
+  margin-top: 32px;
+}
+
+.sticky-reveal {
+  position: relative;
+  display: flex;
+  gap: 48px;
+  height: 32rem;
+  /* No padding on the right: the panel is meant to sit against that edge. The
+     scrollbar is given a gutter of its own instead, so it does not push the
+     panel back in every time the content is tall enough to need one. */
+  padding: 0 0 0 4px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  border-radius: 20px;
+  /* The original animates this between three slate-to-black backgrounds. Here
+     it stays one surface and the active item is what changes — see the note in
+     StickyScroll.tsx about why a palette was not an option. */
+  background: var(--card);
+  box-shadow: var(--ring);
+  scrollbar-width: thin;
+  /* The inner scroller is the point of the component, but it should not swallow
+     the page's scroll at its ends. */
+  overscroll-behavior-y: contain;
+}
+
+.sticky-reveal__column {
+  flex: 1;
+  min-width: 0;
+  max-width: 42ch;
+  padding: 0 8px 0 28px;
+}
+
+/* The original's trailing spacer. Without it the last item can never reach its
+   own breakpoint, because there is nothing left below it to scroll. */
+.sticky-reveal__tail {
+  height: 12rem;
+}
+
+.reveal {
+  padding: 6rem 0;
+}
+
+.reveal:first-child {
+  padding-top: 5rem;
+}
+
+.reveal__title {
+  margin-bottom: 20px;
+  color: var(--fg);
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  /* The original's fade. It is the only thing saying which one you are on. */
+  opacity: 0.3;
+  transition: opacity 300ms ease;
+}
+
+.reveal__body {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+  opacity: 0.3;
+  transition: opacity 300ms ease;
+}
+
+.reveal__body p {
+  margin: 0 0 14px;
+}
+
+.reveal__body p:last-child {
+  margin-bottom: 0;
+}
+
+.reveal[data-on='true'] .reveal__title,
+.reveal[data-on='true'] .reveal__body {
+  opacity: 1;
+}
+
+/* Hard against the right edge.
+ *
+ * `margin-left: auto` rather than relying on the column to push it: the column
+ * is capped at 42ch, so on a wide section it stops growing long before the panel
+ * runs out of room, and without this the pair would drift into the middle
+ * together. Whatever the section's width, the panel stays where the eye learns
+ * to look for it. */
+.sticky-reveal__panel {
+  position: sticky;
+  /* Room above for the cards behind, which sit up to 20px higher than the face
+     and would otherwise be cut off by the top of the scroller. */
+  top: 52px;
+  flex: none;
+  width: 24rem;
+  height: 26rem;
+  margin-left: auto;
+  margin-right: 10px;
+  align-self: flex-start;
+}
+
+/* --- the deck -------------------------------------------------------------
+ *
+ * Aceternity UI's Card Stack. The offsets and scales are in CardStack.tsx; this
+ * is the box they are dealt in.
+ */
+
+.stack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* Each card is the full face of the deck, and it is the card that carries the
+   surface — not the panel inside it.
+ *
+ * It has to be opaque. `--panel` is 70%, which is right for one thing floating
+ * on the sheet and wrong for three stacked on each other: through a translucent
+ * face you can read the skip tally and the join screen sitting behind the
+ * conversation, all at once. `--bg` is the same surface the standing panel's
+ * screen uses, and the bubbles at `--raised` read cleanly against it. */
+.stack__card {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow:
+    var(--ring-strong),
+    0 12px 32px rgb(0 0 0 / 40%);
+}
+
+@media (max-width: 940px) {
+  .sticky-reveal {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    scrollbar-gutter: auto;
+    flex-direction: column;
+    gap: 24px;
+    padding: 24px;
+  }
+
+  .sticky-reveal__column {
+    max-width: none;
+    padding: 0;
+  }
+
+  /* Nothing is stuck and nothing is scrolling inside anything, so the fade
+     would just be three paragraphs at 30% with no way to bring them up. */
+  .reveal {
+    padding: 20px 0;
+  }
+
+  .reveal__title,
+  .reveal__body,
+  .reveal[data-on='false'] .reveal__title,
+  .reveal[data-on='false'] .reveal__body {
+    opacity: 1;
+  }
+
+  .sticky-reveal__tail {
+    display: none;
+  }
+
+  /* In one column there is no right edge to sit against, so it is centred. */
+  .sticky-reveal__panel {
+    position: static;
+    width: 100%;
+    max-width: 22rem;
+    height: 22rem;
+    /* The cards behind still lift above the face; without this the top of the
+       deck is clipped by whatever sits above it. */
+    margin: 24px auto 0;
+  }
+}
+
+/* --- the panels the reveal shows ------------------------------------------ */
+
+/* Contents, not a surface — `.stack__card` is the card. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px;
+}
+
+.panel__label {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.panel__field {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--ring);
+  color: var(--fg);
+  font-size: 16px;
+}
+
+.panel__go {
+  margin-top: 16px;
+  justify-content: center;
+  cursor: default;
+}
+
+.panel__note {
+  margin: auto 0 0;
+  color: var(--faint);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.panel__tally {
+  margin: 18px 0 0;
+  color: var(--fg);
+  font-family: var(--font-numeric);
+  font-size: 56px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.panel__of {
+  margin-left: 8px;
+  color: var(--faint);
+  font-size: 20px;
+}
+
+.panel__meter {
+  height: 4px;
+  margin-top: 20px;
+  border-radius: var(--pill);
+  background: var(--raised);
+}
+
+.panel__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pill);
+  background: var(--fg-dim);
+}
+
+/* One of the deck's cards now. The card is the surface — see `.stack__card` —
+   so this only has to fill it. */
+.talk {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.talk__top {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 16px 16px;
+}
+
+.talk__where {
+  color: var(--live-text);
+  font-family: var(--font-numeric);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.talk__of {
+  color: var(--faint);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The panel fills as the room talks, and only downwards: it is stuck to the top
+   of the window and the section it sits in is taller than it will ever be, so
+   nothing else on the page moves when a line lands. A minimum height stops the
+   first arrival from being a box popping into existence beside the prose. */
+/* The scroller is this rather than `.talk`, so the record's title at the top
+   stays put while the conversation moves under it. */
+.talk__lines {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 96px;
+  margin: 0;
+  padding: 0 6px 8px;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  overscroll-behavior-y: contain;
+}
+
+/* Each line is a row that opens rather than one that fades in on space already
+   reserved for it. `0fr` to `1fr` is what makes that animatable without knowing
+   how tall the line is — some of them wrap to two. The content stays in the DOM
+   throughout, so the conversation is whole for anything not reading it by eye. */
+.line {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition:
+    grid-template-rows 460ms ease,
+    opacity 460ms ease;
+  opacity: 0;
+}
+
+.line[data-said='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+/* A face, then a bubble — the shape a conversation between several people is
+   drawn in. Everyone is on the same side of it, because everyone in the room is
+   a peer: there is no "you" on this page, nobody has joined yet. */
+.line__inner {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The padding lives on the inner row so that a collapsed line is truly zero
+   high — padding on the outer grid would leave every unsaid line 16px tall and
+   the panel would start off looking like a stack of empty rows. */
+.line[data-said='true'] .line__inner {
+  padding: 5px 8px;
+}
+
+/* The station has no picture of anybody — a nickname is all it knows — so the
+   avatar is the one thing it can honestly draw: their first letter. */
+.line__face {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--pill);
+  background: var(--raised);
+  box-shadow: var(--ring-strong);
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Somebody still talking keeps their bubble and loses the face, so a run reads
+   as one person rather than as the same person arriving three times. */
+.line__inner[data-run='true'] .line__face {
+  background: none;
+  box-shadow: none;
+}
+
+.line__bubble {
+  display: block;
+  min-width: 0;
+  padding: 8px 12px 9px;
+  /* Square at the top left, where it meets the face. */
+  border-radius: 4px 14px 14px 14px;
+  background: var(--raised);
+  box-shadow: var(--ring);
+}
+
+.line__inner[data-run='true'] .line__bubble {
+  border-radius: 14px;
+}
+
+.line__top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.line__at {
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.line__who {
+  color: var(--fg-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.line__says {
+  display: block;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+/* The line the room is on. Warm rather than bright: it is where the needle is,
+   not an alert. */
+.line[data-said='true']:last-of-type .line__bubble,
+.line[data-said='true']:has(+ .line[data-said='false']) .line__bubble {
+  background: var(--raised-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .line {
+    transition: none;
+  }
+}
+
+/* --- what the room asks for ------------------------------------------------
+ *
+ * Set in the reading face at a size that makes them sentences rather than
+ * entries. They are the section's argument, not its data.
+ */
+
+/* --- the panel that stands up ---------------------------------------------
+ *
+ * Aceternity UI's Container Scroll Animation. Everything about when it moves is
+ * in ContainerScroll.tsx; this is the frame it moves — a thick grey bezel round
+ * a dark screen, in the design's own greys rather than the original's #6C6C6C
+ * and #222222, which are near enough to be the same idea.
+ *
+ * The tall outer box is not padding. `useScroll({ target })` measures how far
+ * this element has got through the window, so its height *is* the length of the
+ * animation: a short one would snap upright in a flick of the wheel.
+ */
+
+.stand {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The original's 80rem, brought in. The height is the length of the animation
+     rather than spacing, but the content is centred inside it, so every rem of
+     it that the card does not use is a band of nothing above the title. This is
+     enough scroll for the card to stand up over and little enough that the
+     section still starts where the eye expects. */
+  height: 58rem;
+  padding: 0 20px;
+}
+
+.stand__perspective {
+  position: relative;
+  width: 100%;
+  padding: 0 0 40px;
+  perspective: 1000px;
+}
+
+.stand__title {
+  max-width: 64rem;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.stand__card {
+  max-width: 64rem;
+  margin: -48px auto 0;
+  padding: 24px;
+  border: 4px solid var(--raised-soft);
+  border-radius: 30px;
+  background: var(--raised);
+  /* The original's stack, which is what sells the card as lifted off the page
+     rather than drawn on it. */
+  box-shadow:
+    0 9px 20px rgb(0 0 0 / 29%),
+    0 37px 37px rgb(0 0 0 / 26%),
+    0 84px 50px rgb(0 0 0 / 15%),
+    0 149px 60px rgb(0 0 0 / 4%),
+    0 233px 65px rgb(0 0 0 / 1%);
+}
+
+.stand__screen {
+  /* A floor rather than a fixed height — see the note in ContainerScroll.tsx.
+     The original's content is an image and crops happily; text does not. */
+  min-height: 24rem;
+  padding: 24px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--bg);
+}
+
+/* The one centred thing on a left-aligned page. The Aceternity pattern, and the
+   reason this section reads as a moment rather than another block. */
+.section__head--mid {
+  justify-content: center;
+}
+
+.section__lede--mid {
+  max-width: 52ch;
+  margin-inline: auto;
+}
+
+@media (max-width: 940px) {
+  .stand {
+    height: 44rem;
+    padding: 0 8px;
+  }
+
+  .stand__perspective {
+    padding: 24px 0 80px;
+  }
+
+  .stand__card {
+    padding: 12px;
+    border-radius: 22px;
+  }
+
+  .stand__screen {
+    min-height: 0;
+    padding: 16px;
+  }
+}
+
+/* Two by two rather than `auto-fit`. With four cards, auto-fit resolves to
+   three columns at this width and leaves one on a row of its own. */
+.wishes__wall {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wishes__after {
+  margin: 24px auto 0;
+  text-align: center;
+}
+
+/* The card, out of Aceternity UI's features section: a surface grading from the
+   panel colour down into the sheet, a large radius, and graph paper in the
+   corner. Nothing on hover — the wishes are simply on it. */
+.wish {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 240px;
+  padding: 28px;
+  overflow: hidden;
+  border-radius: 24px;
+  background: linear-gradient(to bottom, var(--card), var(--bg));
+  box-shadow: var(--ring);
+}
+
+/* --- the graph paper ------------------------------------------------------
+ *
+ * The original's two masks, which are the whole trick: a linear one fading the
+ * grid downward and a radial one fading it away from the top edge, so it reads
+ * as a corner rather than a texture. The pattern itself is in GridPattern.tsx.
+ */
+
+.paper {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  margin-left: -80px;
+  mask-image: linear-gradient(#fff, transparent);
+  pointer-events: none;
+}
+
+.paper__wash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgb(255 255 255 / 4%), rgb(255 255 255 / 1%));
+  mask-image: radial-gradient(farthest-side at top, #fff, transparent);
+}
+
+.paper__grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: rgb(255 255 255 / 8%);
+  stroke: rgb(255 255 255 / 8%);
+  mix-blend-mode: overlay;
+}
+
+/* The filled cells are drawn outside the pattern's own box. */
+.paper__cells {
+  overflow: visible;
+}
+
+/* The words sit above the paper. */
+.wish__says,
+.wish__state {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+}
+
+/* Set as sentences rather than entries. They are the section's argument, not
+   its data — see the note on `Wishes` in Landing.tsx. */
+.wish__says {
+  color: var(--fg-soft);
+  font-size: 18px;
+  line-height: 1.42;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.wish__state {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Played is the only state that gets any colour, and it gets the quiet one —
+   red on this site means on the air right now, and nothing else may borrow it. */
+.wish[data-state='played'] .wish__state {
+  color: var(--ok);
+}
+
+/* One column when two will not fit.
+ *
+ * After the two-column rule rather than before it: a media query carries no
+ * extra weight, so an earlier `@media` block loses to a later plain rule of the
+ * same specificity. It was losing, and a phone was getting two 137px columns. */
+@media (max-width: 720px) {
+  .wishes__wall {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wish {
+    min-height: 190px;
+    padding: 22px;
+  }
+}
+
+/* --- why it has to be live -------------------------------------------------- */
+
+.live__ask {
+  max-width: 22ch;
+  margin: 0 0 28px;
+  color: var(--fg);
+  font-size: clamp(24px, 3.2vw, 38px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.16;
+  text-wrap: balance;
+}
+
+/* --- what has been on ------------------------------------------------------
+ *
+ * A list rather than a grid of cards: it is one evening in order, and a grid
+ * would make six songs look like six exhibitions to browse.
+ */
+
+.been__list {
+  margin: 32px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.play {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+  padding: 18px 4px;
+  box-shadow: inset 0 -1px 0 0 rgb(255 255 255 / 5%);
+}
+
+.play__at {
+  flex: none;
+  width: 48px;
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.play__what {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.play__title {
+  color: var(--fg-dim);
+  font-size: 16px;
+}
+
+.play[data-now='true'] .play__title {
+  color: var(--fg);
+}
+
+.play__artist {
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.play__mark {
+  flex: none;
+  color: var(--live-text);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* --- the DJ ----------------------------------------------------------------
+ *
+ * The deck again, and stopped this time. The station is off more than it is on,
+ * and the one place on the page where that is comfortable to say is beside the
+ * person it depends on.
+ */
+
+.dj {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.dj__mark {
+  width: 300px;
+  opacity: 0.85;
+}
+
+/* One thought a line, set as written.
+ *
+ * Not a paragraph with breaks in it: each of these is its own block, so the
+ * space between them is the pause it was written with. The size is the same
+ * throughout — the lines are already ordered shortest to longest, and letting
+ * the type do the emphasis as well would be saying it twice. */
+/* Wide enough that the longest of them still fits on one line. The breaks are
+   where he put them; a measure that added its own would be re-punctuating him. */
+.dj__line {
+  max-width: 48ch;
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.36;
+  text-wrap: balance;
+}
+
+.dj__line + .dj__line {
+  margin-top: 10px;
+}
+
+/* The name, and only the name — with the beat after it before he says what he
+   thinks. Margins collapse in block flow, so this wins over the 10px above. */
+.dj__line:nth-child(2) {
+  margin-bottom: 28px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* The turn from what he believes to what he actually does about it. */
+.dj__line:nth-child(5) {
+  margin-top: 28px;
+}
+
+@media (max-width: 940px) {
+  .dj {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
+  }
+
+  .dj__mark {
+    width: 220px;
+  }
+}
+
+/* --- whose station it is ---------------------------------------------------
+ *
+ * Prose beside the command that produces it. The terminal is given real width
+ * rather than being a decoration — it is one line long, and the whole claim of
+ * the section is that it really is one line.
+ */
+
+.yours__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.yours__prose {
+  min-width: 0;
+}
+
+.snippet {
+  margin: 0 0 20px;
+  padding: 18px 20px;
+  overflow-x: auto;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--ring);
+  color: var(--fg-dim);
+  font-family: var(--font-numeric);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.snippet--block {
+  margin: 0;
+  min-width: 0;
+}
+
+.snippet__prompt {
+  color: var(--ok);
+}
+
+.snippet__quiet {
+  color: var(--faint);
+}
+
+@media (max-width: 940px) {
+  .yours__split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+
+/* --- what it is not --------------------------------------------------------
+ *
+ * The quietest section on the page, and deliberately not a card each: these are
+ * limits, and dressing a limit up in the same panel as a feature would be the
+ * page trying to sell them.
+ */
+
+.limits {
+  padding-top: 8px;
+}
+
+.limits::before {
+  content: '';
+  display: block;
+  height: 1px;
+  background: rgb(255 255 255 / 5%);
+}
+
+.limits__title {
+  margin: 28px 0 24px;
+  color: var(--fg-dim);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.limits__list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px 32px;
+  margin: 0;
+}
+
+/* Stacked rather than head-then-tail on one line. Inline reads better for the
+   short ones, but the length of these is an accident of what they say — and a
+   list where two items sit on one line and two wrap onto a second looks like
+   two kinds of thing rather than several of the same. */
+.limits__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.limits__head {
+  color: var(--fg-dim);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.limits__tail {
+  margin: 0;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 940px) {
+  .limits__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .limits__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --- the last screen -------------------------------------------------------
+ *
+ * One line and one pill, centred, with nothing else on the screen at all.
+ */
+
+.call {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  min-height: 56vh;
+  text-align: center;
+}
+
+.call__headline {
+  margin: 0;
+  color: var(--fg);
+  font-size: clamp(36px, 6vw, 72px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.call__note {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1.66;
+}
+
+/* --- the foot --------------------------------------------------------------
+ *
+ * The wordmark again, and the doors — somebody who read the whole page should
+ * not have to scroll back up to use one.
+ */
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 160px;
+  padding: 48px 24px 64px;
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 5%);
+  text-align: center;
+}
+
+.foot .wordmark {
+  margin: 0;
+}
+
+.foot__line {
+  margin: 0;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.foot__ways {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+  padding-top: 4px;
+}
+
+.foot__way {
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.foot__way:hover {
+  color: var(--fg-soft);
+}
+
+/* --- the bar along the bottom ----------------------------------------------
+ *
+ * The page's own player. Fixed, slim, and the same materials as the masthead so
+ * the two read as one frame around the document rather than as two widgets.
+ *
+ * It carries the words "sample session" beside the badge, and that is not
+ * decoration: on this site a red dot means on the air right now, and a bar
+ * borrowing that meaning to advertise with would be the one thing on the page
+ * actively lying. See SessionBar in Landing.tsx.
+ */
+
+.bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  padding: 0 32px 16px;
+  transition:
+    opacity 400ms ease,
+    transform 400ms ease;
+  pointer-events: none;
+}
+
+.bar[data-shown='false'] {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.bar__inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 10px 18px;
+  border-radius: var(--pill);
+  background: rgb(10 10 10 / 82%);
+  box-shadow: var(--ring-strong);
+  backdrop-filter: blur(14px);
+}
+
+/* The badge, at the shape shared.css gives it — restated here rather than
+   reused because this one is inside a pill and wants no wash behind it. */
+.bar__badge {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--live-text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.bar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--pill);
+  background: var(--live);
+}
+
+.bar__sample {
+  flex: none;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.bar__what {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.bar__title {
+  color: var(--fg-dim);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar__artist {
+  flex: none;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.bar__clock {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar__clock--total {
+  color: var(--faint);
+}
+
+.bar__track {
+  flex: none;
+  width: 180px;
+  height: 2px;
+  border-radius: var(--pill);
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pill);
+  background: var(--fg-dim);
+}
+
+@media (max-width: 880px) {
+  .bar__sample,
+  .bar__artist,
+  .bar__clock--total {
+    display: none;
+  }
+
+  .bar__track {
+    width: 84px;
+  }
+}
+
+@media (max-width: 560px) {
+  .bar {
+    padding: 0 16px 12px;
+  }
+
+  .bar__inner {
+    gap: 12px;
+    padding: 9px 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar,
+  .hero__arrow {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* --- keyboards -------------------------------------------------------------
+ *
+ * Every focusable thing on this page is a link, and the design's own controls
+ * carry their focus ring as an inset shadow. Matched here so tabbing through
+ * the page looks like the station rather than like the browser.
+ */
+
+.landing a:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 3px;
+  border-radius: var(--pill);
+}

@@ -1,0 +1,58 @@
+@import './assets/fonts/fonts.css';
+
+/* chunky.fm — the design, as values.
+ *
+ * Colours, radii and spacing here are the Figma file's, not inventions: the
+ * page is a near-black sheet with translucent panels floating on it, one accent
+ * (white) for anything you can press, and one signal colour (red) reserved for
+ * "this is live right now". Nothing else is allowed to be bright, because on a
+ * page where a single red dot means the station is on the air, a second bright
+ * thing is noise.
+ *
+ * This file is the tokens alone, with no rules of its own, because two pages
+ * are now drawn from them — the station in styles.css and the landing page in
+ * landing/landing.css. A landing page that quietly drifted a shade off the
+ * product it is advertising would be worse than one that never matched.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- surfaces, darkest to lightest ------------------------------------- */
+  --bg: #0a0a0a;
+  /* Panels are translucent over the sheet rather than a flat grey, so a page
+     that is mostly chrome still reads as one surface with things laid on it. */
+  --panel: rgb(23 23 23 / 70%);
+  --card: rgb(23 23 23 / 60%);
+  --raised: #262626;
+  --raised-soft: #404040;
+
+  /* --- text, brightest to quietest --------------------------------------- */
+  --fg: #ffffff;
+  --fg-soft: #f5f5f5;
+  --fg-dim: #d4d4d4;
+  --muted: #a1a1a1;
+  --faint: #737373;
+
+  /* --- signals ------------------------------------------------------------
+   * Red is only ever "on the air". Green is only ever "the socket is open".
+   * Something is wrong, but nothing is lost — warm rather than alarming, since
+   * every state wearing --warn is one the page recovers from by itself. */
+  --live: #fb2c36;
+  --live-text: #ff6467;
+  --live-wash: rgb(251 44 54 / 15%);
+  --ok: #00d492;
+  --warn: #ff8a65;
+
+  /* Hairlines are inset rings rather than borders: the design draws them as
+     1px shadows so a panel keeps its exact size whether it has one or not. */
+  --ring: inset 0 0 0 1px rgb(255 255 255 / 5%);
+  --ring-strong: inset 0 0 0 1px rgb(255 255 255 / 10%);
+
+  --pill: 999px;
+
+  --font: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  /* Everything that counts — clocks, tallies, head counts, track numbers —
+     so a digit changing never shifts what is beside it. */
+  --font-numeric: 'Cousine', ui-monospace, 'SF Mono', monospace;
+}

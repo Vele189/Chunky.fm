@@ -6,6 +6,19 @@ import type { Config } from '../config.js'
 /** The signed session cookie the admin surface runs on. */
 export const ADMIN_COOKIE = 'chunky_admin'
 
+/** The signed cookie a listener gets in exchange for the station key. */
+export const LISTENER_COOKIE = 'chunky_listener'
+
+/**
+ * How long an invite lasts in a browser before the link is needed again.
+ *
+ * Much longer than an admin session: this is not a set of controls, it is
+ * whether somebody can hear the station at all, and asking a listener to dig
+ * out the link every evening would be its own kind of broken. Rotating
+ * STATION_KEY is what actually ends them, all at once.
+ */
+export const LISTENER_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
 /** How long a sign-in lasts. A set runs for an evening, not for a week. */
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000
 
@@ -14,6 +27,7 @@ export const SESSION_TTL_MS = 12 * 60 * 60 * 1000
  * password, and every signature an oracle for it.
  */
 const KEY_LABEL = 'chunky.fm/admin-session/v1'
+const LISTENER_KEY_LABEL = 'chunky.fm/listener-session/v1'
 
 function constantTimeEquals(a: string, b: string): boolean {
   const left = Buffer.from(a, 'utf8')
@@ -34,6 +48,92 @@ function sessionKey(config: Config): Buffer {
 
 function sign(config: Config, payload: string): string {
   return createHmac('sha256', sessionKey(config)).update(payload).digest('base64url')
+}
+
+/**
+ * Derived from the station key for the same reason the admin key is derived
+ * from the password: rotating STATION_KEY then invalidates every cookie already
+ * handed out, so an old link stops working everywhere at once.
+ */
+function listenerKey(stationKey: string): Buffer {
+  return createHmac('sha256', stationKey).update(LISTENER_KEY_LABEL).digest()
+}
+
+function signListener(stationKey: string, payload: string): string {
+  return createHmac('sha256', listenerKey(stationKey)).update(payload).digest('base64url')
+}
+
+/** Mint an invite for a browser that has just presented the station key. */
+export function issueListenerSession(
+  stationKey: string,
+  now = Date.now(),
+  ttlMs = LISTENER_TTL_MS,
+): AdminSession {
+  const expiresAt = now + ttlMs
+  const payload = `${expiresAt}.${randomBytes(12).toString('base64url')}`
+  return { token: `${payload}.${signListener(stationKey, payload)}`, expiresAt }
+}
+
+export function verifyListenerSession(stationKey: string, token: string, now = Date.now()): boolean {
+  const cut = token.lastIndexOf('.')
+  if (cut <= 0) return false
+  if (!constantTimeEquals(token.slice(cut + 1), signListener(stationKey, token.slice(0, cut)))) {
+    return false
+  }
+  const payload = token.slice(0, cut)
+  const expiresAt = Number(payload.slice(0, payload.indexOf('.')))
+  return Number.isFinite(expiresAt) && expiresAt > now
+}
+
+/** Does this candidate match the station key? The gate on redeeming a link. */
+export function isValidStationKey(config: Config, candidate: unknown): boolean {
+  // Falsy rather than `=== null`: an unset env var, an empty one and a config
+  // built without the field all mean the same thing — no key — and an open
+  // station must never accept a key it does not have.
+  if (!config.stationKey) return false
+  return typeof candidate === 'string' && constantTimeEquals(candidate, config.stationKey)
+}
+
+/**
+ * May this request hear the station?
+ *
+ * An open station admits everyone, which is what an unset STATION_KEY means.
+ * Otherwise: a valid invite cookie, the key presented directly (for curl and
+ * the QA scripts, which have nowhere to keep a cookie), or admin credentials —
+ * whoever runs the decks does not also need an invite to their own station.
+ *
+ * Raw headers rather than a `FastifyRequest`, so the websocket upgrade can ask
+ * the same question of the same code.
+ */
+export function mayListen(
+  config: Config,
+  headers: IncomingHttpHeaders,
+  now = Date.now(),
+): boolean {
+  // Falsy rather than `=== null`, so a config assembled without the field is
+  // an open station rather than one nobody can reach. The station has always
+  // been open; a new setting must not shut it by being absent.
+  if (!config.stationKey) return true
+
+  const token = readCookie(headers.cookie, LISTENER_COOKIE)
+  if (token !== null && verifyListenerSession(config.stationKey, token, now)) return true
+
+  const presented = headers['x-station-key']
+  if (typeof presented === 'string' && constantTimeEquals(presented, config.stationKey)) return true
+
+  return hasAdminCredentials(config, headers, now)
+}
+
+/** The gate on everything a listener can reach. */
+export function requireListener(config: Config) {
+  return async function listenerGuard(request: FastifyRequest, reply: FastifyReply) {
+    if (!mayListen(config, request.headers)) {
+      return reply
+        .header('set-cookie', clearedListenerCookie(isSecureRequest(request)))
+        .code(401)
+        .send({ error: 'unauthorized', message: 'this station is private' })
+    }
+  }
 }
 
 export interface AdminSession {
@@ -83,11 +183,21 @@ export function clearedCookie(secure: boolean): string {
   return cookie('', 0, secure)
 }
 
-function cookie(value: string, maxAgeSeconds: number, secure: boolean): string {
+/** `Set-Cookie` for a fresh invite. */
+export function listenerCookie(session: AdminSession, secure: boolean, now = Date.now()): string {
+  return cookie(session.token, Math.max(0, Math.floor((session.expiresAt - now) / 1000)), secure, LISTENER_COOKIE)
+}
+
+/** `Set-Cookie` that drops an invite the station no longer recognises. */
+export function clearedListenerCookie(secure: boolean): string {
+  return cookie('', 0, secure, LISTENER_COOKIE)
+}
+
+function cookie(value: string, maxAgeSeconds: number, secure: boolean, name = ADMIN_COOKIE): string {
   // HttpOnly so page script can't read the token, SameSite=Strict so nothing
   // the admin clicks on another site can drive the station on their behalf.
   const parts = [
-    `${ADMIN_COOKIE}=${value}`,
+    `${name}=${value}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Strict',

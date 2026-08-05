@@ -15,7 +15,7 @@ import {
   AUDIO,
   type AudioState,
   CHROME_PATH,
-  CLIENT_URL,
+  STATION_URL,
   Checks,
   tuneIn,
   wait,
@@ -24,7 +24,7 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const UPLOAD_FILE =
   process.env.QA_UPLOAD_FILE ?? path.resolve(HERE, '../../server/test/fixtures/tagged.mp3')
-const ADMIN_URL = `${CLIENT_URL}/#admin`
+const ADMIN_URL = `${STATION_URL}#admin`
 
 const checks = new Checks()
 
@@ -71,7 +71,7 @@ const browser = await chromium.launch({
 
 try {
   // --- the listener page ships no controls -----------------------------------
-  const listener = await openPage(browser, CLIENT_URL)
+  const listener = await openPage(browser, STATION_URL)
   await tuneIn(listener, 'listener')
   await wait(1_000)
 
@@ -179,7 +179,7 @@ try {
   // --- every client agrees, in real time -------------------------------------
   // A second listener that was not there when the queue was built: it should
   // arrive already knowing about it, from the frame sent on connect.
-  const latecomer = await openPage(browser, CLIENT_URL)
+  const latecomer = await openPage(browser, STATION_URL)
   await tuneIn(latecomer, 'latecomer')
   await wait(1_500)
 

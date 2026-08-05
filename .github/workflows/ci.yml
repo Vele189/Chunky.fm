@@ -105,13 +105,55 @@ jobs:
         run: |
           curl -fsS "http://localhost:$SERVER_PORT/health" | grep -q '"ok":true'
 
-      - name: The page is served, and the bundle with it
+      - name: The station is served at /listen, and the bundle with it
+        run: |
+          page=$(curl -fsS "http://localhost:$WEB_PORT/listen")
+          grep -q 'id="root"' <<<"$page"
+          asset=$(grep -o '/assets/station-[^"]*\.js' <<<"$page" | head -1)
+          test -n "$asset" || { echo "/listen is not the station entry"; exit 1; }
+          curl -fsS -o /dev/null "http://localhost:$WEB_PORT$asset"
+
+      # The landing page is a second Vite entry, and there are two ways for it
+      # to break that a build alone will not catch: the entry silently missing
+      # from the image, and the nginx rule not being there — in which case
+      # `location /` would answer the root with the station and everything below
+      # except the wordmark would still pass. Hence checking for the landing
+      # bundle by name rather than for any bundle at all.
+      - name: The root is the landing page
         run: |
           page=$(curl -fsS "http://localhost:$WEB_PORT/")
           grep -q 'id="root"' <<<"$page"
-          asset=$(grep -o '/assets/[^"]*\.js' <<<"$page" | head -1)
-          test -n "$asset" || { echo "no hashed bundle referenced by index.html"; exit 1; }
+          asset=$(grep -o '/assets/landing-[^"]*\.js' <<<"$page" | head -1)
+          test -n "$asset" || { echo "/ is not the landing entry"; exit 1; }
           curl -fsS -o /dev/null "http://localhost:$WEB_PORT$asset"
+
+      # The one thing the landing page may not swallow. Invite links handed out
+      # before the doorway moved say `/?k=<key>`, and a key handed to a document
+      # with no code in it to redeem it is every one of those links broken. So a
+      # request for `/` carrying a key must leave for the station with the key
+      # still on it.
+      - name: An invite at the root still reaches the station
+        run: |
+          head=$(curl -fsS -o /dev/null -D - "http://localhost:$WEB_PORT/?k=abc123")
+          grep -qi '^HTTP/1.1 302' <<<"$head" || { echo "an invite at / was not sent on"; exit 1; }
+          # Relative on purpose — `absolute_redirect off`. An absolute Location
+          # would be built from nginx's own listen port, which is 80 in the
+          # container and $WEB_PORT out here, and the invite would land nowhere.
+          grep -qi "^location: /listen?k=abc123" <<<"$head" || {
+            echo "the invite did not arrive at the station with its key"; echo "$head"; exit 1
+          }
+          # And it is followable from out here, which is the thing that breaks
+          # if the redirect ever goes absolute again.
+          curl -fsS -L "http://localhost:$WEB_PORT/?k=abc123" | grep -q '/assets/station-'
+          # And a root with no key on it is the landing page, not a redirect —
+          # `if ($arg_k != "")` rather than nginx's own idea of truth.
+          curl -fsS "http://localhost:$WEB_PORT/?utm=x" | grep -q '/assets/landing-'
+
+      # Where the landing page used to be. In the README and in whatever the
+      # station itself linked to, so it has to arrive rather than 404.
+      - name: /welcome still arrives
+        run: |
+          curl -fsS -L "http://localhost:$WEB_PORT/welcome" | grep -q '/assets/landing-'
 
       - name: The API answers
         run: |

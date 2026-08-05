@@ -1,12 +1,26 @@
-import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { AdminPanel } from './AdminPanel.js'
+import { Sidebar } from './Sidebar.js'
+import { Topbar } from './Topbar.js'
+import { Deck, Mute, OnAir, Waveform, WishShortcut } from './Turntable.js'
+import { type AdminSession, useAdminSession } from './hooks/useAdminSession.js'
+import { type Access, useStationAccess } from './hooks/useStationAccess.js'
 import { usePresence } from './hooks/usePresence.js'
 import { useServerClock } from './hooks/useServerClock.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
-import { isAdminRoute } from './lib/admin.js'
 import { seekTo } from './lib/audio-element.js'
-import { type Availability, canTuneIn, outage, staleNotice, statusLabel } from './lib/availability.js'
+import { type Availability, canTuneIn, outage, staleNotice } from './lib/availability.js'
 import {
   chatRefusal,
   draftAfterRefusal,
@@ -35,6 +49,8 @@ import {
   type Wish,
   refusalAbout,
 } from './lib/protocol.js'
+import { DEFAULT_ROUTE, type Route, isConsole, needsJoin, routeFrom } from './lib/routes.js'
+import { matchesFilter } from './lib/search.js'
 import {
   type SkipTally,
   skipTallyLabel,
@@ -51,7 +67,96 @@ import {
   wishStatusLabel,
 } from './lib/wishes.js'
 
+/** How much of the evening the history shows before "View all" is pressed. */
+const EARLIER_SHOWN = 4
+
+/**
+ * The door, and then the station.
+ *
+ * Split in two so that nothing below opens a socket, starts a clock or asks for
+ * a roster until the station has said this browser may hear it. On an open
+ * station — the default, and what PLAN.md describes — that answer is yes and
+ * this costs one request; on a private one it is the difference between a page
+ * that explains itself and a page that reconnects forever.
+ */
 export function App() {
+  const route = useRoute()
+  const session = useAdminSession()
+  const access = useStationAccess()
+
+  const admitted =
+    // The console is never behind the invite gate. It is how whoever runs the
+    // station gets in, and needing an invite to reach the sign-in form would
+    // lock the owner out of their own station — there being no way to issue
+    // themselves one. Nothing is given away by rendering it: every route it
+    // calls is gated on the server, and the gate is the password.
+    isConsole(route) ||
+    // And once signed in, admitted everywhere else too. The station already
+    // agrees — admin credentials satisfy the listener gate — but this browser
+    // asked before it had any, and the answer it got is now out of date.
+    session.status === 'signed-in' ||
+    access === 'admitted' ||
+    // A station that has not answered has refused nothing. The offline screen
+    // is what that case is for: it keeps retrying and tunes in by itself, and
+    // the probe keeps asking, so a private station still gets to say so.
+    access === 'unreachable'
+
+  if (!admitted) return <Doorway access={access} />
+  return <Station route={route} session={session} />
+}
+
+/**
+ * What stands in for the whole page while the station decides, or instead of it
+ * when the answer is no.
+ *
+ * Deliberately not the outage screen: an outage is the station being gone and
+ * fixing itself, and neither is true here. Somebody without an invite needs to
+ * know there is nothing wrong and nothing to wait for — the only thing that
+ * helps is a link from whoever runs it.
+ */
+function Doorway({ access }: { access: Access }) {
+  return (
+    <div className="doorway">
+      <h1 className="wordmark">
+        chunky<span className="wordmark__tld">.fm</span>
+      </h1>
+      {access === 'refused' ? (
+        <>
+          <div className="outage" data-testid="not-invited" role="status">
+            <p className="outage__headline">This station is private.</p>
+            <p className="outage__detail">
+              You need a link from whoever runs it. If you had one that worked before, it has been
+              replaced — ask for the new one.
+            </p>
+          </div>
+          {/* The one screen where somebody is standing outside wondering what
+              they have been sent, so it is the one screen that says. Outside
+              the status region rather than in it: what is being reported is
+              that the door is shut, and a link is not part of that report.
+
+              Only here. Somebody on the unreachable screen has an invite that
+              works and a station that is away — they know what this is, and
+              they are waiting rather than asking. */}
+          <a className="button button--quiet" href="/">
+            What chunky.fm is
+          </a>
+        </>
+      ) : access === 'unreachable' ? (
+        <div className="outage" data-testid="doorway-unreachable" role="status">
+          <p className="outage__headline">Nothing is answering.</p>
+          <p className="outage__detail">
+            That is the station being away rather than being shut to you. Leave the page open and
+            reload when it is back.
+          </p>
+        </div>
+      ) : (
+        <p className="off-air__detail">knocking…</p>
+      )}
+    </div>
+  )
+}
+
+function Station({ route: requested, session }: { route: Route; session: AdminSession }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [joined, setJoined] = useState(false)
   // Read once, at mount: what a previous visit left behind is the starting
@@ -79,7 +184,7 @@ export function App() {
     applyState,
     applyQueue,
   } = useStation(undefined, (message) => routeToClock.current(message))
-  const admin = useAdminRoute()
+  const admin = isConsole(requested)
   const clock = useServerClock(connection, { connected: status === 'connected' })
   // Only once tuned in: a socket is open from the moment the page loads, and a
   // name typed into the field is not yet a listener in the room.
@@ -117,6 +222,28 @@ export function App() {
     return () => window.clearInterval(timer)
   }, [joined])
 
+  // Only this listener's own ears — muting is not leaving, so the socket, the
+  // roster and the clock all carry on exactly as they were.
+  const [muted, setMuted] = useState(false)
+  function toggleMute() {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.muted = !audio.muted
+    setMuted(audio.muted)
+  }
+
+  // What the top bar's field narrows — see lib/search.ts. Every list on the
+  // view you are looking at, and nothing you cannot see: the field is not
+  // rendered at all on the one view that has no list on it.
+  const [filter, setFilter] = useState('')
+
+  // Where the heart beside the title sends you.
+  const wishInput = useRef<HTMLInputElement>(null)
+  const askForSomething = useCallback(() => {
+    document.getElementById('wishes')?.scrollIntoView({ block: 'nearest' })
+    wishInput.current?.focus()
+  }, [])
+
   function joinStation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -146,157 +273,235 @@ export function App() {
   const track = state?.track ?? null
   const artwork = track ? artworkUrl(track) : null
   const tuning = joined && !clock.synced
+  const paused = state?.pausedAt !== null && state?.pausedAt !== undefined
   // Nothing left on the page that came from a station: either this listener
   // never got one, or the outage arrived before the first frame did. There is
   // no stale truth to keep showing, so the outage screen takes the whole panel.
   const stranded = reach !== 'live' && (!clock.synced || state === null)
+  // The record turns for exactly one reason: audio is coming out of it.
+  const onAir = Boolean(joined && !stranded && !tuning && track && !paused)
+
+  // Somebody can type `#chat` into the address bar before tuning in, and there
+  // is nothing behind it when they do — the station has not told this browser
+  // who is in the room or what has been on. So the address is honoured only
+  // once it leads somewhere, and until then every view is the one you land on.
+  const route: Route = needsJoin(requested) && !joined ? 'on-air' : requested
+
+  const wishes = (
+    <Wishes
+      wishes={myWishes}
+      connection={connection}
+      live={status === 'connected'}
+      refusal={refusalAbout(socketError, 'wish')}
+      clearRefusal={clearSocketError}
+      inputRef={wishInput}
+      filter={filter}
+    />
+  )
+  const chat = (
+    <Chat
+      messages={messages}
+      filter={filter}
+      connection={connection}
+      live={status === 'connected'}
+      refusal={refusalAbout(socketError, 'say')}
+      clearRefusal={clearSocketError}
+    />
+  )
+  const readout = (
+    <ClockReadout
+      offsetMs={clock.offsetMs}
+      rttMs={clock.rttMs}
+      diff={drift?.diff ?? null}
+      correction={drift?.correction ?? null}
+    />
+  )
 
   return (
-    <main className="station">
-      <header className="station__head">
-        <h1>chunky.fm</h1>
-        <div className="station__who">
-          {joined && (
-            <span className="station__nick" data-testid="nickname">
-              listening as {nickname}
-            </span>
-          )}
-          <span className={`status status--${reach}`}>{statusLabel(reach)}</span>
-        </div>
-      </header>
+    <div className="station">
+      <Sidebar
+        active={route}
+        joined={joined}
+        showConsole={session.status === 'signed-in'}
+      />
 
-      {/* Above everything it is about. What is below stopped being live at the
-          drop — the roster, the tally and the clock all did — and a page that
-          kept presenting it as current would be the broken UI this replaces. */}
-      {joined && !stranded && <StaleNotice state={reach} />}
+      <div className="station__main">
+        <Topbar
+          reach={reach}
+          listeners={listeners?.length ?? null}
+          admin={admin}
+          showConsole={session.status === 'signed-in'}
+          filter={filter}
+          onFilterChange={setFilter}
+          // The console always has a library to narrow; a listener has nothing
+          // at all until they are in the room, and `sync` has no list on it.
+          searchable={admin || (joined && route !== 'sync')}
+          searchHint={searchHint(route, admin)}
+        />
 
-      {!joined ? (
-        canTuneIn(reach) ? (
-          <section className="join">
-            <p className="join__blurb">
-              One station. Everyone hears the same instant of the same song.
-            </p>
-            <form className="join__form" onSubmit={joinStation}>
-              <label className="join__label" htmlFor="nickname">
-                What should everyone call you?
-              </label>
-              <input
-                id="nickname"
-                className="join__input"
-                name="nickname"
-                value={nickname}
-                onChange={(event) => setNickname(event.target.value)}
-                placeholder="nickname"
-                maxLength={NICKNAME_MAX_LENGTH}
-                autoComplete="nickname"
-                autoFocus
-                required
-              />
-              <button type="submit" className="join__button" disabled={!isValidNickname(nickname)}>
-                Tune in
-              </button>
-            </form>
-          </section>
-        ) : (
-          <Outage state={reach} />
-        )
-      ) : stranded ? (
-        <Outage state={reach} />
-      ) : tuning ? (
-        <section className="off-air">
-          <p>tuning in…</p>
-        </section>
-      ) : track ? (
-        <section className="now-playing">
-          {artwork ? (
-            <img className="now-playing__art" src={artwork} alt="" />
-          ) : (
-            <div className="now-playing__art now-playing__art--empty" aria-hidden="true" />
-          )}
-          <h2 className="now-playing__title">{track.title}</h2>
-          <p className="now-playing__artist">{track.artist ?? 'Unknown artist'}</p>
-          <p className="now-playing__time">
-            {formatClock(position)} / {formatClock(track.durationMs / 1000)}
-            {state?.pausedAt !== null && <span className="now-playing__paused"> — paused</span>}
-          </p>
-          <ClockReadout
-            offsetMs={clock.offsetMs}
-            rttMs={clock.rttMs}
-            diff={drift?.diff ?? null}
-            correction={drift?.correction ?? null}
+        {/* Above everything it is about. What is below stopped being live at the
+            drop — the roster, the tally and the clock all did — and a page that
+            kept presenting it as current would be the broken UI this replaces.
+            The console says the same thing in its own words, so this is only
+            for the listener page. */}
+        {!admin && joined && !stranded && <StaleNotice state={reach} />}
+
+        {/* The two sides of the station, and never both at once: the console
+            takes the whole page, because whoever is running the decks is
+            working, not listening. The chip in the top bar is the way back. */}
+        {admin ? (
+          <AdminPanel
+            state={state}
+            queue={queue}
+            skips={tallyFor(skips, track?.id ?? null)}
+            messages={messages}
+            filter={filter}
+            serverNow={clock.serverNow}
+            session={session}
+            status={status}
+            applyState={applyState}
+            applyQueue={applyQueue}
           />
-        </section>
-      ) : (
-        // The station is there and answering; it just isn't playing anything.
-        // That reads exactly like a broken page unless the page says otherwise,
-        // so it says both halves: nothing is on, and you have missed nothing.
-        <section className="off-air" data-testid="off-air">
-          <p className="off-air__headline">Nothing on the decks right now.</p>
-          <p className="off-air__detail">
-            You're tuned in — whatever goes on next starts here on its own.
-          </p>
-        </section>
-      )}
+        ) : !joined ? (
+          canTuneIn(reach) ? (
+            <div className="station__columns">
+              <section className="column column--stage">
+                <Deck artwork={null} spinning={false} />
+                <div className="join">
+                  <p className="join__blurb">
+                    One station. Everyone hears the same instant of the same song.
+                  </p>
+                  <form className="join__form" onSubmit={joinStation}>
+                    <label className="join__label" htmlFor="nickname">
+                      What should everyone call you?
+                    </label>
+                    <input
+                      id="nickname"
+                      className="join__input"
+                      name="nickname"
+                      value={nickname}
+                      onChange={(event) => setNickname(event.target.value)}
+                      placeholder="nickname"
+                      maxLength={NICKNAME_MAX_LENGTH}
+                      autoComplete="nickname"
+                      autoFocus
+                      required
+                    />
+                    <button
+                      type="submit"
+                      className="join__button"
+                      disabled={!isValidNickname(nickname)}
+                    >
+                      Tune in
+                    </button>
+                  </form>
+                </div>
+              </section>
+            </div>
+          ) : (
+            <Outage state={reach} />
+          )
+        ) : stranded ? (
+          <Outage state={reach} />
+        ) : route === 'on-air' ? (
+          // The design's listener page, whole: the deck and what it is playing
+          // on the left, what is coming and what the room is saying on the
+          // right. Every other view below is one of these given the screen.
+          <div className="station__columns">
+            <section className="column column--stage">
+              <Deck artwork={artwork} spinning={onAir} />
 
-      {/* Under the track it is about, and only for listeners: the admin has a
-          Skip button, and voting for something you can simply do is theatre.
-          The tally still reaches the panel — see AdminPanel. */}
-      {joined && !admin && track && (
-        <SkipVote
-          tally={tallyFor(skips, track.id)}
-          listeners={listeners?.length ?? 0}
-          connection={connection}
-          live={status === 'connected'}
-          refusal={refusalAbout(socketError, 'vote')}
-          clearRefusal={clearSocketError}
-        />
-      )}
+              {tuning ? (
+                <div className="off-air">
+                  <p className="off-air__headline">tuning in…</p>
+                </div>
+              ) : track ? (
+                <div className="stage">
+                  <OnAir live={onAir} idleLabel={paused ? 'PAUSED' : 'OFF AIR'} />
 
-      {joined && !admin && <UpNext queue={queue} />}
-      {/* Directly under what's coming, because it is the same question pointed
-          the other way: what is about to be on, and what already was. */}
-      {joined && !admin && <Earlier plays={history} currentTrackId={track?.id ?? null} />}
-      {/* Shown on the admin route too: the panel has the queue covered, but
-          nothing in it says who is out there or what they are saying. */}
-      {joined && <Listeners listeners={listeners} />}
-      {/* Two composers, one socket: each is handed only the refusals that are
-          about what it sends, or a refused wish would also read as a message
-          that went nowhere. */}
-      {joined && (
-        <Wishes
-          wishes={myWishes}
-          connection={connection}
-          live={status === 'connected'}
-          refusal={refusalAbout(socketError, 'wish')}
-          clearRefusal={clearSocketError}
-        />
-      )}
-      {joined && (
-        <Chat
-          messages={messages}
-          connection={connection}
-          live={status === 'connected'}
-          refusal={refusalAbout(socketError, 'say')}
-          clearRefusal={clearSocketError}
-        />
-      )}
+                  <div className="stage__head">
+                    <div>
+                      <h2 className="now-playing__title">{track.title}</h2>
+                      <p className="now-playing__artist">{track.artist ?? 'Unknown artist'}</p>
+                    </div>
+                    <WishShortcut onPress={askForSomething} />
+                  </div>
+
+                  <p className="now-playing__time">
+                    {formatClock(position)} / {formatClock(track.durationMs / 1000)}
+                    {paused && <span className="now-playing__paused"> — paused</span>}
+                  </p>
+
+                  <Waveform live={onAir} />
+
+                  <Mute muted={muted} onToggle={toggleMute} enabled={Boolean(track)} />
+
+                  {/* Under the track it is about. Only listeners ever see it:
+                      the console has a Play next button, and voting for
+                      something you can simply do is theatre. The tally still
+                      reaches the console — see AdminPanel. */}
+                  <SkipVote
+                    tally={tallyFor(skips, track.id)}
+                    listeners={listeners?.length ?? 0}
+                    connection={connection}
+                    live={status === 'connected'}
+                    refusal={refusalAbout(socketError, 'vote')}
+                    clearRefusal={clearSocketError}
+                  />
+
+                  {readout}
+                </div>
+              ) : (
+                // The station is there and answering; it just isn't playing
+                // anything. That reads exactly like a broken page unless the
+                // page says otherwise, so it says both halves: nothing is on,
+                // and you have missed nothing.
+                <div className="off-air" data-testid="off-air">
+                  <p className="off-air__headline">Nothing on the decks right now.</p>
+                  <p className="off-air__detail">
+                    You're tuned in — whatever goes on next starts here on its own.
+                  </p>
+                </div>
+              )}
+
+              {wishes}
+              <Listeners listeners={listeners} />
+            </section>
+
+            <section className="column column--aside">
+              <UpNext queue={queue} filter={filter} />
+              {/* Directly under what's coming, because it is the same question
+                  pointed the other way: what is about to be on, and what
+                  already was. */}
+              <Earlier plays={history} currentTrackId={track?.id ?? null} filter={filter} />
+              {chat}
+            </section>
+          </div>
+        ) : (
+          // One thing, with the whole screen. Nothing here is new data — it is
+          // the same panel the landing view carries in a column, without the
+          // column, which is the only thing a rail full of destinations can
+          // honestly offer on a station this size.
+          <div className={`view view--${route}`}>
+            {route === 'sync' && <SyncView readout={readout} synced={clock.synced} reach={reach} />}
+            {route === 'queue' && <UpNext queue={queue} filter={filter} standalone />}
+            {route === 'chat' && chat}
+            {route === 'wishes' && wishes}
+            {route === 'history' && (
+              <Earlier
+                plays={history}
+                currentTrackId={track?.id ?? null}
+                filter={filter}
+                standalone
+              />
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Owned imperatively — React never sets currentTime or calls play(). */}
       <audio ref={audioRef} preload="auto" />
-
-      {/* The listener page ships no controls at all: off this route, none of
-          this renders, and the server would refuse it anyway. */}
-      {admin && (
-        <AdminPanel
-          state={state}
-          queue={queue}
-          skips={tallyFor(skips, track?.id ?? null)}
-          status={status}
-          applyState={applyState}
-          applyQueue={applyQueue}
-        />
-      )}
-    </main>
+    </div>
   )
 }
 
@@ -318,10 +523,10 @@ function Outage({ state }: { state: Availability }) {
   if (!notice) return null
 
   return (
-    <section className="outage" data-testid="outage" data-reach={state} role="status">
+    <div className="outage" data-testid="outage" data-reach={state} role="status">
       <p className="outage__headline">{notice.headline}</p>
       <p className="outage__detail">{notice.detail}</p>
-    </section>
+    </div>
   )
 }
 
@@ -352,54 +557,133 @@ function StaleNotice({ state }: { state: Availability }) {
  * decided what comes next may as well say so. Read-only: this is the same frame
  * the panel reorders, seen from the other side.
  */
-function UpNext({ queue }: { queue: QueueEntry[] | null }) {
-  if (!queue || queue.length === 0) return null
+function UpNext({
+  queue,
+  filter,
+  standalone,
+}: {
+  queue: QueueEntry[] | null
+  filter: string
+  /**
+   * True when this panel is the whole page. An empty queue is worth no space at
+   * all in a column beside the deck, but on its own view a blank screen is a
+   * dead end — so there it says that nothing is queued rather than nothing.
+   */
+  standalone?: boolean
+}) {
+  const entries = queue ?? []
+  if (entries.length === 0 && !standalone) return null
+  const shown = entries.filter((entry) =>
+    matchesFilter(filter, entry.track.title, entry.track.artist),
+  )
 
   return (
-    <section className="up-next" data-testid="up-next">
-      <h2 className="up-next__heading">Up next</h2>
-      <ol className="up-next__list">
-        {queue.map((entry) => (
-          <li key={entry.id} data-entry={entry.id}>
-            <span className="up-next__title">{entry.track.title}</span>
-            <span className="up-next__artist">{entry.track.artist ?? 'Unknown artist'}</span>
-          </li>
-        ))}
-      </ol>
+    <section className="panel" id="up-next" data-testid="up-next">
+      <div className="panel__head">
+        <h2 className="panel__title">Up next</h2>
+        <p className="panel__aside">{countLabel(shown.length, entries.length, 'queued')}</p>
+      </div>
+      {entries.length === 0 ? (
+        <p className="panel__empty">Nothing is queued. Whatever is on now plays out on its own.</p>
+      ) : shown.length === 0 ? (
+        <p className="panel__empty">Nothing queued matches “{filter.trim()}”.</p>
+      ) : (
+        <ol className="rows">
+          {shown.map((entry, index) => (
+            <li className="row" key={entry.id} data-entry={entry.id}>
+              <span className="row__index">{trackNumber(index)}</span>
+              <span className="row__body">
+                <span className="row__title">{entry.track.title}</span>
+                <span className="row__sub">
+                  {entry.track.artist ?? 'Unknown artist'}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   )
 }
 
 /**
- * What has already been on.
+ * What has already been on — the design's "Recently Played".
  *
  * PLAN.md's now-playing history, from the listener's side: the evening so far,
  * newest first, so somebody who walked in on the end of something can see what
  * it was. The station writes a play down when the track starts, which makes the
- * newest row whatever is on right now — already shown in full at the top of the
- * page — so `playedEarlier` drops it and this list is only what was missed.
+ * newest row whatever is on right now — already shown in full beside this list —
+ * so `playedEarlier` drops it and this list is only what was missed.
  *
  * Written down rather than held on the socket, so unlike the roster and the skip
  * tally it survives a reload and covers an outage: whatever went on while a
  * listener was reconnecting arrives in the replay, merged by id.
  */
-function Earlier({ plays, currentTrackId }: { plays: Play[]; currentTrackId: number | null }) {
+function Earlier({
+  plays,
+  currentTrackId,
+  filter,
+  standalone,
+}: {
+  plays: Play[]
+  currentTrackId: number | null
+  filter: string
+  /** True when this panel is the whole page — see the same prop on UpNext. */
+  standalone?: boolean
+}) {
+  // Four rows, as the design draws it, and the rest a press away. On its own
+  // view there is room for the evening, so the cap does not apply.
+  const [all, setAll] = useState(false)
+
   const earlier = playedEarlier(plays, currentTrackId)
-  if (earlier.length === 0) return null
+  if (earlier.length === 0 && !standalone) return null
+
+  const matching = earlier.filter((play) =>
+    matchesFilter(filter, play.track.title, play.track.artist),
+  )
+  const capped = !standalone && !all && filter.trim().length === 0
+  const shown = capped ? matching.slice(0, EARLIER_SHOWN) : matching
 
   return (
-    <section className="earlier" data-testid="earlier">
-      <h2 className="earlier__heading">Earlier</h2>
-      <ol className="earlier__list">
-        {earlier.map((play) => (
-          <li key={play.id} className="earlier__line" data-play={play.id} data-track={play.track.id}>
-            <time className="earlier__at" dateTime={new Date(play.at).toISOString()}>
-              {formatTime(play.at)}
-            </time>
-            <span className="earlier__title">{playedLabel(play)}</span>
-          </li>
-        ))}
-      </ol>
+    <section className="panel" id="earlier" data-testid="earlier">
+      <div className="panel__head">
+        <h2 className="panel__title">Recently Played</h2>
+        {standalone ? (
+          <p className="panel__aside">{countLabel(matching.length, earlier.length, 'played')}</p>
+        ) : (
+          matching.length > EARLIER_SHOWN &&
+          filter.trim().length === 0 && (
+            <button type="button" className="panel__more" onClick={() => setAll(!all)}>
+              {all ? 'Show less' : 'View all'}
+            </button>
+          )
+        )}
+      </div>
+      {earlier.length === 0 ? (
+        <p className="panel__empty">
+          Nothing has been on yet this session. What plays from here shows up in this list.
+        </p>
+      ) : shown.length === 0 ? (
+        <p className="panel__empty">Nothing played earlier matches “{filter.trim()}”.</p>
+      ) : (
+        <ol className="rows">
+          {shown.map((play, index) => (
+            <li className="row" key={play.id} data-play={play.id} data-track={play.track.id}>
+              <span className="row__index">{trackNumber(index)}</span>
+              {/* Two lines here, because the row has two lines to give — but the
+                  one-line reading is what a tooltip and a screen reader want,
+                  and it is the same string either way. */}
+              <span className="row__body" title={playedLabel(play)}>
+                <span className="row__title earlier__title">{play.track.title}</span>
+                <span className="row__sub">{play.track.artist ?? 'Unknown artist'}</span>
+              </span>
+              <time className="row__at" dateTime={new Date(play.at).toISOString()}>
+                {formatTime(play.at)}
+              </time>
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   )
 }
@@ -419,13 +703,11 @@ function Listeners({ listeners }: { listeners: Listener[] | null }) {
   if (!listeners || listeners.length === 0) return null
 
   return (
-    <section className="listeners" data-testid="listeners">
-      <h2 className="listeners__heading">
-        Listening now
-        <span className="listeners__count" data-testid="listener-count">
-          {listeners.length}
-        </span>
-      </h2>
+    <section className="panel panel--stage" data-testid="listeners">
+      <div className="panel__head">
+        <h2 className="panel__title">Listening now</h2>
+        <p className="panel__aside">{listeners.length}</p>
+      </div>
       <ul className="listeners__list">
         {listeners.map((listener) => (
           <li key={listener.id} className="listeners__name" data-listener={listener.id}>
@@ -478,7 +760,7 @@ function SkipVote({ tally, listeners, connection, live, refusal, clearRefusal }:
   const refusalNotice = refusal ? voteRefusal(refusal.error.code) : null
 
   return (
-    <section className="skips" data-testid="skips">
+    <div className="skips" id="skips" data-testid="skips">
       <p className="skips__tally" data-testid="skips-tally" data-votes={tally.votes}>
         {skipTallyLabel(tally.votes, listeners)}
       </p>
@@ -497,7 +779,7 @@ function SkipVote({ tally, listeners, connection, live, refusal, clearRefusal }:
           {refusalNotice}
         </p>
       )}
-    </section>
+    </div>
   )
 }
 
@@ -509,6 +791,10 @@ interface WishesProps {
   /** The last refusal that was about a wish, if any. */
   refusal: SocketRefusal | null
   clearRefusal(): void
+  /** So the heart beside the title can put the cursor in here. */
+  inputRef: RefObject<HTMLInputElement | null>
+  /** From the top bar. Narrows what is listed, never what can be sent. */
+  filter: string
 }
 
 /**
@@ -524,7 +810,15 @@ interface WishesProps {
  * chat renders nothing optimistically: a line that says "asked" for something
  * that was refused is worse than no line at all.
  */
-function Wishes({ wishes, connection, live, refusal, clearRefusal }: WishesProps) {
+function Wishes({
+  wishes,
+  connection,
+  live,
+  refusal,
+  clearRefusal,
+  inputRef,
+  filter,
+}: WishesProps) {
   const [draft, setDraft] = useState('')
   // What went out and has not been answered, so a refusal can hand it back.
   const unanswered = useRef<string | null>(null)
@@ -551,17 +845,23 @@ function Wishes({ wishes, connection, live, refusal, clearRefusal }: WishesProps
   }
 
   const refusalNotice = refusal ? wishRefusal(refusal.error.code) : null
+  const shownWishes = wishes.filter((wish) => matchesFilter(filter, wish.text))
 
   return (
-    <section className="wishes" data-testid="wishes">
-      <h2 className="wishes__heading">Wishes</h2>
+    <section className="panel panel--stage" id="wishes" data-testid="wishes">
+      <div className="panel__head">
+        <h2 className="panel__title">Wishes</h2>
+        <p className="panel__aside">no promises</p>
+      </div>
       {wishes.length === 0 ? (
-        <p className="wishes__blurb">
+        <p className="panel__empty">
           Ask for anything. Whoever's on the decks reads these — no promises.
         </p>
+      ) : shownWishes.length === 0 ? (
+        <p className="panel__empty">None of your wishes match “{filter.trim()}”.</p>
       ) : (
         <ol className="wishes__list" data-testid="wishes-list">
-          {wishes.map((wish) => (
+          {shownWishes.map((wish) => (
             <li key={wish.id} className="wishes__line" data-wish={wish.id}>
               <span className="wishes__text">{wish.text}</span>
               {/* Only ever "asked" for now: nothing tells a listener their wish
@@ -573,18 +873,19 @@ function Wishes({ wishes, connection, live, refusal, clearRefusal }: WishesProps
         </ol>
       )}
       {refusalNotice && (
-        <p className="wishes__refusal" role="status" data-testid="wishes-refusal">
+        <p className="refusal" role="status" data-testid="wishes-refusal">
           {refusalNotice}
         </p>
       )}
-      <form className="wishes__form" onSubmit={ask}>
-        <label className="wishes__label" htmlFor="wish-input">
+      <form className="compose" onSubmit={ask}>
+        <label className="compose__label" htmlFor="wish-input">
           Ask for something
         </label>
         <input
           id="wish-input"
-          className="wishes__input"
+          className="compose__input"
           data-testid="wish-input"
+          ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={live ? 'anything off Rumours…' : 'reconnecting…'}
@@ -592,11 +893,7 @@ function Wishes({ wishes, connection, live, refusal, clearRefusal }: WishesProps
           autoComplete="off"
           disabled={!live}
         />
-        <button
-          type="submit"
-          className="wishes__send"
-          disabled={!live || !isSendableWish(draft)}
-        >
+        <button type="submit" className="compose__send" disabled={!live || !isSendableWish(draft)}>
           Ask
         </button>
       </form>
@@ -606,6 +903,8 @@ function Wishes({ wishes, connection, live, refusal, clearRefusal }: WishesProps
 
 interface ChatProps {
   messages: ChatMessage[]
+  /** From the top bar. Narrows what is listed, never what can be sent. */
+  filter: string
   connection: StationConnection | null
   /** False while reconnecting — a send would go on the floor unannounced. */
   live: boolean
@@ -624,7 +923,7 @@ interface ChatProps {
  * no local-only line that a refused message would leave sitting there looking
  * sent.
  */
-function Chat({ messages, connection, live, refusal, clearRefusal }: ChatProps) {
+function Chat({ messages, filter, connection, live, refusal, clearRefusal }: ChatProps) {
   const [draft, setDraft] = useState('')
   const list = useRef<HTMLOListElement>(null)
   // What went out and has not been answered, so a refusal can hand it back.
@@ -664,65 +963,156 @@ function Chat({ messages, connection, live, refusal, clearRefusal }: ChatProps) 
   }
 
   const refusalNotice = refusal ? chatRefusal(refusal.error.code) : null
+  // Nickname as well as text: "what did ben say" is the question people
+  // actually have about a scrollback.
+  const shownMessages = messages.filter((message) =>
+    matchesFilter(filter, message.text, message.nickname),
+  )
 
   return (
-    <section className="chat" data-testid="chat">
-      <h2 className="chat__heading">Chat</h2>
-      {messages.length === 0 ? (
-        <p className="chat__empty">Nobody has said anything yet.</p>
-      ) : (
-        <ol className="chat__list" data-testid="chat-list" ref={list}>
-          {messages.map((message) => (
-            <li key={message.id} className="chat__line" data-message={message.id}>
-              <time className="chat__at" dateTime={new Date(message.at).toISOString()}>
-                {formatTime(message.at)}
-              </time>
-              <span className="chat__nick">{message.nickname}</span>
-              <span className="chat__text">{message.text}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {refusalNotice && (
-        <p className="chat__refusal" role="status" data-testid="chat-refusal">
-          {refusalNotice}
+    <section className="panel" id="chat" data-testid="chat">
+      <div className="panel__head">
+        <h2 className="panel__title">Live Chat</h2>
+        <p className="panel__aside">
+          <span className="panel__dot" aria-hidden="true" />
+          {countLabel(shownMessages.length, messages.length, 'messages')}
         </p>
-      )}
-      <form className="chat__form" onSubmit={say}>
-        <label className="chat__label" htmlFor="chat-input">
-          Say something
-        </label>
-        <input
-          id="chat-input"
-          className="chat__input"
-          data-testid="chat-input"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={live ? 'say something' : 'reconnecting…'}
-          maxLength={MESSAGE_MAX_LENGTH}
-          autoComplete="off"
-          disabled={!live}
-        />
-        <button
-          type="submit"
-          className="chat__send"
-          disabled={!live || !isSendableMessage(draft)}
-        >
-          Send
-        </button>
-      </form>
+      </div>
+      <div className="chat__panel">
+        {messages.length === 0 ? (
+          <p className="panel__empty">Nobody has said anything yet.</p>
+        ) : shownMessages.length === 0 ? (
+          <p className="panel__empty">Nothing said matches “{filter.trim()}”.</p>
+        ) : (
+          <ol className="chat__list" data-testid="chat-list" ref={list}>
+            {shownMessages.map((message) => (
+              <li key={message.id} className="chat__line" data-message={message.id}>
+                <Avatar nickname={message.nickname} />
+                <span className="chat__body">
+                  {/* The time sits beside the name, not inside it: `.chat__nick`
+                      is read as the name on its own, here and in the QA runs. */}
+                  <span className="chat__head">
+                    <span className="chat__nick">{message.nickname}</span>
+                    <time className="chat__at" dateTime={new Date(message.at).toISOString()}>
+                      {formatTime(message.at)}
+                    </time>
+                  </span>
+                  <span className="chat__text">{message.text}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+        {refusalNotice && (
+          <p className="refusal" role="status" data-testid="chat-refusal">
+            {refusalNotice}
+          </p>
+        )}
+        <form className="compose" onSubmit={say}>
+          <label className="compose__label" htmlFor="chat-input">
+            Say something
+          </label>
+          <input
+            id="chat-input"
+            className="compose__input"
+            data-testid="chat-input"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={live ? 'say something' : 'reconnecting…'}
+            maxLength={MESSAGE_MAX_LENGTH}
+            autoComplete="off"
+            disabled={!live}
+          />
+          <button
+            type="submit"
+            className="compose__send"
+            disabled={!live || !isSendableMessage(draft)}
+          >
+            Send
+          </button>
+        </form>
+      </div>
     </section>
   )
 }
 
-/** True on #admin (or /admin), and follows the address bar without a reload. */
-function useAdminRoute(): boolean {
-  const [admin, setAdmin] = useState(() =>
-    typeof window === 'undefined' ? false : isAdminRoute(window.location),
+/**
+ * The circle beside a message.
+ *
+ * The design puts a photograph here; the station has no photographs and never
+ * asks for one, so this is the most the page honestly knows about a listener —
+ * their name, drawn as an initial over a colour derived from the same name. The
+ * derivation is pure, so the same nickname is the same colour on every screen
+ * in the room without a byte crossing the wire to arrange it.
+ */
+function Avatar({ nickname }: { nickname: string }) {
+  const hue = useMemo(() => hueFor(nickname), [nickname])
+  return (
+    <span
+      className="chat__avatar"
+      aria-hidden="true"
+      style={{ '--hue': `${hue}` } as CSSProperties}
+    >
+      {[...nickname.trim()][0] ?? '?'}
+    </span>
   )
+}
+
+/** A stable hue in [0, 360) for a nickname. Not a hash anyone relies on. */
+function hueFor(nickname: string): number {
+  let total = 0
+  for (const character of nickname) total = (total * 31 + character.codePointAt(0)!) % 360
+  return total
+}
+
+/**
+ * What the top bar's field promises on the view you are looking at.
+ *
+ * Named for what it will actually narrow, rather than a single vague "Search"
+ * everywhere — the field reaches only the lists on screen, and saying so is the
+ * difference between a control and a guess.
+ */
+function searchHint(route: Route, admin: boolean): string {
+  if (admin) return 'Search the library'
+  switch (route) {
+    case 'queue':
+      return "Search what's coming"
+    case 'history':
+      return "Search what's been on"
+    case 'chat':
+      return 'Search the conversation'
+    case 'wishes':
+      return 'Search your wishes'
+    default:
+      return 'Search tracks and artists'
+  }
+}
+
+/** "01", "02" — the design's numbering, which is a position and not an id. */
+function trackNumber(index: number): string {
+  return String(index + 1).padStart(2, '0')
+}
+
+/** How a filtered list reports itself: "4 queued", or "2 of 9 queued". */
+function countLabel(shown: number, total: number, noun: string): string {
+  return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`
+}
+
+/**
+ * Where the address bar says we are, following it without a reload.
+ *
+ * Both events, not just `hashchange`: the back button after a same-document
+ * navigation fires `popstate`, and a rail that only listened for the first one
+ * would leave the browser's own history buttons doing nothing.
+ */
+function useRoute(): Route {
+  const read = () => (typeof window === 'undefined' ? DEFAULT_ROUTE : routeFrom(window.location))
+  const [route, setRoute] = useState(read)
 
   useEffect(() => {
-    const update = () => setAdmin(isAdminRoute(window.location))
+    const update = () => setRoute(routeFrom(window.location))
+    // The address may have moved between first render and this effect running.
+    update()
     window.addEventListener('hashchange', update)
     window.addEventListener('popstate', update)
     return () => {
@@ -731,7 +1121,82 @@ function useAdminRoute(): boolean {
     }
   }, [])
 
-  return admin
+  return route
+}
+
+interface SyncViewProps {
+  readout: ReactNode
+  synced: boolean
+  reach: Availability
+}
+
+/**
+ * The clock numbers, with the whole screen.
+ *
+ * PLAN.md: "the whole project lives or dies on these numbers." The landing view
+ * carries them as a strip under the deck, where they are a glance; this is the
+ * same strip with what each one means beside it, which is what you want when
+ * the glance said something you did not like.
+ *
+ * The readout itself is passed in rather than rebuilt, so there is exactly one
+ * of it in the app and no chance of the two disagreeing.
+ */
+function SyncView({ readout, synced, reach }: SyncViewProps) {
+  return (
+    <section className="panel" data-testid="sync-view">
+      <div className="panel__head">
+        <h2 className="panel__title">Sync</h2>
+        <p className="panel__aside">
+          <span
+            className="panel__dot"
+            style={{ background: synced ? undefined : 'var(--faint)' }}
+            aria-hidden="true"
+          />
+          {synced ? 'locked to the station' : 'not locked yet'}
+        </p>
+      </div>
+
+      {readout}
+
+      <dl className="glossary">
+        <div>
+          <dt>clock offset</dt>
+          <dd>
+            How far this browser's clock is from the station's. Any size is fine — it is measured,
+            not assumed, and every position on the page is worked out through it.
+          </dd>
+        </div>
+        <div>
+          <dt>rtt</dt>
+          <dd>
+            How long a round trip to the station takes. It sets how precisely the offset can be
+            known, so a big number here is the one worth caring about.
+          </dd>
+        </div>
+        <div>
+          <dt>drift</dt>
+          <dd>
+            How far this player has wandered from where the station says it should be. Small
+            numbers are normal; they are what the correction below is answering.
+          </dd>
+        </div>
+        <div>
+          <dt>correcting</dt>
+          <dd>
+            What is being done about the drift right now — a rate nudge of a fraction of a percent,
+            a hard seek when it has gone too far to nudge, or nothing at all.
+          </dd>
+        </div>
+      </dl>
+
+      {reach !== 'live' && (
+        <p className="panel__empty">
+          These stopped updating when the station went away. They will pick up again by themselves
+          the moment it is back.
+        </p>
+      )}
+    </section>
+  )
 }
 
 interface ClockReadoutProps {

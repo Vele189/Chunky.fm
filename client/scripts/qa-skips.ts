@@ -16,7 +16,7 @@ import {
   ADMIN_PASSWORD,
   API_URL,
   CHROME_PATH,
-  CLIENT_URL,
+  STATION_URL,
   Checks,
   OTHER_TRACK_ID,
   TRACK_ID,
@@ -59,7 +59,7 @@ async function join(browser: Browser, nickname: string): Promise<Page> {
   // A context each: separate localStorage, separate sockets — three listeners
   // as far as the station is concerned.
   const page = await (await browser.newContext()).newPage()
-  await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
+  await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, nickname)
   return page
 }
@@ -151,9 +151,11 @@ try {
   await ana.getByTestId('skips-vote').click()
   await wait(1_000)
 
+  // No tuning in: the console is the whole page at #admin, and whoever is
+  // running the decks is not in the room. The tally still reaches them — it
+  // rides the same socket every page opens, joined or not.
   const admin = await (await browser.newContext()).newPage()
-  await admin.goto(`${CLIENT_URL}/#admin`, { waitUntil: 'domcontentloaded' })
-  await tuneIn(admin, 'the dj')
+  await admin.goto(`${STATION_URL}#admin`, { waitUntil: 'domcontentloaded' })
   await admin.fill('[data-testid="admin-password"]', ADMIN_PASSWORD)
   await admin.getByRole('button', { name: 'Sign in' }).click()
   await wait(1_500)

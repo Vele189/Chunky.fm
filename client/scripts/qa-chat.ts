@@ -14,7 +14,7 @@ import type { ChildProcess } from 'node:child_process'
 import { type Browser, type Page, chromium } from 'playwright-core'
 import {
   CHROME_PATH,
-  CLIENT_URL,
+  STATION_URL,
   Checks,
   STATUS,
   TRACK_ID,
@@ -66,7 +66,7 @@ async function say(page: Page, text: string): Promise<void> {
 
 async function join(browser: Browser, nickname: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage()
-  await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
+  await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, nickname)
   console.log(`${nickname}: tuned in`)
   return page
