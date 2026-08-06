@@ -137,9 +137,9 @@ describe('the sample session', () => {
 
   /**
    * PLAN.md: around thirty listeners, not thirty thousand — playback state
-   * lives in one process on purpose, and the limits section says so in as many
-   * words a screen further down. A head count here that contradicted it would
-   * make one of the two a lie.
+   * lives in one process on purpose. The limits board used to carry the number
+   * as well and now says `Deliberately small` instead, so this is the only place
+   * the ceiling is written down where anything checks it.
    */
   it('shows a head count the station could actually hold', () => {
     expect(SESSION.listeners).toBeLessThanOrEqual(40)
@@ -149,6 +149,17 @@ describe('the sample session', () => {
     for (const wish of WISHES) {
       expect(wish.says.split(' ').length).toBeGreaterThan(3)
     }
+  })
+
+  /**
+   * The wall deals these out one to each of its two columns in turn — see
+   * MovingColumns.tsx — so an odd number leaves one column a card short, which on
+   * a loop is one column visibly emptier than the other for as long as anybody
+   * watches it. It is a property of the list's length rather than of any wish, so
+   * nothing about a single entry catches it going wrong.
+   */
+  it('divides evenly between the columns it is dealt into', () => {
+    expect(WISHES.length % 2).toBe(0)
   })
 
   it('has an evening in it, most recent first', () => {

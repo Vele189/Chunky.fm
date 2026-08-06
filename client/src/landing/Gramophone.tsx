@@ -26,6 +26,13 @@ import { useOnScreen } from './useOnScreen.js'
  *    object on a page, not an instrument: it turns because gramophones turn,
  *    not because a station is playing. There is no station behind this page.
  *
+ * `still` stops it. The page uses this once, beside the DJ — the station is off
+ * more than it is on, and a stopped gramophone next to the person who decides
+ * that is the page saying so without a sentence. It is not the same as
+ * `prefers-reduced-motion`, which stops every instance and is the visitor's
+ * setting rather than the page's meaning; both end in the same frame loop, and
+ * a still gramophone stops drawing rather than redrawing an identical frame.
+ *
  * The model is 30 MB as it came off Sketchfab and 1 MB in the bundle — 25 PNG
  * textures down to WebP at 1024, and the geometry quantized. See the
  * `assets:models` script in package.json, which is the command that did it and
@@ -48,15 +55,17 @@ const TURN_MS = 26_000
  */
 const DRAW_EVERY_MS = 33
 
-export function Gramophone() {
+export function Gramophone({ still = false }: { still?: boolean }) {
   const mount = useRef<HTMLDivElement>(null)
   const [shown, setShown] = useState(false)
   const near = useOnScreen(mount)
 
-  /* Read inside the frame loop rather than closed over, so the loop does not
-     have to be torn down and rebuilt every time it goes off screen. */
+  /* Both read inside the frame loop rather than closed over, so the loop does
+     not have to be torn down and rebuilt every time one of them changes. */
   const drawing = useRef(true)
   drawing.current = near
+  const stopped = useRef(still)
+  stopped.current = still
 
   useEffect(() => {
     const host = mount.current
@@ -67,7 +76,7 @@ export function Gramophone() {
     const probe = document.createElement('canvas')
     if (!probe.getContext('webgl2') && !probe.getContext('webgl')) return
 
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     let cancelled = false
     let teardown: (() => void) | undefined
@@ -138,12 +147,20 @@ export function Gramophone() {
       camera.position.set(0, 0.35, 4.4)
       camera.lookAt(0, 0, 0)
 
+      /* Whether the next frame would differ from the one already on screen.
+         A turning gramophone sets this every frame and it means nothing; a
+         still one only sets it when the box changes size, and then this is the
+         difference between drawing thirty identical frames a second and
+         drawing one. */
+      let dirty = true
+
       const resize = () => {
         const { width, height } = host.getBoundingClientRect()
         if (width === 0 || height === 0) return
         renderer.setSize(width, height, false)
         camera.aspect = width / height
         camera.updateProjectionMatrix()
+        dirty = true
       }
       const watcher = new ResizeObserver(resize)
       watcher.observe(host)
@@ -159,7 +176,10 @@ export function Gramophone() {
         frame = requestAnimationFrame(tick)
         // Elapsed time rather than a per-frame increment, so the turn takes
         // TURN_MS on a 60Hz panel and on a 120Hz one alike.
-        if (!still) spin.rotation.y += (((now - last) / TURN_MS) * Math.PI * 2)
+        if (!reduced && !stopped.current) {
+          spin.rotation.y += ((now - last) / TURN_MS) * Math.PI * 2
+          dirty = true
+        }
         last = now
 
         // Off screen this is a turning record nobody can see, costing frames the
@@ -168,7 +188,9 @@ export function Gramophone() {
         // it left at.
         if (!drawing.current) return
         if (now - drawn < DRAW_EVERY_MS) return
+        if (!dirty) return
         drawn = now
+        dirty = false
         renderer.render(scene, camera)
       }
       last = performance.now()
@@ -203,9 +225,11 @@ export function Gramophone() {
     <div className="gram" data-shown={shown ? 'true' : 'false'}>
       {/* What is on screen until the model is, and what stays there if it never
           comes. Not a placeholder box — it is the station's own deck, which is
-          what the hero was before this and is a finished thing in its own right. */}
+          what the hero was before this and is a finished thing in its own right.
+          It stands still where the model would, so a machine that cannot draw
+          one still says the same thing about the station. */}
       <div className="gram__fallback">
-        <Deck artwork={null} spinning />
+        <Deck artwork={null} spinning={!still} />
       </div>
       <div className="gram__stage" ref={mount} />
     </div>

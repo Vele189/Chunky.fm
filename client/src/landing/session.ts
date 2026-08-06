@@ -110,7 +110,7 @@ export const SESSION = {
 export const ROOM: readonly Line[] = [
   { at: 9, who: 'thandi', says: 'oh' },
   { at: 26, who: 'sipho', says: 'have not heard this since my dad’s car' },
-  { at: 58, who: 'ana', says: 'wait — everyone is on the same second? actually?' },
+  { at: 58, who: 'ana', says: 'wait. everyone is on the same second? actually?' },
   { at: 71, who: 'thandi', says: 'actually. try to get ahead of it, you can’t' },
   { at: 124, who: 'lerato', says: 'second guitar comes in around here' },
   { at: 149, who: 'ana', says: 'ok. yes. I hear it' },
@@ -121,8 +121,6 @@ export const ROOM: readonly Line[] = [
 
 export interface Wish {
   says: string
-  /** What became of it. The station marks your own so you can see. */
-  state: 'played' | 'waiting'
 }
 
 /**
@@ -132,15 +130,32 @@ export interface Wish {
  * and nothing a listener can queue themselves, so what arrives on the decks is a
  * sentence rather than a track id. None of these is a genre.
  *
- * Four rather than six, because each one is a card you have to open and four
- * large cards are a wall somebody will read to the end of. Two played and two
- * still waiting, which is the other half of what the section is saying.
+ * Eight rather than four, because they are no longer a wall you read to the end
+ * of: they go past in columns, and a loop short enough to recognise on its second
+ * lap is a loop you stop believing.
+ *
+ * A sentence and nothing else. Each of these used to carry what became of it —
+ * played, or still waiting — and the card said so underneath. The cards are one
+ * quotation now, so there is nothing here for a state to be shown by, and a field
+ * kept against the day something might read it is a field that will disagree with
+ * the page. That not every wish gets played is still said further down, in words
+ * rather than in a label: "the library is mine. The room asks; I decide."
  */
 export const WISHES: readonly Wish[] = [
-  { says: 'something that sounds like forgiveness', state: 'played' },
-  { says: 'the song from the end of that film. you know the one', state: 'waiting' },
-  { says: 'a song my mother would know the words to', state: 'played' },
-  { says: 'whatever you would put on if we all left', state: 'waiting' },
+  /*
+   * Two used to sit at the top of this list — one about forgiveness and one
+   * about the walk home — and they are gone because the section above the wall
+   * now prints those two as its worked examples. Both were on screen at once,
+   * four hundred pixels apart, which reads as the page repeating itself rather
+   * than as a wall of what a room asked for. What is illustrated up there and
+   * what is on the wall down here have to be different wishes.
+   */
+  { says: 'the song from the end of that film. you know the one' },
+  { says: 'a song my mother would know the words to' },
+  { says: 'the one you played last week that nobody could name' },
+  { says: 'whatever you would put on if we all left' },
+  { says: 'slower. we are all still here' },
+  { says: 'anything with a room in it. people, not a studio' },
 ]
 
 /**
