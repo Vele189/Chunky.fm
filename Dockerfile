@@ -70,7 +70,6 @@ ENV HOST=0.0.0.0 \
     AUDIO_STORAGE_DIR=/data \
     CLIENT_DIR=/app/client
 EXPOSE 3000
-VOLUME ["/data"]
 USER node
 
 # Fastify logs every request, health probes included, so the steady-state
