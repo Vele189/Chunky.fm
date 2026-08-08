@@ -487,17 +487,15 @@ html {
   opacity: 0.62;
 }
 
-/* The flat deck, holding the space until the model arrives, and keeping it for
-   good on a machine that cannot draw one. Dimmer than the model because it is a
-   flat shape rather than a lit object, and matches at that weight. */
+/* The flat deck, on a machine that cannot draw the model. It is never on screen
+   at the same time as the gramophone and never in front of it, so there is
+   nothing here to fade out; see `Gramophone`, which only renders it once the
+   model is known not to be coming. Dimmer than the model because it is a flat
+   shape rather than a lit object, and matches at that weight. */
 .gram__fallback {
   display: grid;
   place-items: center;
   opacity: 0.3;
-}
-
-.gram[data-shown='true'] .gram__fallback {
-  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

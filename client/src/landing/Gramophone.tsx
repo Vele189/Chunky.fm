@@ -6,12 +6,18 @@ import { useOnScreen } from './useOnScreen.js'
 /**
  * The object in the hero.
  *
- * A real gramophone, turned slowly, behind the headline. It replaces the flat
- * `Deck` that used to sit there, but only once it has actually arrived, and
- * only on a machine that can draw it. Until then, and forever on a machine that
- * cannot, the `Deck` is what is on screen. That is the whole design of this
- * component: the page has never needed the model, so nothing about the page
- * waits for it, breaks without it, or reserves a hole where it would have gone.
+ * A real gramophone, turned slowly, behind the headline, on a machine that can
+ * draw one. On a machine that cannot, the station's own flat `Deck` stands
+ * there instead. The page has never needed the model, so nothing about the page
+ * waits for it or breaks without it.
+ *
+ * **Nothing is drawn while it loads.** The deck used to hold the space and then
+ * cross-fade out when the model arrived, which meant every visitor who *could*
+ * see the gramophone was shown a different object first and then watched it be
+ * replaced. A swap is more noticeable than an absence: the space is already
+ * reserved by the layout either way, so waiting in it is quiet, and changing
+ * your mind in it is not. The deck is now only ever what you get *instead* of
+ * the model, never what you get *before* it.
  *
  * Three things follow from that, and all three are the point:
  *
@@ -58,6 +64,15 @@ const DRAW_EVERY_MS = 33
 export function Gramophone({ still = false }: { still?: boolean }) {
   const mount = useRef<HTMLDivElement>(null)
   const [shown, setShown] = useState(false)
+  /**
+   * True once the model is known not to be coming: no WebGL, or a fetch or a
+   * parse that failed. Only then is the flat deck drawn.
+   *
+   * Deliberately not "true until the model arrives". That was the old
+   * behaviour, and it is what put a different object on screen in front of
+   * everybody who was about to get the real one.
+   */
+  const [instead, setInstead] = useState(false)
   const near = useOnScreen(mount)
 
   /* Both read inside the frame loop rather than closed over, so the loop does
@@ -72,9 +87,14 @@ export function Gramophone({ still = false }: { still?: boolean }) {
     if (!host) return
 
     // Cheap enough to do synchronously, and it saves a machine that cannot draw
-    // this from fetching a renderer in order to find out.
+    // this from fetching a renderer in order to find out. It is also the one
+    // answer that arrives before a frame is painted, so a machine with no WebGL
+    // gets the deck immediately rather than after a wait for nothing.
     const probe = document.createElement('canvas')
-    if (!probe.getContext('webgl2') && !probe.getContext('webgl')) return
+    if (!probe.getContext('webgl2') && !probe.getContext('webgl')) {
+      setInstead(true)
+      return
+    }
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -212,8 +232,11 @@ export function Gramophone({ still = false }: { still?: boolean }) {
     }
 
     // A model that fails to arrive is a hero that keeps the deck it already had.
-    // Nothing is said about it: a visitor was never promised a gramophone.
-    void draw().catch(() => {})
+    // Nothing is said about it: a visitor was never promised a gramophone. The
+    // deck takes over, which is the same thing a machine with no WebGL gets.
+    void draw().catch(() => {
+      if (!cancelled) setInstead(true)
+    })
 
     return () => {
       cancelled = true
@@ -223,14 +246,16 @@ export function Gramophone({ still = false }: { still?: boolean }) {
 
   return (
     <div className="gram" data-shown={shown ? 'true' : 'false'}>
-      {/* What is on screen until the model is, and what stays there if it never
-          comes. Not a placeholder box: it is the station's own deck, which is
-          what the hero was before this and is a finished thing in its own right.
-          It stands still where the model would, so a machine that cannot draw
-          one still says the same thing about the station. */}
-      <div className="gram__fallback">
-        <Deck artwork={null} spinning={!still} />
-      </div>
+      {/* What stands here instead of the model, never in front of it. Not a
+          placeholder box: it is the station's own deck, which is what the hero
+          was before the gramophone and is a finished thing in its own right, so
+          a machine that cannot draw one says the same thing about the station
+          rather than showing a gap. */}
+      {instead && (
+        <div className="gram__fallback">
+          <Deck artwork={null} spinning={!still} />
+        </div>
+      )}
       <div className="gram__stage" ref={mount} />
     </div>
   )
