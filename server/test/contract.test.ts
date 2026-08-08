@@ -55,6 +55,7 @@ const MUTATING_ROUTES = [
   { method: 'DELETE' as const, url: '/api/queue/1', payload: undefined },
   { method: 'DELETE' as const, url: '/api/queue', payload: undefined },
   { method: 'POST' as const, url: '/api/wishes/1', payload: { status: 'handled' } },
+  { method: 'POST' as const, url: '/api/padding', payload: { padding: 5 } },
 ]
 
 describe('the admin gate is the same gate everywhere', () => {
@@ -88,6 +89,17 @@ describe('the admin gate is the same gate everywhere', () => {
     for (const url of ['/api/tracks', '/api/queue', '/api/playback', '/health']) {
       expect((await harness.app.inject({ method: 'GET', url })).statusCode, url).toBe(200)
     }
+  })
+
+  it('except the padding, which the room is only ever shown folded in', async () => {
+    // The tally the room sees is the roster plus this, on the same frame.
+    // Reading the split apart is the console's privilege: publishing it would
+    // tell every listener how much of tonight's crowd is nobody.
+    expect((await harness.app.inject({ method: 'GET', url: '/api/padding' })).statusCode).toBe(401)
+    expect(
+      (await harness.app.inject({ method: 'GET', url: '/api/padding', headers: admin() }))
+        .statusCode,
+    ).toBe(200)
   })
 
   it('except the wish book, which was never broadcast to anyone', async () => {

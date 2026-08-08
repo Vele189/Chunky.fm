@@ -11,6 +11,7 @@ import type { Config } from '../src/config.js'
 import type { OnAir } from '../src/air.js'
 import type { Schedule } from '../src/schedule.js'
 import type { Mutes } from '../src/mutes.js'
+import type { Padding } from '../src/padding.js'
 import { type Db, openDb } from '../src/db.js'
 import type { Track } from '../src/lib/track.js'
 import { PlaybackState } from '../src/playback.js'
@@ -34,6 +35,7 @@ export interface Harness {
   air: OnAir
   schedule: Schedule
   mutes: Mutes
+  padding: Padding
   lyrics: LyricsService
   /** Only set when the harness was started with `listen: true`. */
   wsUrl: string
@@ -160,6 +162,7 @@ export async function startHarness(
     air: app.air,
     schedule: app.schedule,
     mutes: app.mutes,
+    padding: app.padding,
     lyrics: app.lyrics,
     wsUrl,
     async cleanup() {

@@ -273,7 +273,8 @@ already have open.
 ### Presence
 
 The server keeps a socket → nickname map and broadcasts the whole roster
-whenever it changes. `listeners` is `[{id, nickname}]`, in join order.
+whenever it changes. `listeners` is `[{id, nickname}]`, in join order. The same
+frame carries `padding`, the count with no names on it; see below.
 
 A socket is not a listener. A tab holds one open from the moment the page loads,
 which is before anyone has typed a name, so the roster is who has *said* who
@@ -298,6 +299,37 @@ when what's left is empty, because the client's own normalising is a courtesy
 to the listener, not a guarantee to the server. Re-sending the name a socket
 already has costs no broadcast; sending a different one is a rename, and keeps
 the listener's place in the list.
+
+### Padding the headcount
+
+| | |
+|---|---|
+| `GET /api/padding` | Admin. `{padding}`: heads added to the tally, on top of the roster. |
+| `POST /api/padding` | Admin. `{padding}` → the count as it now stands. Whole numbers, 0–9999. |
+
+The roster is the truth about who is in the room, and nothing can put a row in
+it but a browser with a person behind it. This is the other number, and it is
+worth being plain about what it is: a figure whoever runs the station types in,
+added to the tally the top bar shows every listener. Nobody is behind it.
+
+It is kept **beside** the roster rather than folded into it, and that is the
+whole design. A padded roster would put invented names in the room, sitting in
+the same list as everyone else, and somebody would say hello to one of them.
+Keeping the two apart means every name a page draws is a person, and the added
+part is a count with no name attached, drawn as a single `+28 more` pill at the
+end of the row. Nothing gated on the roster moves: chat, wishes and mutes see
+exactly the room they saw before, because padding buys no socket and no voice.
+
+Carried on the presence frame rather than on one of its own: the headcount is
+one number made of two halves, and a client that received them separately could
+render a moment where they disagreed. Setting it broadcasts the roster again;
+setting it to what it already was broadcasts nothing.
+
+Admin-only in **both** directions, like the mutes: the room is shown the total,
+and publishing the split would tell every listener exactly how much of tonight's
+crowd is nobody. Held in memory and cleared when the session ends, like the
+queue and the mutes, so a station that comes back up never goes on claiming a
+crowd that has gone home.
 
 ### Chat
 
@@ -669,7 +701,7 @@ history are all scoped to `sessionId`, so going live opens a fresh room rather
 than resuming last night's, and ending one:
 
 - stops the decks and empties the queue,
-- clears every mute (see below),
+- clears every mute (see below), and the padding on the headcount,
 - leaves the rows in the database, tied to a session that is over. Nothing is
   deleted, there is simply nothing to read while nothing is open.
 
@@ -1338,7 +1370,10 @@ listener a retype next visit and nothing else.
 Once tuned in, the page shows the room: everyone currently listening, by
 nickname, updating as people arrive and leave. It is the roster the socket
 broadcasts, rendered whole each time, with rows keyed on the listener id, so two
-people called "sam" are two chips rather than one.
+people called "sam" are two chips rather than one. If the decks have padded the
+headcount, the rest of the count follows the names as one unnamed `+28 more`
+pill: the tally in the heading matches the top bar, and every chip beside it is
+still somebody who is really there.
 
 The nickname reaches the server as a `join` frame sent *after* tuning in, not on
 connect: a socket opens with the page, and a name typed into the field is not
@@ -1521,6 +1556,7 @@ frame the panel reorders, seen from the other side.
 | Queue ↑ ↓ ✕ | `POST /api/queue/move`, `DELETE /api/queue/:entryId`. |
 | Library **Queue** / **Play now** | Queue behind what's playing, or take the decks. |
 | Wishes **Mark handled** / **Undo** | `POST /api/wishes/:wishId`. A note to yourself, and reversible. |
+| Headcount **−** / **+** | `POST /api/padding`. Adds heads to the tally the room is shown. The split, `6 here, 28 added`, is under the buttons, because the console is the only page that can see it. |
 | Skip votes | Read-only, next to Skip. What the room wants; pressing it is still yours. |
 
 The wish book sits above the library, because a wish is read and then answered

@@ -11,7 +11,14 @@ import commentsIcon from './assets/icons/comments.svg'
 import gripIcon from './assets/icons/grip.svg'
 import playIcon from './assets/icons/play.svg'
 import uploadIcon from './assets/icons/upload-cloud.svg'
-import { AdminError, type AdminApi, type PlaybackCommand, type WishBook } from './lib/admin.js'
+import usersIcon from './assets/icons/users.svg'
+import {
+  AdminError,
+  MAX_PADDING,
+  type AdminApi,
+  type PlaybackCommand,
+  type WishBook,
+} from './lib/admin.js'
 import { formatTime } from './lib/chat.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
 import { inviteLink } from './lib/invite.js'
@@ -47,6 +54,14 @@ export interface AdminPanelProps {
    */
   schedule: ScheduledSession | null
   queue: QueueEntry[] | null
+  /**
+   * How many people are really in the room, or null before the first roster.
+   * Shown here only so the padding beside it reads as what it is: the console
+   * is the one page that sees the two halves of the headcount apart.
+   */
+  roster: number | null
+  /** Heads added to that count by whoever is running the decks. */
+  padding: number
   /** The room talking, read-only; the console is not in the room. */
   messages: ChatMessage[]
   /**
@@ -66,6 +81,7 @@ export interface AdminPanelProps {
   /** Fold a command's own answer straight in; see useStation. */
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
+  applyPadding(count: number): void
   applyAir(snapshot: AirSnapshot): void
   applySchedule(next: ScheduledSession | null): void
 }
@@ -86,12 +102,15 @@ export function AdminPanel({
   air,
   schedule,
   queue,
+  roster,
+  padding,
   messages,
   serverNow,
   session,
   status,
   applyState,
   applyQueue,
+  applyPadding,
   applyAir,
   applySchedule,
 }: AdminPanelProps) {
@@ -116,11 +135,14 @@ export function AdminPanel({
       air={air}
       schedule={schedule}
       queue={queue}
+      roster={roster}
+      padding={padding}
       messages={messages}
       serverNow={serverNow}
       connected={status === 'connected'}
       applyState={applyState}
       applyQueue={applyQueue}
+      applyPadding={applyPadding}
       applyAir={applyAir}
       applySchedule={applySchedule}
       onSignOut={signOut}
@@ -196,11 +218,14 @@ interface ControlsProps {
   air: AirSnapshot | null
   schedule: ScheduledSession | null
   queue: QueueEntry[] | null
+  roster: number | null
+  padding: number
   messages: ChatMessage[]
   serverNow(): number
   connected: boolean
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
+  applyPadding(count: number): void
   applyAir(snapshot: AirSnapshot): void
   applySchedule(next: ScheduledSession | null): void
   onSignOut: () => void
@@ -212,11 +237,14 @@ function Controls({
   air,
   schedule,
   queue,
+  roster,
+  padding,
   messages,
   serverNow,
   connected,
   applyState,
   applyQueue,
+  applyPadding,
   applyAir,
   applySchedule,
   onSignOut,
@@ -331,6 +359,13 @@ function Controls({
       run(async () => setMuted(await api.mute(nickname, muting))),
     [api, run],
   )
+  // Folded straight in like a playback command, and for the same reason: the
+  // broadcast that follows carries the identical number, so the button responds
+  // to the press rather than to the round trip.
+  const setPadding = useCallback(
+    (count: number) => run(async () => applyPadding(await api.setPadding(count))),
+    [api, applyPadding, run],
+  )
 
   const report = (line: string) => setUploads((seen) => [...seen, { id: seen.length, line }])
 
@@ -367,6 +402,7 @@ function Controls({
           </p>
         </div>
         <div className="console__actions">
+          <Headcount roster={roster} padding={padding} busy={busy} onSet={setPadding} />
           <OnAirSwitch air={air} busy={busy} onSet={setAir} />
           <ShareInvite api={api} />
           <button type="button" className="button button--quiet" onClick={onSignOut}>
@@ -442,6 +478,71 @@ function Controls({
   )
 }
 
+
+/**
+ * The headcount, and the one control on this panel that changes what the room
+ * is told rather than what it hears.
+ *
+ * The number on the buttons is the total the top bar shows every listener: the
+ * people actually here, plus whatever has been added on top. Both halves are
+ * spelled out under it, because this is the only page where they are separable,
+ * and a console that showed one figure would let whoever runs the station lose
+ * track of how much of tonight's crowd is real.
+ *
+ * Minus stops at nothing added, not at nobody listening: the roster is not this
+ * control's to touch, and there is no way from here to take a listener who is
+ * really in the room off the count.
+ */
+function Headcount({
+  roster,
+  padding,
+  busy,
+  onSet,
+}: {
+  roster: number | null
+  padding: number
+  busy: boolean
+  onSet(count: number): void
+}) {
+  const here = roster ?? 0
+  const total = here + padding
+
+  return (
+    <div className="headpad" role="group" aria-label="Listeners on the headcount">
+      <div className="headpad__row">
+        <button
+          type="button"
+          className="headpad__step"
+          data-testid="padding-down"
+          aria-label="One fewer on the headcount"
+          disabled={busy || padding === 0}
+          onClick={() => onSet(padding - 1)}
+        >
+          −
+        </button>
+        <span className="headpad__count" data-testid="padding-count">
+          <img src={usersIcon} alt="" width={14} height={14} />
+          {total.toLocaleString()}
+        </span>
+        <button
+          type="button"
+          className="headpad__step"
+          data-testid="padding-up"
+          aria-label="One more on the headcount"
+          disabled={busy || padding >= MAX_PADDING}
+          onClick={() => onSet(padding + 1)}
+        >
+          +
+        </button>
+      </div>
+      <p className="headpad__split" data-testid="padding-split">
+        {padding === 0
+          ? `${here.toLocaleString()} here`
+          : `${here.toLocaleString()} here, ${padding.toLocaleString()} added`}
+      </p>
+    </div>
+  )
+}
 
 /**
  * The next session, announced before it happens.

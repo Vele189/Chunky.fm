@@ -347,3 +347,32 @@ describe('muting a nickname', () => {
     await expect(api().mute('sam', true)).rejects.toBeInstanceOf(AdminError)
   })
 })
+
+describe('padding the headcount', () => {
+  it('reads the count', async () => {
+    respond = () => json({ padding: 28 })
+    expect(await api().padding()).toBe(28)
+    expect(calls[0]?.url).toBe('/api/padding')
+    expect(calls[0]?.init.method).toBe('GET')
+  })
+
+  it('says where the count now stands, not "one more"', async () => {
+    // The shape that makes the plus button safe to press twice: a retry after
+    // a dropped response leaves one count, not two.
+    respond = () => json({ padding: 29 })
+    expect(await api().setPadding(29)).toBe(29)
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ padding: 29 })
+  })
+
+  it("takes the station's answer rather than what was asked for", async () => {
+    // The count is clamped at the station, so the panel renders what came back
+    // and can never be left showing a number nobody holds.
+    respond = () => json({ padding: 9_999 })
+    expect(await api().setPadding(50_000)).toBe(9_999)
+  })
+
+  it('reports a refusal the way every other call does', async () => {
+    respond = () => json({ error: 'unauthorized', message: 'sign in first' }, 401)
+    await expect(api().setPadding(1)).rejects.toBeInstanceOf(AdminError)
+  })
+})

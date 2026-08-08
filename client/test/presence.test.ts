@@ -19,6 +19,9 @@ let station: StationConnection
 const roster = (...nicknames: string[]): PresenceMessage => ({
   type: 'presence',
   listeners: nicknames.map((nickname, index) => ({ id: index + 1, nickname })),
+  // Unpadded, which is the station nobody has added heads to. The padding is
+  // the admin panel's business; what matters here is the frame's shape.
+  padding: 0,
 })
 
 beforeEach(() => {
