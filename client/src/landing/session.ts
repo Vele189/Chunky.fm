@@ -5,8 +5,8 @@
  * it is invented — one evening's worth of a station that is not running. It has
  * to be: the page in front of the station cannot ask the station anything, and
  * that is the whole reason the page exists. What it must not do is *look* like a
- * report. The bar this drives is marked as a sample, sits behind `aria-hidden`,
- * and says so in words at the one place somebody would otherwise wonder.
+ * report. Everything this drives sits behind `aria-hidden`, and the page says
+ * so in words at the one place somebody would otherwise wonder.
  *
  * Kept as data and pure functions, apart from the components that draw it, so
  * the arithmetic underneath the trick — where in the song the scroll has got to,
@@ -142,14 +142,6 @@ export interface Wish {
  * rather than in a label: "the library is mine. The room asks; I decide."
  */
 export const WISHES: readonly Wish[] = [
-  /*
-   * Two used to sit at the top of this list — one about forgiveness and one
-   * about the walk home — and they are gone because the section above the wall
-   * now prints those two as its worked examples. Both were on screen at once,
-   * four hundred pixels apart, which reads as the page repeating itself rather
-   * than as a wall of what a room asked for. What is illustrated up there and
-   * what is on the wall down here have to be different wishes.
-   */
   { says: 'the song from the end of that film. you know the one' },
   { says: 'a song my mother would know the words to' },
   { says: 'the one you played last week that nobody could name' },

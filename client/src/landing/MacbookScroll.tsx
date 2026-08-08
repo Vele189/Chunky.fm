@@ -34,8 +34,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
  *    everything below it moves down and no resize ever fires. The cached offsets
  *    go stale and the progress comes out as a step rather than a sweep.
  *    `getBoundingClientRect`, read in the scroll handler below, is live geometry
- *    and cannot be stale. (The floating bar has the same page to deal with and
- *    deals with it the same way.)
+ *    and cannot be stale.
  *  - **It stays put by being sticky.** The original translates the machine down
  *    by a flat 1500px as you scroll, which very nearly cancels the scroll and
  *    keeps it in front of you. Nearly is fine on a page that ends there; this one
