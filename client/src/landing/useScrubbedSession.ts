@@ -5,10 +5,10 @@ import { scrubbed } from './session.js'
  * The page, read as a song.
  *
  * Scrolling moves a playhead: the top of the document is 0:00 and the bottom is
- * the last bar. Everything the page does with that — the bar along the bottom,
- * the room filling in as the playhead reaches each line — is downstream of this
- * one number, so the reader ends up having moved through a song with the room
- * talking around them rather than having read a description of it.
+ * the last bar. Everything the page does with that — the room filling in as
+ * the playhead reaches each line — is downstream of this one number, so the
+ * reader ends up having moved through a song with the room talking around them
+ * rather than having read a description of it.
  *
  * A scroll listener rather than a scroll-linked animation because the value is
  * needed as *state*: React has to re-render the room when the playhead passes

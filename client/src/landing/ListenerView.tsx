@@ -3,10 +3,12 @@ import broadcastIcon from '../assets/icons/broadcast.svg'
 import chatIcon from '../assets/icons/chat.svg'
 import clockIcon from '../assets/icons/clock.svg'
 import heartIcon from '../assets/icons/heart.svg'
-import scheduleIcon from '../assets/icons/schedule.svg'
+import lyricsIcon from '../assets/icons/lyrics.svg'
+import slidersIcon from '../assets/icons/sliders.svg'
 import usersIcon from '../assets/icons/users.svg'
+import volumeIcon from '../assets/icons/volume.svg'
 import { Deck, OnAir, Waveform } from '../Turntable.js'
-import { BEEN_ON, initial, ROOM, SESSION, WISHES } from './session.js'
+import { BEEN_ON, SESSION } from './session.js'
 
 /**
  * The listener's page, drawn small.
@@ -17,42 +19,73 @@ import { BEEN_ON, initial, ROOM, SESSION, WISHES } from './session.js'
  * the arrangement a listener actually gets it in, which is the one thing a column
  * of prose cannot show and the reason the section is a screen rather than a list.
  *
+ * The arrangement is the station's current one: the deck and who is in the room
+ * on the left, and the whole right-hand column given to the words — no panels,
+ * no cards, the current line bright and the rest dimmed, the way the real page
+ * reads a song. The queue, the evening and the chat are not on this screen any
+ * more because they are not on that one: each lives at a mark on the rail, and
+ * the rail here has the same six marks in the same order.
+ *
  * The parts that exist are the station's own: `Deck`, `OnAir` and `Waveform` are
  * imported from Turntable.tsx unchanged, and the record on the platter is the
  * record the rest of the page has been playing. What is drawn here rather than
  * imported is the furniture around them — the rail, the bar across the top, the
- * panels down the right — because that lives in styles.css, which belongs to the
+ * lyric sheet — because that lives in styles.css, which belongs to the
  * station's bundle and is not loaded by this document. Drawn from the same
  * tokens and the same measurements, so it is a copy rather than an impression,
  * and the sizes are the only thing scaled: this is a screen inside a screen.
- *
- * The lists are the page's own sample session. The evening in the right-hand
- * column is `BEEN_ON`, which is what the section used to print as a list of its
- * own — so the section still says exactly what it said, in the place a listener
- * would have read it.
+ * (The mute under the meter is drawn too, as spans rather than the real button:
+ * a focusable control inside an `aria-hidden` picture would be a tab stop that
+ * announces nothing.)
  *
  * `aria-hidden`, whole. It is a picture of a page, and every word in it is said
  * properly somewhere on the real one — a screen reader given this would get the
- * evening twice and a keyboard's worth of nothing in between.
+ * page twice and a keyboard's worth of nothing in between.
  */
 
-/** The rail's destinations, in the station's order. */
+/** The rail's destinations — Sidebar.tsx's six marks, in the station's order. */
 const RAIL = [
   { icon: broadcastIcon, name: 'On air' },
-  { icon: chatIcon, name: 'The room' },
+  { icon: lyricsIcon, name: 'Lyrics' },
+  { icon: slidersIcon, name: 'Sync' },
+  { icon: chatIcon, name: 'Chat' },
   { icon: heartIcon, name: 'Wishes' },
-  { icon: scheduleIcon, name: 'Up next' },
-  { icon: clockIcon, name: 'Earlier' },
+  { icon: clockIcon, name: 'History' },
 ]
 
-/** Where the sample session is when this is drawn: far enough in to be talking. */
-const AT = 171
+/**
+ * The sheet on the screen, mid-verse.
+ *
+ * Invented, like everything else in the sample session — these are not the
+ * words to the record on the platter, because the record is a real one and its
+ * words are somebody's property. What the drawing needs is the *shape* of a
+ * lyric sheet: short lines, a bright one past the middle, a timestamped
+ * silence rendered the way the real sheet renders one.
+ */
+const WORDS = [
+  'Static settles on the evening air',
+  'A needle drops into the quiet',
+  'Every window leaning on the same slow song',
+  '· · ·',
+  'Miles apart and humming along',
+  'Nobody ahead and nobody behind',
+  'Hold the moment while it plays',
+  'It only comes around the once',
+  'The chorus lands on every roof at once',
+  'And the room goes quiet together',
+  '· · ·',
+  'Somebody writes the hour down',
+  'So sing it soft and sing it slow',
+  'The night is long and the night knows',
+]
 
-/** The three the room has heard from, named. The rest are a count. */
-const HERE = ['thandi', 'lerato', 'ana']
+/** The line the song is on when this is drawn. */
+const BRIGHT = 6
+
+/** Who the roster pills name. The rest of the room is the count beside them. */
+const HERE = ['thandi', 'sipho', 'lerato', 'ana', 'nadia', 'kofi', 'sam', 'mira']
 
 export function ListenerView() {
-  const said = ROOM.filter((line) => line.at <= AT).slice(-5)
   const cover = BEEN_ON.find((play) => play.cover !== undefined)?.cover
 
   return (
@@ -92,71 +125,47 @@ export function ListenerView() {
               <Waveform live />
             </div>
 
-            {/* Under the deck, where the station puts them: what this listener
-                has asked for, and who else is in the room. */}
-            <ScreenPanel title="What you asked for">
-              <ol className="listener__rows">
-                {WISHES.slice(0, 2).map((wish) => (
-                  <li className="listener__row" key={wish.says}>
-                    <span className="listener__what">
-                      <span className="listener__what-title">“{wish.says}”</span>
-                    </span>
+            {/* The mute under the meter, drawn — see the note above. */}
+            <div className="listener__mute">
+              <span className="listener__mute-button">
+                <img src={volumeIcon} alt="" width={11} height={11} />
+              </span>
+              <span className="listener__mute-hint">Streaming live — tap to mute</span>
+            </div>
+
+            {/* Under the deck, where the station puts it: who else is in the
+                room, as the pills the real roster wears. */}
+            <ScreenPanel title="Listening now" aside={String(SESSION.listeners)}>
+              <ul className="listener__names">
+                {HERE.map((who) => (
+                  <li className="listener__name" key={who}>
+                    {who}
                   </li>
                 ))}
-              </ol>
+                <li className="listener__name listener__name--more">
+                  +{SESSION.listeners - HERE.length} more
+                </li>
+              </ul>
             </ScreenPanel>
-
-            <p className="listener__here">
-              {SESSION.listeners} here: {HERE.join(', ')} and {SESSION.listeners - HERE.length}{' '}
-              others
-            </p>
           </section>
 
+          {/* The whole column, and nothing else on it — the words, floating
+              beside the deck the way the station floats them: no panel, no
+              heading, the current line bright and the sheet fading out at both
+              ends of the screen. */}
           <section className="listener__aside">
-            <ScreenPanel title="Up next" aside="2 queued">
-              <ol className="listener__rows">
-                {BEEN_ON.slice(1, 3).map((play, index) => (
-                  <li className="listener__row" key={play.title}>
-                    <span className="listener__index">{index + 1}</span>
-                    <span className="listener__what">
-                      <span className="listener__what-title">{play.title}</span>
-                      <span className="listener__what-sub">{play.artist}</span>
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </ScreenPanel>
-
-            {/* The evening, where a listener reads it. This is the section's
-                own list, in the column it belongs to. */}
-            <ScreenPanel title="Recently Played" aside={`${BEEN_ON.length} played`}>
-              <ol className="listener__rows">
-                {BEEN_ON.slice(0, 4).map((play, index) => (
-                  <li className="listener__row" key={play.at} data-now={index === 0 ? 'true' : 'false'}>
-                    <span className="listener__index">{index + 1}</span>
-                    <span className="listener__what">
-                      <span className="listener__what-title">{play.title}</span>
-                      <span className="listener__what-sub">{play.artist}</span>
-                    </span>
-                    <span className="listener__at">{play.at}</span>
-                  </li>
-                ))}
-              </ol>
-            </ScreenPanel>
-
-            <ScreenPanel title="The room">
-              <ol className="listener__said">
-                {said.map((line) => (
-                  <li className="listener__line" key={line.at}>
-                    <span className="listener__face">{initial(line.who)}</span>
-                    <span className="listener__says">
-                      <span className="listener__who">{line.who}</span>
-                      {line.says}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </ScreenPanel>
+            <div className="listener__lyrics">
+              {WORDS.map((line, index) => (
+                <p
+                  className={`listener__lyric${index === BRIGHT ? ' listener__lyric--bright' : ''}${
+                    line === '· · ·' ? ' listener__lyric--hum' : ''
+                  }`}
+                  key={index}
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
           </section>
         </div>
       </div>

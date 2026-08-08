@@ -25,7 +25,6 @@ import {
   saidBy,
   SESSION,
   SLEEVES,
-  through,
   WISHES,
 } from './session.js'
 import { useOneByOne } from './useOneByOne.js'
@@ -81,7 +80,6 @@ export function Landing() {
         <Call />
       </main>
       <Foot />
-      <SessionBar at={at} />
     </div>
   )
 }
@@ -160,10 +158,6 @@ const Hero = memo(function Hero() {
         </a>
       </div>
 
-      <a className="hero__onward" href="#moment" aria-label="What it is">
-        <span aria-hidden="true">scroll</span>
-        <span className="hero__arrow" aria-hidden="true" />
-      </a>
     </section>
   )
 })
@@ -187,9 +181,9 @@ const Hero = memo(function Hero() {
  * Every sleeve is the same sleeve. The one that is on is the one at the front
  * of the pile and nothing else — no badge on it, no clock, no head count. It is
  * a record, and a record does not report anything; the LIVE mark beside the
- * sentence and the bar along the bottom of the page are where this page says
- * what is happening, and saying it three times would be the pile pretending to
- * be an interface rather than a stack of records on a table.
+ * sentence is where this page says what is happening, and saying it twice
+ * would be the pile pretending to be an interface rather than a stack of
+ * records on a table.
  *
  * The records are `SLEEVES`, the same evening the list further down draws.
  */
@@ -830,16 +824,6 @@ const Wishes = memo(function Wishes() {
         <p className="wishes__line wishes__line--said">Describe the moment.</p>
       </div>
 
-      {/* The three examples, and then the wall of them underneath. See the note
-          on `WishWall`: the wall is the same idea in motion and is drawn from the
-          evening's real wishes, so these three are the ones held still long
-          enough to read. */}
-      <div className="wishes__stack">
-        <p className="wishes__eg">“Something that sounds like forgiveness.”</p>
-        <p className="wishes__eg">“A song for the walk home.”</p>
-        <p className="wishes__eg">“An album that took years to understand.”</p>
-      </div>
-
       {/* The honest half, and the reason the section exists. Everything above is
           about what you may ask; this is about what happens to it, which on any
           other music page is a queue and here is a person reading it. */}
@@ -972,8 +956,8 @@ const BeenOn = memo(function BeenOn() {
       />
 
       <p className="section__body been__after">
-        That is the whole of it: the deck on the left, what is coming and what has been on beside
-        it, and the room down the side.
+        That is the whole of it: the deck and the room on the left, the words beside them, and
+        everything else — the chat, the wishes, the evening so far — one mark away on the rail.
       </p>
 
       {/* What the journal holds, as a list rather than a sentence — five things
@@ -1188,49 +1172,3 @@ const Foot = memo(function Foot() {
   )
 })
 
-/**
- * The bar along the bottom, playing the page.
- *
- * The signature of the whole document: a slim player whose clock advances as you
- * scroll, so by the end a reader has moved through a song rather than read about
- * one. It drives the room section above from the same number.
- *
- * What keeps it honest is that it makes no claim. It is `aria-hidden`, like
- * every other instrument on this page, because it is a picture of a player and
- * not a player — and there is no LIVE badge on it, which matters more than it
- * looks. A red dot on this site means "on the air right now" everywhere else it
- * appears. The bar used to carry one, and got away with it only because the
- * words *sample session* sat directly beside it saying otherwise; with that
- * label gone the badge would have been the one thing on the page actively lying,
- * so it went with it. What is left is the level meter, which is the same object
- * the moment section has and is under the same rule: it moves because the page
- * says sound is coming out, not because any is.
- *
- * It stays out of the way until the hero has been read: the first screen has one
- * thing to press on it, and a bar sliding in under the fold would be a second.
- */
-function SessionBar({ at }: { at: number }) {
-  return (
-    <div className="bar" data-shown={at > 3 ? 'true' : 'false'} aria-hidden="true">
-      <div className="bar__inner">
-        {/* The station's own meter, drawn small. Its "● LIVE" mark is hidden in
-            here by landing.css — what this wants from the component is the
-            movement, and the word would be the badge again by another name. */}
-        <span className="bar__levels">
-          <Waveform live />
-        </span>
-
-        <span className="bar__what">
-          <span className="bar__title">{SESSION.title}</span>
-          <span className="bar__artist">{SESSION.artist}</span>
-        </span>
-
-        <span className="bar__clock">{clock(at)}</span>
-        <span className="bar__track">
-          <span className="bar__fill" style={{ width: `${through(at, SESSION.duration) * 100}%` }} />
-        </span>
-        <span className="bar__clock bar__clock--total">{clock(SESSION.duration)}</span>
-      </div>
-    </div>
-  )
-}
