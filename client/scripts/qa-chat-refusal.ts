@@ -12,7 +12,7 @@
  * only by a broken client. Needs a running Vite dev server and a station.
  */
 import { chromium } from 'playwright-core'
-import { CHROME_PATH, STATION_URL, Checks, tuneIn, wait } from './qa-env.js'
+import { CHROME_PATH, STATION_URL, Checks, tuneIn, visit, wait } from './qa-env.js'
 
 const checks = new Checks()
 
@@ -33,6 +33,8 @@ async function main() {
   const page = await browser.newPage()
   await page.goto(STATION_URL)
   await tuneIn(page, 'fast talker')
+  // The composer lives on the chat view now, not beside the deck.
+  await visit(page, '#chat')
   await wait(2_000)
 
   const input = page.getByTestId('chat-input')

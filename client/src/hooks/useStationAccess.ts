@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { inviteFrom, withoutInvite } from '../lib/invite.js'
 
 /** How long to wait before asking a station that did not answer at all. */
@@ -18,6 +18,20 @@ export function readAnswer(status: number, ok: boolean): Access {
   return status === 401 ? 'refused' : 'unreachable'
 }
 
+/**
+ * What to say about a code that was typed in and did not work.
+ *
+ * Only ever about a *hand-typed* try. A link that fails is the page's problem
+ * to explain, and it explains it with the refused screen; this is the sentence
+ * that goes under an input somebody just pressed enter on, so it has to be
+ * about what they did rather than about the station in general.
+ */
+export function codeRefusal(status: number): string {
+  if (status === 401) return 'That is not the code for this station.'
+  if (status === 429) return 'Too many tries. Wait a minute and try again.'
+  return 'The station did not answer. Try again in a moment.'
+}
+
 export type Access =
   /** Asked, not yet answered. Nothing is rendered on this. */
   | 'checking'
@@ -28,6 +42,24 @@ export type Access =
   /** The station did not answer at all — which is not the same as being shut out. */
   | 'unreachable'
 
+/** The doorway's whole state: where this browser stands, and how to knock. */
+export interface StationAccess {
+  access: Access
+  /**
+   * Try a code somebody typed at the door.
+   *
+   * The same key the `?k=` on a link carries and the same endpoint that
+   * redeems it — a code said over the phone and a code pasted into an address
+   * bar are the same secret, and giving them two paths through the gate would
+   * be two chances to get one of them wrong.
+   */
+  submit(code: string): Promise<void>
+  /** What the station said about the last hand-typed try. Null before any. */
+  error: string | null
+  /** A try is in flight. The form disables itself rather than queueing them. */
+  submitting: boolean
+}
+
 /**
  * Whether this browser is allowed to hear the station at all.
  *
@@ -35,11 +67,15 @@ export type Access =
  * spend its life reconnecting into a refusal, and the listener would be told
  * the station had gone away when in fact it is there and simply not theirs.
  *
- * On an open station — no `STATION_KEY` set — every answer here is `admitted`,
- * so this costs one request and changes nothing else.
+ * On an open station — one opened deliberately with `STATION_OPEN` — every
+ * answer here is `admitted`, so this costs one request and changes nothing
+ * else. Otherwise a browser with no cookie and no invite is `refused`, and the
+ * doorway offers it somewhere to type the code.
  */
-export function useStationAccess(): Access {
+export function useStationAccess(): StationAccess {
   const [access, setAccess] = useState<Access>('checking')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   /**
    * The key, read during the first render and kept.
@@ -122,5 +158,34 @@ export function useStationAccess(): Access {
     }
   }, [])
 
-  return access
+  const submit = useCallback(async (code: string) => {
+    const key = code.trim()
+    if (key.length === 0) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/listen', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key }),
+      })
+      if (response.ok) {
+        // The cookie is set; this browser is in. Nothing to strip from the
+        // address bar — the code was typed, so it was never in the URL, which
+        // is the one thing a typed code has over a link.
+        setAccess('admitted')
+        return
+      }
+      setError(codeRefusal(response.status))
+    } catch {
+      // Nothing answered. Not a wrong code, and it must not be reported as one:
+      // somebody retyping a code that was right all along because the server
+      // was restarting is the worst version of this screen.
+      setError(codeRefusal(0))
+    } finally {
+      setSubmitting(false)
+    }
+  }, [])
+
+  return { access, submit, error, submitting }
 }

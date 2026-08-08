@@ -1,4 +1,4 @@
-import type { Db, TrackRow } from './db.js'
+import type { Db, SessionRef, TrackRow } from './db.js'
 import { type Track, toTrack } from './lib/track.js'
 
 /**
@@ -44,7 +44,8 @@ function toPlay(row: PlayedRow): Play {
 
 export interface PlayLogOptions {
   db: Db
-  sessionId: number
+  /** Which session's history this is. Reads `null` while the station is off air. */
+  session: SessionRef
   limit?: number
   /**
    * The station clock — `PlaybackState.now`, not `Date.now`. A play's time and
@@ -57,15 +58,15 @@ export interface PlayLogOptions {
 
 export class PlayLog {
   readonly #db: Db
-  readonly #sessionId: number
+  readonly #session: SessionRef
   readonly #limit: number
   readonly #now: () => number
   /** What is on as far as this log knows — see `record`. */
   #currentTrackId: number | null = null
 
-  constructor({ db, sessionId, limit = DEFAULT_PLAY_LIMIT, now = Date.now }: PlayLogOptions) {
+  constructor({ db, session, limit = DEFAULT_PLAY_LIMIT, now = Date.now }: PlayLogOptions) {
     this.#db = db
-    this.#sessionId = sessionId
+    this.#session = session
     this.#limit = limit
     this.#now = now
   }
@@ -90,8 +91,13 @@ export class PlayLog {
     if (trackId === this.#currentTrackId) return null
     this.#currentTrackId = trackId
     if (!track) return null
+    // Off air nothing is written down. Playback is stopped when a session ends,
+    // so this is belt-and-braces — but a play with no session to belong to
+    // would be a row no history query could ever reach.
+    const sessionId = this.#session.current
+    if (sessionId === null) return null
 
-    const row = { session_id: this.#sessionId, track_id: track.id, played_at: this.#now() }
+    const row = { session_id: sessionId, track_id: track.id, played_at: this.#now() }
     const result = this.#db
       .prepare(
         `INSERT INTO plays (session_id, track_id, played_at)
@@ -115,6 +121,9 @@ export class PlayLog {
    * what keeps the list readable if anything ever does.
    */
   recent(limit = this.#limit): Play[] {
+    // Off air the evening has not started — see the chat, which does the same.
+    const sessionId = this.#session.current
+    if (sessionId === null) return []
     const rows = this.#db
       .prepare(
         `SELECT tracks.*, plays.id AS play_id, plays.played_at AS played_at
@@ -124,15 +133,17 @@ export class PlayLog {
           ORDER BY plays.id DESC
           LIMIT ?`,
       )
-      .all(this.#sessionId, limit) as PlayedRow[]
+      .all(sessionId, limit) as PlayedRow[]
     return rows.reverse().map(toPlay)
   }
 
   /** For tests, and for the log line on startup. */
   count(): number {
+    const sessionId = this.#session.current
+    if (sessionId === null) return 0
     const row = this.#db
       .prepare('SELECT COUNT(*) AS n FROM plays WHERE session_id = ?')
-      .get(this.#sessionId) as { n: number }
+      .get(sessionId) as { n: number }
     return row.n
   }
 }

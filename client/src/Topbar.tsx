@@ -1,14 +1,13 @@
 import bellIcon from './assets/icons/bell.svg'
 import broadcastSmallIcon from './assets/icons/broadcast-sm.svg'
-import searchIcon from './assets/icons/search.svg'
 import slidersSmallIcon from './assets/icons/sliders-sm.svg'
 import usersIcon from './assets/icons/users.svg'
-import type { Availability } from './lib/availability.js'
+import type { Standing } from './lib/availability.js'
 import { statusLabel } from './lib/availability.js'
 
 export interface TopbarProps {
   /** What the page can see of the station — see lib/availability.ts. */
-  reach: Availability
+  reach: Standing
   /** Null before the first roster frame: a count nobody has sent is not zero. */
   listeners: number | null
   /** True on the decks, which is what the segmented control is switching. */
@@ -22,38 +21,21 @@ export interface TopbarProps {
    * advertise a door to the hundred per cent of visitors it would refuse.
    */
   showConsole: boolean
-  /** What is typed into the search field, and how to change it. */
-  filter: string
-  onFilterChange(filter: string): void
-  /**
-   * False on the one view with nothing on it to narrow. The field is then not
-   * rendered at all rather than sitting there taking what you type and doing
-   * nothing with it.
-   */
-  searchable: boolean
-  /** What the field says it will narrow, which differs by view. */
-  searchHint: string
 }
 
 /**
- * The bar across the top: who this is, what you are looking for, and who else
- * is here.
+ * The bar across the top: who this is, who else is here, and whether there is
+ * a station on the other end.
  *
- * The search field filters the two lists on the page — what is coming and what
- * has been on — and nothing else. It is not a library search: there is no
- * library to search, and a box that swallowed what you typed would be worse
- * than no box. What it narrows is what is already in front of you.
+ * There is no search field, on either side of the station. The listener page
+ * carried one over the queue, the evening, the wishes and the room — four short
+ * lists already on the screen — and the console carried the same one over its
+ * library. Neither was narrowing a haystack: a station is one evening's worth
+ * of records, and a field that saves you a dozen rows of scrolling is not worth
+ * the width it takes across the top of a phone. What is on the page is the
+ * whole of what there is, so the page just shows it.
  */
-export function Topbar({
-  reach,
-  listeners,
-  admin,
-  showConsole,
-  filter,
-  onFilterChange,
-  searchable,
-  searchHint,
-}: TopbarProps) {
+export function Topbar({ reach, listeners, admin, showConsole }: TopbarProps) {
   return (
     <header className="topbar">
       <div className="topbar__left">
@@ -64,20 +46,6 @@ export function Topbar({
             chunky<span className="wordmark__tld">.fm</span>
           </a>
         </h1>
-        {searchable && (
-          <div className="search">
-            <img className="search__icon" src={searchIcon} alt="" width={16} height={16} />
-            <input
-              className="search__input"
-              type="search"
-              value={filter}
-              onChange={(event) => onFilterChange(event.target.value)}
-              placeholder={searchHint}
-              aria-label={searchHint}
-              autoComplete="off"
-            />
-          </div>
-        )}
       </div>
 
       <div className="topbar__right">

@@ -23,6 +23,7 @@ import {
   startServer,
   stopServer,
   tuneIn,
+  visit,
   wait,
 } from './qa-env.js'
 
@@ -68,6 +69,9 @@ async function join(browser: Browser, nickname: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage()
   await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, nickname)
+  // The room lives behind its rail mark now — the aside beside the deck is
+  // the lyrics' alone.
+  await visit(page, '#chat')
   console.log(`${nickname}: tuned in`)
   return page
 }

@@ -24,7 +24,6 @@
     "qa:chat": "tsx scripts/qa-chat.ts",
     "qa:chat-refusal": "tsx scripts/qa-chat-refusal.ts",
     "qa:wishes": "tsx scripts/qa-wishes.ts",
-    "qa:skips": "tsx scripts/qa-skips.ts",
     "qa:history": "tsx scripts/qa-history.ts",
     "qa:all": "bash scripts/qa-all.sh"
   },

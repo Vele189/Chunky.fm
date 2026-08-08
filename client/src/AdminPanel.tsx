@@ -15,32 +15,32 @@ import { AdminError, type AdminApi, type PlaybackCommand, type WishBook } from '
 import { formatTime } from './lib/chat.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
 import { inviteLink } from './lib/invite.js'
-import { matchesFilter } from './lib/search.js'
 import type {
+  AirSnapshot,
   ChatMessage,
   PlaybackSnapshot,
   QueueEntry,
   StateMessage,
   Track,
 } from './lib/protocol.js'
-import { type SkipTally, skipVotesLabel } from './lib/skips.js'
 import type { AdminSession } from './hooks/useAdminSession.js'
 import type { StationStatus } from './lib/station.js'
 
 export interface AdminPanelProps {
   /** The station's own broadcast — the panel never keeps its own copy. */
   state: StateMessage | null
-  queue: QueueEntry[] | null
   /**
-   * What the room thinks of what is on. PLAN.md puts "see skip tallies" on the
-   * admin surface, and this is it: a number next to the now-playing row,
-   * because the vote does not press anything.
+   * Whether the station is on air. Null until the first frame arrives.
+   *
+   * The one piece of state on this panel that is not about *what* is playing
+   * but about whether there is a broadcast at all — PLAN.md's "you go live, you
+   * end it". Ending it clears the decks and the queue and closes the room, so
+   * the control for it is deliberately away from the transport buttons.
    */
-  skips: SkipTally
+  air: AirSnapshot | null
+  queue: QueueEntry[] | null
   /** The room talking, read-only — the console is not in the room. */
   messages: ChatMessage[]
-  /** What is typed into the top bar's field. Narrows the library, and only it. */
-  filter: string
   /**
    * The station's clock, for the scrub bar. The console reads a position out of
    * `startedAt`, which is a point on the *server's* clock — subtracting this
@@ -58,6 +58,7 @@ export interface AdminPanelProps {
   /** Fold a command's own answer straight in; see useStation. */
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
+  applyAir(snapshot: AirSnapshot): void
 }
 
 /**
@@ -73,15 +74,15 @@ export interface AdminPanelProps {
  */
 export function AdminPanel({
   state,
+  air,
   queue,
-  skips,
   messages,
-  filter,
   serverNow,
   session,
   status,
   applyState,
   applyQueue,
+  applyAir,
 }: AdminPanelProps) {
   const { status: signedIn, api, error: sessionError, signIn, signOut } = session
 
@@ -101,14 +102,14 @@ export function AdminPanel({
     <Controls
       api={api}
       state={state}
+      air={air}
       queue={queue}
-      skips={skips}
       messages={messages}
-      filter={filter}
       serverNow={serverNow}
       connected={status === 'connected'}
       applyState={applyState}
       applyQueue={applyQueue}
+      applyAir={applyAir}
       onSignOut={signOut}
     />
   )
@@ -145,12 +146,15 @@ function SignIn({
     <section className="console console--gate" data-testid="admin-signin">
       <div className="gate">
         <h1 className="console__title">Broadcast Console</h1>
-        <p className="console__blurb">Whoever runs the decks, this is the way in.</p>
+        <p className="console__blurb">
+          Whoever runs the decks, this is the way in. Not the door code — this is
+          the other one.
+        </p>
         <form className="gate__form" onSubmit={submit}>
           <input
             type="password"
             className="gate__input"
-            placeholder="station password"
+            placeholder="admin password"
             aria-label="Admin password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -176,28 +180,28 @@ const WISH_POLL_MS = 10_000
 interface ControlsProps {
   api: AdminApi
   state: StateMessage | null
+  air: AirSnapshot | null
   queue: QueueEntry[] | null
-  skips: SkipTally
   messages: ChatMessage[]
-  filter: string
   serverNow(): number
   connected: boolean
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
+  applyAir(snapshot: AirSnapshot): void
   onSignOut: () => void
 }
 
 function Controls({
   api,
   state,
+  air,
   queue,
-  skips,
   messages,
-  filter,
   serverNow,
   connected,
   applyState,
   applyQueue,
+  applyAir,
   onSignOut,
 }: ControlsProps) {
   const [tracks, setTracks] = useState<Track[]>([])
@@ -205,6 +209,9 @@ function Controls({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [uploads, setUploads] = useState<{ id: number; line: string }[]>([])
+  // Held here rather than arriving on the socket: who has been muted is
+  // admin-only, so it is never broadcast — see routes/mutes.ts.
+  const [muted, setMuted] = useState<string[]>([])
 
   const refreshLibrary = useCallback(async () => {
     try {
@@ -217,6 +224,21 @@ function Controls({
   useEffect(() => {
     void refreshLibrary()
   }, [refreshLibrary])
+
+  // Once, on open. A mute only changes because somebody on this panel changed
+  // it, and the answer to that request carries the new list — so there is
+  // nothing for a poll to discover.
+  useEffect(() => {
+    void (async () => {
+      try {
+        setMuted(await api.mutes())
+      } catch {
+        // Not worth a banner. The controls still work; the worst case is a
+        // button that says "Mute" about somebody already muted, and pressing
+        // it answers with the truth.
+      }
+    })()
+  }, [api])
 
   /**
    * Not through `run`: this fires on a timer, and a poll that set `busy` would
@@ -283,6 +305,15 @@ function Controls({
       run(async () => applyQueue((await act()).entries)),
     [applyQueue, run],
   )
+  const setAir = useCallback(
+    (action: 'start' | 'end') => run(async () => applyAir(await api.session(action))),
+    [api, applyAir, run],
+  )
+  const mute = useCallback(
+    (nickname: string, muting: boolean) =>
+      run(async () => setMuted(await api.mute(nickname, muting))),
+    [api, run],
+  )
 
   const report = (line: string) => setUploads((seen) => [...seen, { id: seen.length, line }])
 
@@ -319,6 +350,7 @@ function Controls({
           </p>
         </div>
         <div className="console__actions">
+          <OnAirSwitch air={air} busy={busy} onSet={setAir} />
           <ShareInvite api={api} />
           <button type="button" className="button button--quiet" onClick={onSignOut}>
             Sign out
@@ -358,8 +390,7 @@ function Controls({
             state={state}
             track={track}
             paused={paused}
-            skips={skips}
-            busy={busy}
+                  busy={busy}
             serverNow={serverNow}
             command={command}
             queueAction={queueAction}
@@ -370,16 +401,104 @@ function Controls({
           } />
           <LibraryCard
             tracks={tracks}
-            filter={filter}
             busy={busy}
             onQueue={(id) => queueAction(() => api.enqueue(id))}
             onPlay={(id) => command({ action: 'play', trackId: id })}
           />
         </div>
 
-        <CommentsCard messages={messages} />
+        <CommentsCard messages={messages} muted={muted} busy={busy} onMute={mute} />
       </div>
     </section>
+  )
+}
+
+/**
+ * Going on air, and ending it. PLAN.md's availability decision, as one button.
+ *
+ * Ending a broadcast is the most destructive thing on this panel — it stops the
+ * music, empties the queue and closes the room, and the chat and the history go
+ * with the session — so it asks first. Going live does not: it takes nothing
+ * away, and an evening that starts a click sooner than intended is not a
+ * problem the way one that ends early is.
+ *
+ * Disabled until the station has said which way round it is. A button that
+ * guessed would spend its first render offering to end a broadcast that had not
+ * started, and a misclick on that is exactly what the confirmation is for.
+ */
+function OnAirSwitch({
+  air,
+  busy,
+  onSet,
+}: {
+  air: AirSnapshot | null
+  busy: boolean
+  onSet(action: 'start' | 'end'): void
+}) {
+  const [confirming, setConfirming] = useState(false)
+
+  // Not yet known. See the note above — no guessing which way round it is.
+  if (air === null) {
+    return (
+      <button type="button" className="button button--quiet" disabled>
+        …
+      </button>
+    )
+  }
+
+  // The white pill, not a red one: red on this page means "on the air right
+  // now" and nothing else, and a button wearing it before anything is on would
+  // be the second bright thing the design does not allow.
+  if (!air.live) {
+    return (
+      <button
+        type="button"
+        className="button"
+        data-testid="go-live"
+        disabled={busy}
+        onClick={() => onSet('start')}
+      >
+        Go live
+      </button>
+    )
+  }
+
+  if (confirming) {
+    return (
+      <span className="confirm" role="group" aria-label="End the broadcast?">
+        <button
+          type="button"
+          className="button button--danger"
+          data-testid="end-session-confirm"
+          disabled={busy}
+          onClick={() => {
+            setConfirming(false)
+            onSet('end')
+          }}
+        >
+          End it — clears the queue
+        </button>
+        <button
+          type="button"
+          className="button button--quiet"
+          onClick={() => setConfirming(false)}
+        >
+          Keep going
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className="button button--quiet"
+      data-testid="end-session"
+      disabled={busy}
+      onClick={() => setConfirming(true)}
+    >
+      End broadcast
+    </button>
   )
 }
 
@@ -538,7 +657,6 @@ interface QueueCardProps {
   state: StateMessage | null
   track: Track | null
   paused: boolean
-  skips: SkipTally
   busy: boolean
   serverNow(): number
   command(body: PlaybackCommand): Promise<void>
@@ -558,7 +676,6 @@ function QueueCard({
   state,
   track,
   paused,
-  skips,
   busy,
   serverNow,
   command,
@@ -685,18 +802,6 @@ function QueueCard({
               : 'Nothing on the decks'}
           </span>
         </span>
-        {/* Next to what it is about — and the only thing that acts on it is a
-            person. A tally is what the room wants; whether the track comes off
-            is still this console's decision. */}
-        {track && (
-          <span
-            className={`votes${skips.votes > 0 ? ' votes--wanted' : ''}`}
-            data-testid="admin-skip-votes"
-            data-votes={skips.votes}
-          >
-            {skipVotesLabel(skips.votes)}
-          </span>
-        )}
       </div>
 
       {/* PLAN.md's last unbuilt transport control. A range input rather than a
@@ -875,46 +980,30 @@ function WishesCard({
   )
 }
 
-/**
- * Everything the station has to play.
- *
- * The one long list on this page, so it is the one the top bar's field
- * narrows — the queue is an ordering rather than a haystack, and filtering it
- * would only hide rows whose position is the point of them.
- */
+/** Everything the station has to play. */
 function LibraryCard({
   tracks,
-  filter,
   busy,
   onQueue,
   onPlay,
 }: {
   tracks: Track[]
-  filter: string
   busy: boolean
   onQueue(id: number): void
   onPlay(id: number): void
 }) {
-  const shown = tracks.filter((track) => matchesFilter(filter, track.title, track.artist))
-
   return (
     <section className="card">
       <header className="card__head">
         <h2 className="card__title">
-          Library{' '}
-          <span className="card__count">
-            ({shown.length === tracks.length ? tracks.length : `${shown.length} of ${tracks.length}`}
-            )
-          </span>
+          Library <span className="card__count">({tracks.length})</span>
         </h2>
       </header>
       {tracks.length === 0 ? (
         <p className="card__empty">Nothing uploaded yet.</p>
-      ) : shown.length === 0 ? (
-        <p className="card__empty">Nothing in the library matches “{filter.trim()}”.</p>
       ) : (
         <ul className="library" data-testid="admin-library">
-          {shown.map((track) => (
+          {tracks.map((track) => (
             <li key={track.id} className="library__row" data-track={track.id}>
               <span className="library__body">
                 <span className="queue__title">{track.title}</span>
@@ -954,8 +1043,22 @@ function LibraryCard({
  * message from it. Whoever is running the decks and wants to say something
  * opens the listener page — which is one press of the chip in the top bar.
  */
-function CommentsCard({ messages }: { messages: ChatMessage[] }) {
+function CommentsCard({
+  messages,
+  muted,
+  busy,
+  onMute,
+}: {
+  messages: ChatMessage[]
+  /** Nicknames the decks have asked to stop talking. */
+  muted: string[]
+  busy: boolean
+  onMute(nickname: string, muted: boolean): void
+}) {
   const list = useRef<HTMLOListElement>(null)
+  // A Set, because this is asked once per message and the room is small but the
+  // conversation is not.
+  const silenced = new Set(muted)
 
   // Follow the conversation, exactly as the listener page does.
   useEffect(() => {
@@ -972,6 +1075,7 @@ function CommentsCard({ messages }: { messages: ChatMessage[] }) {
         </h2>
         <p className="card__aside">
           {messages.length === 1 ? '1 total' : `${messages.length} total`}
+          {muted.length > 0 && `, ${muted.length} muted`}
         </p>
       </header>
       {messages.length === 0 ? (
@@ -993,6 +1097,28 @@ function CommentsCard({ messages }: { messages: ChatMessage[] }) {
                   <time className="comments__at" dateTime={new Date(message.at).toISOString()}>
                     {formatTime(message.at)}
                   </time>
+                  {/* On the message rather than in a roster of its own: the
+                      moment you want to mute somebody is the moment you are
+                      reading the thing they said, and a separate list would
+                      mean finding them in it by name. Muting is by nickname, so
+                      it does not matter which of their messages this is. */}
+                  <button
+                    type="button"
+                    className="comments__mute"
+                    data-testid={`mute-${message.nickname}`}
+                    disabled={busy}
+                    aria-pressed={silenced.has(message.nickname)}
+                    title={
+                      silenced.has(message.nickname)
+                        ? `Let ${message.nickname} talk again`
+                        : `Mute ${message.nickname}`
+                    }
+                    onClick={() =>
+                      onMute(message.nickname, !silenced.has(message.nickname))
+                    }
+                  >
+                    {silenced.has(message.nickname) ? 'Muted' : 'Mute'}
+                  </button>
                 </span>
                 <span className="comments__text">{message.text}</span>
               </span>

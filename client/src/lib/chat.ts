@@ -81,6 +81,13 @@ export function chatRefusal(code: SocketErrorCode): string | null {
       return 'Not sent — that message is too long.'
     case 'empty_message':
       return 'Not sent — there was nothing in that message.'
+    case 'off_air':
+      return 'Not sent — the station is not on air.'
+    case 'muted':
+      // Told rather than swallowed. A message that vanished quietly would read
+      // exactly like one that was sent, and somebody would spend the evening
+      // talking to a room that cannot hear them.
+      return 'Not sent — whoever runs the decks has muted you.'
     default:
       return null
   }

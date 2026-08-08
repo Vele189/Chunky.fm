@@ -1705,7 +1705,7 @@ html {
  *
  * It has to be opaque. `--panel` is 70%, which is right for one thing floating
  * on the sheet and wrong for three stacked on each other: through a translucent
- * face you can read the skip tally and the join screen sitting behind the
+ * face you can read the wishes and the join screen sitting behind the
  * conversation, all at once. `--bg` is the same surface the standing panel's
  * screen uses, and the bubbles at `--raised` read cleanly against it. */
 .stack__card {
@@ -2783,19 +2783,6 @@ html {
   letter-spacing: -0.02em;
 }
 
-.listener__search {
-  display: flex;
-  align-items: center;
-  gap: 0.35em;
-  flex: 1;
-  max-width: 12em;
-  padding: 0.35em 0.6em;
-  border-radius: var(--pill);
-  background: var(--raised);
-  color: var(--faint);
-  font-size: 0.55em;
-}
-
 .listener__count {
   display: flex;
   align-items: center;
@@ -2903,12 +2890,6 @@ html {
   font-size: 0.62em;
 }
 
-.listener__time {
-  margin: 0;
-  color: var(--faint);
-  font-family: var(--font-numeric);
-  font-size: 0.55em;
-}
 
 .listener .levels {
   gap: 0.5em;
@@ -2929,17 +2910,6 @@ html {
   line-height: 1.2;
 }
 
-.listener__skip {
-  display: flex;
-  gap: 0.5em;
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.55em;
-}
-
-.listener__tally {
-  color: var(--fg-dim);
-}
 
 .listener__aside {
   display: flex;

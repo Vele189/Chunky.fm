@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readAnswer } from '../src/hooks/useStationAccess.js'
+import { codeRefusal, readAnswer } from '../src/hooks/useStationAccess.js'
 import { inviteFrom, inviteLink, withoutInvite } from '../src/lib/invite.js'
 
 describe('inviteFrom', () => {
@@ -112,5 +112,27 @@ describe('inviteLink', () => {
     const link = inviteLink('https://chunky.fm', 'a+b/c=')
 
     expect(inviteFrom(new URL(link).search)).toBe('a+b/c=')
+  })
+})
+
+describe('codeRefusal', () => {
+  it('says the code was wrong when the station said so', () => {
+    expect(codeRefusal(401)).toMatch(/not the code/i)
+  })
+
+  it('says to wait when the door is being knocked on too fast', () => {
+    // A short code can be guessed at, so the throttle is reachable by hand in a
+    // way a 24-character key never was — and "wrong code" would be a lie here.
+    expect(codeRefusal(429)).toMatch(/wait/i)
+    expect(codeRefusal(429)).not.toMatch(/not the code/i)
+  })
+
+  it('never calls an unreachable station a wrong code', () => {
+    // The worst version of this screen: somebody retyping a code that was right
+    // all along, because the server happened to be restarting.
+    for (const status of [0, 500, 502, 503, 504]) {
+      expect(codeRefusal(status), String(status)).not.toMatch(/not the code/i)
+      expect(codeRefusal(status), String(status)).toMatch(/did not answer/i)
+    }
   })
 })

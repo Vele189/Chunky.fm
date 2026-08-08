@@ -3,6 +3,7 @@ import {
   type Availability,
   INITIALLY,
   canTuneIn,
+  standing,
   nextAvailability,
   outage,
   staleNotice,
@@ -186,5 +187,59 @@ describe('against a real connection', () => {
       expect(now()).toBe('dropped')
       FakeSocket.last.drop()
     }
+  })
+})
+
+describe('standing', () => {
+  it('is off air when the station says so and the socket is fine', () => {
+    expect(standing('live', false)).toBe('off-air')
+  })
+
+  it('is live when the station is broadcasting', () => {
+    expect(standing('live', true)).toBe('live')
+  })
+
+  it('reads a station that has not answered yet as on air', () => {
+    // The `air` frame is the first of all on connect, so the gap is a few
+    // milliseconds. Guessing "off" would flash "off the air tonight" at the
+    // start of every healthy page load.
+    expect(standing('live', null)).toBe('live')
+  })
+
+  it('lets connectivity win when the two disagree', () => {
+    // A page that cannot reach the station does not know whether anyone is on
+    // air — the last thing it heard has stopped being evidence of anything.
+    for (const reach of ['reaching', 'unreachable', 'dropped'] as const) {
+      expect(standing(reach, true), reach).toBe(reach)
+      expect(standing(reach, false), reach).toBe(reach)
+      expect(standing(reach, null), reach).toBe(reach)
+    }
+  })
+
+  it('says off air in the corner of the header', () => {
+    expect(statusLabel('off-air')).toBe('off air')
+  })
+
+  it('has its own screen, and does not claim to be retrying', () => {
+    const notice = outage('off-air')
+    expect(notice).not.toBeNull()
+    // Nothing is broken and there is nothing to retry, so the copy must not
+    // borrow the other two screens' "keeps trying".
+    expect(notice?.detail).not.toMatch(/keeps trying/)
+    expect(notice?.detail).toMatch(/goes live/)
+  })
+
+  it('does not tell a page that is perfectly up to date that it is stale', () => {
+    expect(staleNotice('off-air')).toBeNull()
+  })
+
+  it('holds the tune-in button back while there is nothing to tune into', () => {
+    // Browsers start audio from inside a user gesture and nowhere else, so a
+    // click spent on an off-air station buys silence now and silence later.
+    expect(canTuneIn('off-air')).toBe(false)
+  })
+
+  it('says something different from the screen for a station it cannot find', () => {
+    expect(outage('off-air')?.headline).not.toBe(outage('unreachable')?.headline)
   })
 })

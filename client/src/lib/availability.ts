@@ -39,6 +39,31 @@ export const INITIALLY: Availability = 'reaching'
  * dead server alternates between "no signal" and "tuning in…" forever, once per
  * retry, which is the flicker this whole type exists to prevent.
  */
+/**
+ * What the page should actually say, once the broadcast is folded in.
+ *
+ * `Availability` is about the *socket* — can this page reach the station. That
+ * is only half the question. A station that answers perfectly well and is not
+ * broadcasting tonight is a third thing, and telling somebody to check their
+ * connection about it would be a lie.
+ *
+ * Connectivity wins when the two disagree, because it has to: a page that
+ * cannot reach the station does not know whether anyone is on air, and the last
+ * thing it heard is no longer evidence of anything.
+ */
+export type Standing = Availability | 'off-air'
+
+/**
+ * @param live What the station last said about itself, or null before it has
+ *   said anything. Null reads as on air — the `air` frame arrives first of all
+ *   on connect, so the gap is a few milliseconds, and guessing "off" would
+ *   flash "off the air tonight" at the start of every healthy page load.
+ */
+export function standing(reach: Availability, live: boolean | null): Standing {
+  if (reach !== 'live') return reach
+  return live === false ? 'off-air' : 'live'
+}
+
 export function nextAvailability(current: Availability, status: StationStatus): Availability {
   switch (status) {
     case 'connected':
@@ -57,7 +82,7 @@ export function nextAvailability(current: Availability, status: StationStatus): 
 }
 
 /** What the corner of the header says. */
-export function statusLabel(state: Availability): string {
+export function statusLabel(state: Standing): string {
   switch (state) {
     case 'live':
       return 'on air'
@@ -67,6 +92,8 @@ export function statusLabel(state: Availability): string {
       return 'reconnecting…'
     case 'unreachable':
       return 'no signal'
+    case 'off-air':
+      return 'off air'
   }
 }
 
@@ -88,11 +115,22 @@ export interface Outage {
  * and the alternative is a room full of people reloading a page that was
  * already going to fix itself.
  */
-export function outage(state: Availability): Outage | null {
+export function outage(state: Standing): Outage | null {
   switch (state) {
-    case 'unreachable':
+    case 'off-air':
+      // Not an outage in the sense the other two are — nothing is broken, and
+      // there is nothing to retry. The page is right, the room is just closed.
+      // It still belongs here because it is the same screen: no music, and
+      // nothing on the page that came from a station.
       return {
         headline: 'chunky.fm is off the air',
+        detail:
+          'Nobody is on the decks tonight. This page stays connected — leave it ' +
+          'open and the music starts the moment somebody goes live.',
+      }
+    case 'unreachable':
+      return {
+        headline: 'Can’t find the station',
         detail:
           'Nothing is answering at the station right now. This page keeps trying — ' +
           'leave it open and it will tune itself in the moment the station is back.',
@@ -118,7 +156,7 @@ export function outage(state: Availability): Outage | null {
  * keep presenting that as live: the roster, the tally and the clock all stopped
  * at the drop, and this line is what says so.
  */
-export function staleNotice(state: Availability): string | null {
+export function staleNotice(state: Standing): string | null {
   switch (state) {
     case 'unreachable':
       return 'No signal — trying to reach the station. Nothing here is up to date.'
@@ -144,6 +182,11 @@ export function staleNotice(state: Availability): string | null {
  * and a button that greys out on every page load is worse than a rare click
  * that lands a few hundred milliseconds early.
  */
-export function canTuneIn(state: Availability): boolean {
+export function canTuneIn(state: Standing): boolean {
+  // Off air is a no for the same reason `unreachable` is, and it matters more
+  // here: browsers start audio from inside a user gesture and nowhere else, so
+  // a listener who spends their click on a station with nothing to play gets
+  // silence now *and* silence when it comes back, because `play()` will then be
+  // called from a broadcast handler rather than a click.
   return state === 'live' || state === 'reaching'
 }

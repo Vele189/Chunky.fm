@@ -72,6 +72,20 @@ export async function tuneIn(page: Page, nickname = 'qa'): Promise<void> {
   await page.getByRole('button', { name: 'Tune in' }).click()
 }
 
+/**
+ * Give one of the rail's destinations the whole screen.
+ *
+ * The landing view is the deck and the words now; the queue, the evening and
+ * the room each live behind their mark on the rail, which is where a script
+ * that wants to read them has to go — the same trip a person makes.
+ */
+export async function visit(page: Page, hash: string): Promise<void> {
+  await page.evaluate((destination) => {
+    window.location.hash = destination
+  }, hash)
+  await wait(400)
+}
+
 export function playbackCommand(body: unknown): Promise<unknown> {
   return fetch(`${API_URL}/api/playback`, {
     method: 'POST',

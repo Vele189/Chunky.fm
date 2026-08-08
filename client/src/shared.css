@@ -41,16 +41,87 @@
   box-shadow: var(--ring);
 }
 
-.deck__record {
+/* The platter the record sits on, and the frame of reference the light lives
+   in. The record turns inside this; the sheen and the spindle do not. */
+.deck__platter {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 246px;
-  height: 246px;
+  width: 268px;
+  height: 268px;
   max-width: 100%;
   max-height: 100%;
+  aspect-ratio: 1;
   border-radius: var(--pill);
-  background: #000000;
-  box-shadow: inset 0 2px 4px rgb(0 0 0 / 5%);
+  background: radial-gradient(circle closest-side at 50% 50%, #333333 0%, #1e1e1e 72%, #101010 100%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 8%),
+    inset 0 2px 6px rgb(0 0 0 / 50%),
+    0 14px 34px rgb(0 0 0 / 50%);
+}
+
+/*
+ * The record.
+ *
+ * Four layers, outermost first, because that is the order a record is actually
+ * made of and the order the paint has to go on in:
+ *
+ *   1. the smooth margin outside the last groove
+ *   2. the smooth run-out around the label
+ *   3. the grooves themselves
+ *   4. the vinyl, which is not flat black — it lifts towards the rim, which is
+ *      what stops a black circle reading as a hole cut in the page
+ *
+ * The grooves are a repeating gradient rather than an image so they stay sharp
+ * at any size and cost nothing to ship. 3px of pitch is a lie about a real
+ * record, which has closer to 0.1mm, but a truthful one would alias into a grey
+ * smear at 246px and read as no grooves at all.
+ */
+.deck__record {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /*
+   * A share of the platter rather than a fixed 246px, so the record and the
+   * light on it shrink together. Fixed sizes here were a bug at small widths:
+   * the platter clamped to the well and the record with it, but the sheen kept
+   * its 246px and spilled over the rim as a pale wedge on the mat.
+   */
+  width: 92%;
+  height: 92%;
+  border-radius: var(--pill);
+  /*
+   * `closest-side` on every layer, and it is load-bearing rather than tidiness:
+   * a radial gradient defaults to `farthest-corner`, so on a square element
+   * 100% is the distance to the corner — 1.41x the radius. Percentages written
+   * as if they were fractions of the record land at 0.7x of where they read,
+   * which put the smooth outer margin halfway up the disc and crushed the
+   * grooves into a ring around the label. With `closest-side`, 100% is the rim.
+   *
+   * Outermost first, which is the order a record is made of:
+   *   1. the smooth margin outside the last groove
+   *   2. the smooth run-out around the label
+   *   3. the grooves
+   *   4. the vinyl, which is not flat black — it lifts towards the rim, which is
+   *      what stops a black circle reading as a hole cut in the page
+   *
+   * 3px of groove pitch is a lie about a real record, which is nearer 0.1mm.
+   * A truthful one would alias into a grey smear at this size and read as no
+   * grooves at all.
+   */
+  background:
+    radial-gradient(circle closest-side at 50% 50%, transparent 0 93%, #0e0e0e 93%),
+    radial-gradient(circle closest-side at 50% 50%, #111111 0 39%, transparent 39%),
+    repeating-radial-gradient(
+      circle closest-side at 50% 50%,
+      rgb(255 255 255 / 6%) 0 1px,
+      rgb(255 255 255 / 0%) 1px 3px
+    ),
+    radial-gradient(circle closest-side at 50% 50%, #161616 0%, #0b0b0b 66%, #050505 100%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 9%),
+    inset 0 0 22px rgb(0 0 0 / 70%),
+    0 4px 14px rgb(0 0 0 / 55%);
   /* Where the design left it. The animation below takes over from here. */
   transform: rotate(95.82deg);
 }
@@ -71,61 +142,97 @@
   animation: deck-spin 4s linear infinite;
 }
 
+/* The lamp. Fixed in the platter's frame, so the record turns underneath it —
+   see the note in Turntable.tsx. Two sweeps rather than one: a disc this shiny
+   under a single source catches it on both sides of the centre, and one lonely
+   streak reads as a scratch. */
+.deck__sheen {
+  position: absolute;
+  inset: 0;
+  /* The same share of the platter the record takes — see the note there. */
+  width: 92%;
+  height: 92%;
+  margin: auto;
+  border-radius: var(--pill);
+  pointer-events: none;
+  background:
+    linear-gradient(
+      118deg,
+      transparent 22%,
+      rgb(255 255 255 / 9%) 38%,
+      rgb(255 255 255 / 16%) 46%,
+      rgb(255 255 255 / 3%) 55%,
+      transparent 70%
+    ),
+    linear-gradient(
+      298deg,
+      transparent 28%,
+      rgb(255 255 255 / 7%) 45%,
+      rgb(255 255 255 / 1%) 53%,
+      transparent 66%
+    );
+}
+
 .deck__label {
-  width: 84px;
-  height: 84px;
+  position: relative;
+  z-index: 1;
+  width: 88px;
+  height: 88px;
   border-radius: var(--pill);
   object-fit: cover;
-  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 10%)) drop-shadow(0 1px 1px rgb(0 0 0 / 10%));
+  /* A paper label sitting on the vinyl: a dark seam where it meets the record,
+     then the faintest lift off it. */
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 65%),
+    0 0 0 2px rgb(255 255 255 / 7%),
+    0 2px 6px rgb(0 0 0 / 45%);
 }
 
 .deck__label--blank {
   background: linear-gradient(135deg, #e5e5e5 0%, #a1a1a1 100%);
 }
 
+/* The post through the middle. Above the label and outside the record, because
+   a spindle is part of the deck rather than part of the record — it is the one
+   thing at the centre that stays still. */
 .deck__spindle {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  z-index: 2;
+  width: 9px;
+  height: 9px;
   border-radius: var(--pill);
-  background: #171717;
+  background: linear-gradient(150deg, #6b6b6b 0%, #2a2a2a 60%, #171717 100%);
+  box-shadow:
+    0 0 0 1.5px rgb(0 0 0 / 70%),
+    0 1px 2px rgb(0 0 0 / 60%);
+  pointer-events: none;
 }
 
-/* The arm is drawn where the design puts it — pivot at the top right of the
-   well, bar reaching up and out over the edge. It lifts when nothing is on. */
-.deck__pivot {
+/* The arm, over everything, lifting off the record when the decks stop. */
+.deck__tonearm {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--pill);
-  background: var(--faint);
-  box-shadow: 0 0 0 1px #404040;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Dimmer than --muted, which read as a bright plastic stick laid across the
+     record. An arm is a dark metal tube with a lit edge; the highlight below
+     does the lifting, not the base colour. */
+  color: #6f6f6f;
+  pointer-events: none;
 }
 
-.deck__arm {
-  position: absolute;
-  top: -47.62px;
-  left: -102.9px;
-  display: grid;
-  place-items: center;
-  width: 116.773px;
-  height: 67.156px;
+.deck__tonearm-swing {
   transition: transform 400ms ease;
-  transform-origin: 88% 74%;
+  /* View-box units, so the origin is written in the same coordinates as the
+     points it turns around and survives the deck being scaled down. */
+  transform-box: view-box;
+  transform-origin: 270px 78px;
 }
 
-.deck[data-spinning='false'] .deck__arm {
-  transform: rotate(-14deg);
-}
-
-.deck__arm-bar {
-  width: 128px;
-  height: 8px;
-  border-radius: var(--pill);
-  background: var(--muted);
-  transform: rotate(28deg);
+/* Lifted and swung back out over the rest, which is where an arm sits when
+   there is nothing playing. */
+.deck[data-spinning='false'] .deck__tonearm-swing {
+  transform: rotate(-16deg);
 }
 
 /* --- the LIVE badge ------------------------------------------------------- */
@@ -252,7 +359,7 @@
     transform: scaleY(1);
   }
 
-  .deck__arm {
+  .deck__tonearm-swing {
     transition: none;
   }
 }
@@ -331,4 +438,28 @@ a.button {
   background: var(--raised);
   color: var(--faint);
   cursor: not-allowed;
+}
+
+/* Ending the broadcast, once it has been asked about.
+ *
+ * A wash rather than a fill: red means "on the air right now" on this page, and
+ * a solid red button would be a second bright thing competing with the one dot
+ * that is allowed to be. A tint is enough to say this one is not like the
+ * others — it stops the music, empties the queue and closes the room. */
+.button--danger {
+  background: var(--live-wash);
+  color: var(--live-text);
+  box-shadow: var(--ring-strong);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: rgb(251 44 54 / 25%);
+}
+
+/* The two halves of "are you sure" — kept on one line so the destructive
+   choice never sits alone with nothing beside it to click instead. */
+.confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }

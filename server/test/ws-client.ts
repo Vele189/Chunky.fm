@@ -1,12 +1,12 @@
 import { WebSocket } from 'ws'
 import type {
+  AirMessage,
   ChatMessagesMessage,
   ClientMessage,
   HistoryMessage,
   PresenceMessage,
   QueueMessage,
   ServerMessage,
-  SkipsMessage,
   StateMessage,
   WishedMessage,
 } from '../src/protocol.js'
@@ -81,6 +81,10 @@ export class TestClient {
     })
   }
 
+  async nextAir(timeoutMs?: number): Promise<AirMessage> {
+    return (await this.waitFor((m) => m.type === 'air', timeoutMs)) as AirMessage
+  }
+
   async nextState(timeoutMs?: number): Promise<StateMessage> {
     return (await this.waitFor((m) => m.type === 'state', timeoutMs)) as StateMessage
   }
@@ -99,16 +103,6 @@ export class TestClient {
 
   async nextHistory(timeoutMs?: number): Promise<HistoryMessage> {
     return (await this.waitFor((m) => m.type === 'history', timeoutMs)) as HistoryMessage
-  }
-
-  async nextSkips(timeoutMs?: number): Promise<SkipsMessage> {
-    return (await this.waitFor((m) => m.type === 'skips', timeoutMs)) as SkipsMessage
-  }
-
-  /** Votes on what is on, and waits for the tally that comes back. */
-  async voteSkip(voted = true): Promise<SkipsMessage> {
-    this.send({ type: 'vote_skip', voted })
-    return this.nextSkips()
   }
 
   /** Says something and waits for it to come back around. */

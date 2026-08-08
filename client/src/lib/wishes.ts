@@ -72,6 +72,10 @@ export function wishRefusal(code: SocketErrorCode): string | null {
       return 'Not asked — that wish is too long.'
     case 'empty_wish':
       return 'Not asked — there was nothing in that wish.'
+    case 'off_air':
+      return 'Not asked — the station is not on air.'
+    case 'muted':
+      return 'Not asked — whoever runs the decks has muted you.'
     default:
       return null
   }

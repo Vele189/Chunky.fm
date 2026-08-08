@@ -24,7 +24,6 @@ import {
   ROOM,
   saidBy,
   SESSION,
-  SKIPS,
   SLEEVES,
   through,
   WISHES,
@@ -677,17 +676,6 @@ function Room({ at }: { at: number }) {
             ),
             panel: <TalkPanel at={at} />,
           },
-          {
-            title: 'And it can disagree',
-            description: (
-              <p>
-                When the room would rather hear something else it can say so. It arrives on the
-                decks as a tally rather than as a veto: whoever is running the station still
-                decides, which is the whole point of there being somebody running it.
-              </p>
-            ),
-            panel: <SkipPanel />,
-          },
         ]}
       />
     </section>
@@ -802,28 +790,6 @@ function TalkPanel({ at }: { at: number }) {
     </div>
   )
 }
-
-/** The skip tally. A count out of the room, not a verdict. */
-const SkipPanel = memo(function SkipPanel() {
-  return (
-    <div className="panel panel--skip" aria-hidden="true">
-      <p className="panel__label">Skip this one?</p>
-      <p className="panel__tally">
-        {SKIPS.votes}
-        <span className="panel__of">/ {SKIPS.of}</span>
-      </p>
-      <div className="panel__meter">
-        <span
-          className="panel__fill"
-          style={{ width: `${(SKIPS.votes / SKIPS.of) * 100}%` }}
-        />
-      </div>
-      <p className="panel__note">
-        {SKIPS.voted ? 'You have voted. ' : ''}It is a tally, not a veto.
-      </p>
-    </div>
-  )
-})
 
 /**
  * What the room asks for.

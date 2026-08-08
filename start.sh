@@ -61,16 +61,17 @@ ensure_env() {
   [[ -f $ENV_FILE ]] && return 0
   [[ -f $EXAMPLE_ENV ]] || die "neither $ENV_FILE nor $EXAMPLE_ENV exists — cannot configure the station"
 
-  local generated
-  generated=$(generate_password)
-  # Only the placeholder is replaced, so every other setting keeps the comments
-  # and defaults the example file ships with.
-  sed "s|^ADMIN_PASSWORD=change-me$|ADMIN_PASSWORD=${generated}|" "$EXAMPLE_ENV" > "$ENV_FILE"
+  # Left empty rather than filled with a generated secret. The server falls back
+  # to the code baked into it, so an unconfigured station has one code that
+  # opens both the door and the decks — which is the whole point of the default,
+  # and generating a second password here would quietly take it away.
+  sed "s|^ADMIN_PASSWORD=change-me$|ADMIN_PASSWORD=|" "$EXAMPLE_ENV" > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 
-  info "Created $ENV_FILE with a generated admin password:"
-  say  "    ${bold}${generated}${reset}"
-  say  "    ${dim}Sign in with this at the admin panel. Edit $ENV_FILE to change it.${reset}"
+  info "Created $ENV_FILE."
+  say  "    ${dim}The station asks for a door code, and the same code opens the${reset}"
+  say  "    ${dim}admin panel. Set ADMIN_PASSWORD in $ENV_FILE to give the decks${reset}"
+  say  "    ${dim}a password of their own.${reset}"
   say
 }
 
@@ -110,8 +111,12 @@ check_ports() {
 check_password() {
   local password
   password=$(env_value ADMIN_PASSWORD)
+  # Empty is fine now, and is the default: the server falls back to its own
+  # baked-in code. What is worth saying out loud is that the decks are then
+  # behind the same code as the door, which is right for a room of friends and
+  # wrong for anything reachable from the internet.
   if [[ -z $password ]]; then
-    die "ADMIN_PASSWORD is empty in $ENV_FILE — the backend refuses to start with an unguarded admin surface"
+    info "No ADMIN_PASSWORD set — the door code opens the decks too. Fine locally."
   elif [[ $password == change-me ]]; then
     warn "ADMIN_PASSWORD is still 'change-me' in $ENV_FILE — fine locally, never anywhere else"
   fi

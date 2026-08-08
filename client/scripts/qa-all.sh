@@ -9,7 +9,7 @@
 # README and scripts/qa-env.ts.
 #
 # The station is restarted before each script, and that is the point of this
-# file. The roster, the skip tally, the chat and the evening's history all live
+# file. The roster, the chat and the evening's history all live
 # in the session, and most of these scripts open by asserting on an empty one —
 # so run back-to-back against one long-lived station, whichever goes second
 # fails on the first one's leftovers. Restarting is the only thing that gives
@@ -43,7 +43,7 @@ restart_station() {
 }
 
 SCRIPTS=(
-  qa:playback qa:admin qa:chat qa:chat-refusal qa:wishes qa:skips
+  qa:playback qa:admin qa:chat qa:chat-refusal qa:wishes
   qa:history qa:presence qa:reconnect qa:offline verify:sync
 )
 

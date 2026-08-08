@@ -17,6 +17,19 @@ telling you where it is —
 <http://localhost:18173> is the page describing the station; see [the landing
 page](#the-landing-page).
 
+The station **asks for a door code** before it will play anything, and out of
+the box **the same code opens the admin panel** — one code for both doors. It is
+baked into the server; `houseKey` in `server/src/config.ts` says how to read it
+back without it being written down anywhere.
+
+That default trades a real thing away: anybody you give the code to so they can
+listen can also upload, drive the decks and end the broadcast. For a room of
+friends that is the right trade. For anything else, set `ADMIN_PASSWORD` in
+`.env` and the two come apart with no other change — the door code stays what it
+was, and the decks get a password of their own. `STATION_KEY` replaces the door
+code; `STATION_OPEN=true` takes the door off altogether. See
+[`/api/listen`](#apilisten--who-may-hear-the-station).
+
 ```bash
 ./start.sh --build    # the same, but pull fresh base images first
 ./start.sh logs       # follow them
@@ -530,24 +543,66 @@ secret for hours; a one-liner in a terminal has nowhere else to put it.
 
 ### `/api/listen` — who may hear the station
 
-The same exchange one rung down, and the answer to "only the people I sent a
-link to". `STATION_KEY` is optional: leave it unset and the station is open to
-anyone with the address, which is what PLAN.md's one-permanent-link decision
-describes and what every existing deployment keeps doing on upgrade.
+The same exchange one rung down, and the answer to "only the people I invited".
 
-Set it and the address stops being enough. Invites go out as
-`https://…/listen?k=<STATION_KEY>` — and `https://…/?k=<STATION_KEY>`, which is
-what older ones say, is redirected there with the key intact rather than being
-answered by the landing page. The browser presents the key once, gets back an
-HMAC-signed HttpOnly cookie good for a month, and the key comes straight out of
-the address bar — a secret left in a URL is a secret in the history, in every
-screenshot and in the `Referer` of every outbound link.
+**The station has a door on it by default.** An unset `STATION_KEY` used to mean
+an open station; it now falls back to a code baked into the server — see
+`houseKey` in `server/src/config.ts`, which is written backwards and in base64
+and explains how to read it back. That is a speed bump and not a secret: it does
+nothing against anybody holding this repository, and everything against the only
+threat a pet project actually has, which is the code sitting in plain text in a
+file during a screen-share. It never leaves the server — a listener presents a
+guess and is told yes or no — so a browser never has it to give away.
+
+The default changed in the direction that fails safe. A station that quietly
+became public because a variable went missing during a deploy is a worse
+surprise than one that quietly asks for a password. Taking the door off is
+therefore something you have to *say*: `STATION_OPEN=true`, exactly that string,
+and an explicit `STATION_KEY` still wins if somebody sets both.
+
+Any station with real people in it should set its own `STATION_KEY`.
+
+The code arrives two ways, and it is the same secret either way:
+
+- **On a link** — `https://…/listen?k=<key>`, and `https://…/?k=<key>`, which is
+  what older invites say, is redirected there with the key intact rather than
+  being answered by the landing page. The key then comes straight back *out* of
+  the address bar, because a secret left in a URL is a secret in the history, in
+  every screenshot and in the `Referer` of every outbound link.
+- **Typed at the door** — the refused screen carries an input. That is what
+  makes the station something you can tell somebody over the phone, and it has
+  one advantage over a link: a typed code never enters the address bar, so there
+  is nothing to strip out afterwards.
+
+Either way the browser presents it once and gets back an HMAC-signed HttpOnly
+cookie good for a month.
+
+**If you forget which code is in force**, sign in to the console and press
+Share. Admin credentials satisfy the listener gate too, so whoever holds
+`ADMIN_PASSWORD` can always get in and read the key back — which is why there is
+no way to lock yourself out of your own station.
+
+### One code, or two
+
+`ADMIN_PASSWORD` is optional, and unset it falls back to the same house key the
+door does. So an unconfigured station has **one code that opens both** the door
+and the decks.
+
+They remain two separate settings, not one — moving either leaves the other
+alone — and what keeps an invited listener out of the console when both hold the
+same string is domain separation in `lib/auth.ts`: the two cookies are HMACs of
+that value under different labels, so a listener token does not verify as an
+admin token. That was a nicety when the secrets differed and is load-bearing now
+that they need not, which is why `admin-routes.test.ts` pins it against a
+station deliberately configured with one string for both.
+
+Set `ADMIN_PASSWORD` and the two part company immediately.
 
 | Route | What |
 |---|---|
 | `GET /api/listen` | `204` if this browser is admitted, `401` if not. Asked once on load, before anything opens a socket. |
 | `POST /api/listen` | `{key}` → `204` and the cookie, `401` for a key that is not this station's, `429` once tries come too fast. |
-| `GET /api/invite` | Admin-only. `{key}` — the station key, or `null` on an open station. What the console's Share button builds a link out of. |
+| `GET /api/invite` | Admin-only. `{key}` — the station key, or `null` on a station opened with `STATION_OPEN`. What the console's Share button builds a link out of, and how you read back a code you forgot. |
 
 What the key actually guards is the socket and the audio: `/ws` is refused at
 the handshake, and `/api/tracks`, `/api/audio/*` and `/api/artwork/*` are all
@@ -584,6 +639,77 @@ a lock, and is not doing any security work: `#admin` still reaches the sign-in
 form if you type it, and every route that does anything is gated on the server.
 It is the page declining to show a door to the hundred per cent of visitors it
 would refuse.
+
+### Going live
+
+| | |
+|---|---|
+| `GET /api/session` | Open. `{live, since}` — whether the station is broadcasting, and since when. |
+| `POST /api/session` | Admin. `{action: 'start'\|'end'}` → the state it produced. Both idempotent. |
+
+PLAN.md locks availability as session-based — "you go live, you end it" — and
+`POST /api/session` is the whole of it. `{"action":"start"}` opens a session,
+`{"action":"end"}` closes it. Both are behind the admin gate, and both are
+idempotent: an admin double-clicking is the ordinary case, not an error.
+
+`GET /api/session` is deliberately **open**. Whether there is a station tonight
+is the first thing a listener's page needs, it is not a secret, and it arrives
+unasked on the socket anyway. What is behind the gate is *changing* it.
+
+A session used to be a run of the process — one opened at boot, closed at
+shutdown — which meant a deploy silently ended the evening and a restart
+silently began a new one. Now the station comes up **off air**, because a
+station that went live the instant it was deployed would put every restart on
+air with an empty queue.
+
+What ends with a session ends completely. The chat, the wish book and the
+history are all scoped to `sessionId`, so going live opens a fresh room rather
+than resuming last night's, and ending one:
+
+- stops the decks and empties the queue,
+- clears every mute (see below),
+- leaves the rows in the database, tied to a session that is over — nothing is
+  deleted, there is simply nothing to read while nothing is open.
+
+Going live deliberately clears *nothing*: queueing a set up and then opening the
+doors is the ordinary way to start an evening.
+
+While off air, `say`, `wish` and `vote_skip` are all refused with `off_air` —
+there is no session for any of them to belong to.
+
+### Muting a nickname
+
+| | |
+|---|---|
+| `GET /api/mutes` | Admin. `{nicknames}` — who has been asked to stop talking. |
+| `POST /api/mutes` | Admin. `{nickname, muted}` → the whole list as it now stands. |
+
+PLAN.md's last unbuilt admin control. `GET /api/mutes` and `POST /api/mutes`
+with `{nickname, muted}` — where the nickname now *stands*, rather than
+"toggle", so two of them in a row leave one mute and a retry after a dropped
+response is safe. The console puts the button on the message itself, because the
+moment you want to mute somebody is the moment you are reading what they said.
+
+Admin-only in **both** directions, unlike `/api/session`: publishing the list
+would turn a quiet word into a public naming, and hand the room a roster of who
+to needle about it.
+
+A muted listener is **told**, with a `muted` refusal, rather than having the
+message quietly swallowed — a message that vanished would read exactly like one
+that was sent, and somebody would spend the evening talking to a room that
+cannot hear them. It covers wishes as well as chat, since a mute that left the
+book open would only move where somebody was shouting. It costs no rate-limit
+token, so being unmuted does not also leave you throttled. And it does not
+remove anyone from the room: they keep hearing the music, which is what they
+came for.
+
+Muting is by nickname, not by socket — a mute on the connection would last until
+the tab was reloaded, which is about as long as it takes to notice. The honest
+limit of that is that somebody can rename themselves out of it, and nothing here
+stops them. Making it stick would need identity, and PLAN.md's decision is
+"nickname only, stored in localStorage": there is nothing to pin a person to.
+This is a volume knob for a room of under thirty people who mostly know each
+other, not a ban hammer.
 
 ### The queue
 
@@ -1304,15 +1430,26 @@ PLAN.md's offline screen. Everything above assumes a socket; without one the
 page is a column of empty boxes and a small grey word in the corner, which reads
 like something that broke rather than a station that went away.
 
-The page distinguishes three of those, because they call for three different
+The page distinguishes four of those, because they call for four different
 things being said:
 
-- **Never reached it** — nothing has ever answered. The panel says *chunky.fm is
-  off the air*, and there is no Tune in button at all.
+- **Never reached it** — nothing has ever answered. The panel says *Can't find
+  the station*, and there is no Tune in button at all.
 - **Had it and lost it** — the socket dropped. Whatever the station last said
   stays on screen, with a line above it saying it is from before the drop.
-- **There, and quiet** — the station is answering with nothing on the decks. The
+- **Off air** — the station answers perfectly well and nobody is broadcasting.
+  *chunky.fm is off the air*, and no Tune in button: there is nothing to tune
+  into, and the click would be spent on silence. See [going live](#going-live).
+- **There, and quiet** — the station is on air with nothing on the decks. The
   page says both halves: nothing is on, and you are tuned in for whatever is.
+
+The last two look identical in a playback snapshot — an empty deck either way —
+which is exactly why `air` is its own frame rather than something derived from
+`state`. And the first two are about the *socket* while the third is about the
+*station*, so `standing()` folds the two questions into the one sentence a
+screen can show. Connectivity wins when they disagree: a page that cannot reach
+the station does not know whether anyone is on air, and the last thing it heard
+has stopped being evidence of anything.
 
 The distinction that costs something is the first two, and `lib/availability.ts`
 is where it lives. `StationStatus` is about one socket, which is the wrong grain
@@ -1494,7 +1631,7 @@ through — see `docs/qa-notes.md`.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `master` and every pull
-request, in three jobs:
+request, in four jobs:
 
 - **checks** — typecheck, unit tests and build, for both workspaces, on Node 20
   and Node 22. Two versions because `server/package.json` claims `>=20.12` while
@@ -1509,6 +1646,12 @@ request, in three jobs:
   bundle, `/api/tracks`, and an admin sign-in that has to refuse the wrong
   password before it accepts the right one. This is the only job that sees
   nginx, the native `better-sqlite3` build and the volume.
+- **single image** — builds the root `Dockerfile` and drives it over one port.
+  It makes the same front-door assertions the compose job makes of nginx, for
+  the reason given under [Deploying](#deploying): those rules exist twice in
+  production, and a copy nobody checks is a copy that drifts. It also pins the
+  one failure the app-shell fallback could cause — a mistyped API route coming
+  back as a page of HTML with a 200 on it.
 
 What CI does not run is the browser QA above — it needs a real Chrome and a
 library with a few minutes of audio in it, neither of which a runner has. Those
@@ -1519,3 +1662,74 @@ you.
 Dependency updates come in through `.github/dependabot.yml` — weekly for both
 lockfiles with minor and patch bumps grouped into a single PR, monthly for the
 action versions pinned in the workflow.
+
+## Deploying
+
+There are two supported shapes, and the difference between them is who owns the
+front door.
+
+| | Serves the client | Where |
+|---|---|---|
+| `docker-compose.yml` | nginx, in its own container | your own machine, a VPS — anywhere nothing is in front |
+| root `Dockerfile` | Fastify, same process as the API | Railway, or any platform that runs one container behind its own edge |
+
+The application code is identical in both. What switches is `CLIENT_DIR`: unset,
+the server is only an API and leaves `/` alone for whatever is in front of it;
+set to the built client, it also owns the front door.
+
+### The front door exists three times
+
+`/`, `/?k=<key>` and `/welcome` are decided in three separate places — nginx's
+config, Vite's dev middleware, and `server/src/lib/doorway.ts`. That is a real
+cost and it is deliberate: each of the three is the only thing listening in the
+environment it serves, and none of them can import from the others (the client
+image does not contain the server directory, and vice versa).
+
+What keeps them honest is that the compose stack and the single image are both
+driven by CI with the same assertions. If you change a rule, change it in all
+three, and the two Docker jobs will tell you if you missed one. The dev server's
+copy has no such net — that one is on you.
+
+### Railway
+
+`railway.json` points at the root `Dockerfile` and sets three things that are
+not defaults and are all load-bearing:
+
+- **`numReplicas: 1`.** Playback state lives in memory, by design — see
+  [the queue](#the-queue). Two replicas is two stations disagreeing with each
+  other, with listeners randomly split between them. This is the setting to
+  re-check first if the station ever starts behaving impossibly.
+- **`sleepApplication: false`.** A sleeping instance drops every websocket, and
+  the websocket *is* the station.
+- **`healthcheckPath: /health`.** So a deploy that comes up broken is rolled
+  back rather than served.
+
+The one thing the file cannot do for you is **mount a volume**. Do it in the
+Railway dashboard, mounted at `/data`, which is what `AUDIO_STORAGE_DIR` is set
+to in the image. Without one the filesystem is ephemeral and every deploy
+silently wipes the library *and* `chunky.sqlite` — and because the rows name
+files on disk, the two only mean anything together.
+
+Set **both** `ADMIN_PASSWORD` and `STATION_KEY` as service variables. Neither is
+required to boot — the station falls back to the code baked into the source for
+both — and that is exactly why a deployment on the open internet has to set
+them: otherwise the decks are behind a code that ships in this repository, and
+behind the same code you hand out to anyone you want to let listen. See
+[`/api/listen`](#apilisten--who-may-hear-the-station).
+`PORT` is injected by Railway and read straight out of the environment; `HOST`
+already defaults to `0.0.0.0`. Leave `TRUST_PROXY` alone: Railway's edge is in
+front, so the sign-in throttle has to read the caller through `X-Forwarded-For`
+rather than pacing the whole internet as one.
+
+### Trying the single image locally
+
+Worth doing before a deploy, because it is the artifact that actually ships:
+
+```bash
+docker build -t chunky-fm/all-in-one .
+docker run --rm -e ADMIN_PASSWORD=whatever -p 3000:3000 chunky-fm/all-in-one
+```
+
+The station is then at <http://localhost:3000> — landing page at `/`, the
+station itself at `/listen`, `/listen#admin` to run it. Add `-v chunky:/data` to
+keep the library across runs.

@@ -36,7 +36,7 @@ afterEach(() => {
 })
 
 const log = (options: { limit?: number; now?: () => number } = {}) =>
-  new PlayLog({ db, sessionId, ...options })
+  new PlayLog({ db, session: { current: sessionId }, ...options })
 
 describe('PlayLog', () => {
   it('is empty before anything has been on', () => {
@@ -150,7 +150,7 @@ describe('PlayLog', () => {
 
     // A restarted station is a new time on air, and its history starts empty
     // even though the old rows are still there.
-    const next = new PlayLog({ db, sessionId: openSession(db, 1_700_000_200_000) })
+    const next = new PlayLog({ db, session: { current: openSession(db, 1_700_000_200_000) } })
     expect(next.recent()).toEqual([])
     expect(next.count()).toBe(0)
 

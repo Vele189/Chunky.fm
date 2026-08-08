@@ -1,4 +1,4 @@
-import type { Db, WishRow } from './db.js'
+import type { Db, SessionRef, WishRow } from './db.js'
 
 /**
  * The wish book — PLAN.md's requests story.
@@ -68,20 +68,21 @@ export function isSendableWish(raw: string): boolean {
 
 export interface WishBookOptions {
   db: Db
-  sessionId: number
+  /** Which session's book this is. Reads `null` while the station is off air. */
+  session: SessionRef
   limit?: number
   now?: () => number
 }
 
 export class WishBook {
   readonly #db: Db
-  readonly #sessionId: number
+  readonly #session: SessionRef
   readonly #limit: number
   readonly #now: () => number
 
-  constructor({ db, sessionId, limit = DEFAULT_WISH_LIMIT, now = Date.now }: WishBookOptions) {
+  constructor({ db, session, limit = DEFAULT_WISH_LIMIT, now = Date.now }: WishBookOptions) {
     this.#db = db
-    this.#sessionId = sessionId
+    this.#session = session
     this.#limit = limit
     this.#now = now
   }
@@ -95,8 +96,14 @@ export class WishBook {
    * put someone else's name to a request the admin is about to read out.
    */
   make(nickname: string, text: string): Wish {
+    const sessionId = this.#session.current
+    if (sessionId === null) {
+      // Refused at the socket before it gets here — see `realtime.ts`. A wish
+      // written to no session would never appear in the book the admin reads.
+      throw new Error('nothing can be wished for off air — there is no session to ask in')
+    }
     const row = {
-      session_id: this.#sessionId,
+      session_id: sessionId,
       nick: nickname,
       text: normalizeWishText(text),
       created_at: this.#now(),
@@ -124,17 +131,23 @@ export class WishBook {
    * than the first, then reversed for display.
    */
   list(limit = this.#limit): Wish[] {
+    // Off air the book is empty rather than last night's — the same rule the
+    // chat and the history follow, for the same reason.
+    const sessionId = this.#session.current
+    if (sessionId === null) return []
     const rows = this.#db
       .prepare('SELECT * FROM wishes WHERE session_id = ? ORDER BY id DESC LIMIT ?')
-      .all(this.#sessionId, limit) as WishRow[]
+      .all(sessionId, limit) as WishRow[]
     return rows.reverse().map(toWish)
   }
 
   /** One wish of this session's, or null when there is no such wish. */
   find(id: number): Wish | null {
+    const sessionId = this.#session.current
+    if (sessionId === null) return null
     const row = this.#db
       .prepare('SELECT * FROM wishes WHERE id = ? AND session_id = ?')
-      .get(id, this.#sessionId) as WishRow | undefined
+      .get(id, sessionId) as WishRow | undefined
     return row ? toWish(row) : null
   }
 
@@ -147,17 +160,21 @@ export class WishBook {
    * the end of somebody's request.
    */
   setStatus(id: number, status: WishStatus): Wish | null {
+    const sessionId = this.#session.current
+    if (sessionId === null) return null
     const changed = this.#db
       .prepare('UPDATE wishes SET status = ? WHERE id = ? AND session_id = ?')
-      .run(status, id, this.#sessionId)
+      .run(status, id, sessionId)
     return changed.changes === 0 ? null : this.find(id)
   }
 
   /** How many are still waiting on somebody. For the heading, and for tests. */
   outstanding(): number {
+    const sessionId = this.#session.current
+    if (sessionId === null) return 0
     const row = this.#db
       .prepare(`SELECT COUNT(*) AS n FROM wishes WHERE session_id = ? AND status = 'new'`)
-      .get(this.#sessionId) as { n: number }
+      .get(sessionId) as { n: number }
     return row.n
   }
 }

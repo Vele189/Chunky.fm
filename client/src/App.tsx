@@ -1,8 +1,8 @@
 import {
   type CSSProperties,
   type FormEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
-  type RefObject,
   useCallback,
   useEffect,
   useMemo,
@@ -10,17 +10,27 @@ import {
   useState,
 } from 'react'
 import { AdminPanel } from './AdminPanel.js'
+import { Lyrics } from './Lyrics.js'
 import { Sidebar } from './Sidebar.js'
 import { Topbar } from './Topbar.js'
-import { Deck, Mute, OnAir, Waveform, WishShortcut } from './Turntable.js'
+import { Deck, Mute, OnAir, Waveform } from './Turntable.js'
 import { type AdminSession, useAdminSession } from './hooks/useAdminSession.js'
+import { useNarrow } from './hooks/useNarrow.js'
 import { type Access, useStationAccess } from './hooks/useStationAccess.js'
 import { usePresence } from './hooks/usePresence.js'
 import { useServerClock } from './hooks/useServerClock.js'
+import { type SyncTrails, useSyncTrails } from './hooks/useSyncTrails.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { seekTo } from './lib/audio-element.js'
-import { type Availability, canTuneIn, outage, staleNotice } from './lib/availability.js'
+import {
+  type Availability,
+  type Standing,
+  canTuneIn,
+  outage,
+  staleNotice,
+  standing,
+} from './lib/availability.js'
 import {
   chatRefusal,
   draftAfterRefusal,
@@ -37,27 +47,19 @@ import {
   NICKNAME_MAX_LENGTH,
   saveNickname,
 } from './lib/nickname.js'
-import { expectedPositionSeconds, formatClock } from './lib/position.js'
+import { expectedPositionSeconds } from './lib/position.js'
 import {
   artworkUrl,
   type ChatMessage,
   type Listener,
   type Play,
-  type QueueEntry,
   type ServerMessage,
   type SocketRefusal,
   type Wish,
   refusalAbout,
 } from './lib/protocol.js'
 import { DEFAULT_ROUTE, type Route, isConsole, needsJoin, routeFrom } from './lib/routes.js'
-import { matchesFilter } from './lib/search.js'
-import {
-  type SkipTally,
-  skipTallyLabel,
-  tallyFor,
-  voteButtonLabel,
-  voteRefusal,
-} from './lib/skips.js'
+import { TRAIL_WINDOW_MS, chart, nearest } from './lib/trail.js'
 import type { StationConnection } from './lib/station.js'
 import {
   isSendableWish,
@@ -82,7 +84,7 @@ const EARLIER_SHOWN = 4
 export function App() {
   const route = useRoute()
   const session = useAdminSession()
-  const access = useStationAccess()
+  const { access, submit, error: codeError, submitting } = useStationAccess()
 
   const admitted =
     // The console is never behind the invite gate. It is how whoever runs the
@@ -101,7 +103,11 @@ export function App() {
     // the probe keeps asking, so a private station still gets to say so.
     access === 'unreachable'
 
-  if (!admitted) return <Doorway access={access} />
+  if (!admitted) {
+    return (
+      <Doorway access={access} onSubmit={submit} error={codeError} submitting={submitting} />
+    )
+  }
   return <Station route={route} session={session} />
 }
 
@@ -114,7 +120,19 @@ export function App() {
  * know there is nothing wrong and nothing to wait for — the only thing that
  * helps is a link from whoever runs it.
  */
-function Doorway({ access }: { access: Access }) {
+function Doorway({
+  access,
+  onSubmit,
+  error,
+  submitting,
+}: {
+  access: Access
+  onSubmit(code: string): Promise<void>
+  error: string | null
+  submitting: boolean
+}) {
+  const [code, setCode] = useState('')
+
   return (
     <div className="doorway">
       <h1 className="wordmark">
@@ -125,10 +143,46 @@ function Doorway({ access }: { access: Access }) {
           <div className="outage" data-testid="not-invited" role="status">
             <p className="outage__headline">This station is private.</p>
             <p className="outage__detail">
-              You need a link from whoever runs it. If you had one that worked before, it has been
-              replaced — ask for the new one.
+              If somebody gave you the door code, put it in. Otherwise you need a link from whoever
+              runs it — and if you had one that worked before, it has been replaced.
             </p>
           </div>
+
+          {/* The door, for a code somebody was told rather than sent.
+
+              It goes through the same endpoint the `?k=` on a link does, because
+              it is the same secret: a code said over the phone and a code pasted
+              into an address bar differ only in how they arrived. Typing it has
+              one advantage over the link, which is that it never enters the
+              address bar — so there is nothing to strip out of the history
+              afterwards. */}
+          <form
+            className="gate__form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void onSubmit(code)
+            }}
+          >
+            <input
+              type="password"
+              className="gate__input"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              placeholder="door code"
+              aria-label="Station door code"
+              data-testid="door-code"
+              autoComplete="current-password"
+              autoFocus
+            />
+            <button type="submit" className="button" disabled={submitting || !code.trim()}>
+              {submitting ? 'Knocking…' : 'Come in'}
+            </button>
+          </form>
+          {error && (
+            <p className="console__error" data-testid="door-error" role="alert">
+              {error}
+            </p>
+          )}
           {/* The one screen where somebody is standing outside wondering what
               they have been sent, so it is the one screen that says. Outside
               the status region rather than in it: what is being reported is
@@ -158,6 +212,8 @@ function Doorway({ access }: { access: Access }) {
 
 function Station({ route: requested, session }: { route: Route; session: AdminSession }) {
   const audioRef = useRef<HTMLAudioElement>(null)
+  // A phone, where the landing view is the deck alone — see useNarrow.
+  const narrow = useNarrow()
   const [joined, setJoined] = useState(false)
   // Read once, at mount: what a previous visit left behind is the starting
   // point for the field, not a decision to join. The gesture still has to
@@ -172,17 +228,18 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     status,
     reach,
     state,
+    air,
     queue,
     listeners,
     messages,
     myWishes,
     history,
-    skips,
     socketError,
     clearSocketError,
     connection,
     applyState,
     applyQueue,
+    applyAir,
   } = useStation(undefined, (message) => routeToClock.current(message))
   const admin = isConsole(requested)
   const clock = useServerClock(connection, { connected: status === 'connected' })
@@ -204,6 +261,14 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     [],
   )
 
+  // Remembered here rather than in the sync view, so arriving at `#sync`
+  // shows the last few minutes instead of a line that starts at your click.
+  const trails = useSyncTrails({
+    offsetMs: clock.synced ? clock.offsetMs : null,
+    rttMs: clock.rttMs,
+    driftMs: drift ? drift.diff * 1000 : null,
+  })
+
   useSyncedAudio({
     audioRef,
     state,
@@ -212,15 +277,6 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     synced: clock.synced,
     onCorrection,
   })
-
-  const [position, setPosition] = useState(0)
-  useEffect(() => {
-    if (!joined) return
-    const tick = () => setPosition(audioRef.current?.currentTime ?? 0)
-    tick()
-    const timer = window.setInterval(tick, 500)
-    return () => window.clearInterval(timer)
-  }, [joined])
 
   // Only this listener's own ears — muting is not leaving, so the socket, the
   // roster and the clock all carry on exactly as they were.
@@ -231,18 +287,6 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     audio.muted = !audio.muted
     setMuted(audio.muted)
   }
-
-  // What the top bar's field narrows — see lib/search.ts. Every list on the
-  // view you are looking at, and nothing you cannot see: the field is not
-  // rendered at all on the one view that has no list on it.
-  const [filter, setFilter] = useState('')
-
-  // Where the heart beside the title sends you.
-  const wishInput = useRef<HTMLInputElement>(null)
-  const askForSomething = useCallback(() => {
-    document.getElementById('wishes')?.scrollIntoView({ block: 'nearest' })
-    wishInput.current?.focus()
-  }, [])
 
   function joinStation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -278,6 +322,16 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
   // never got one, or the outage arrived before the first frame did. There is
   // no stale truth to keep showing, so the outage screen takes the whole panel.
   const stranded = reach !== 'live' && (!clock.synced || state === null)
+  /**
+   * The one thing the page says about the station, connectivity and broadcast
+   * folded together — see `standing`. Everything below reads this rather than
+   * `reach`, so "we cannot find it" and "nobody is on the decks tonight" stay
+   * different sentences instead of both coming out as silence.
+   */
+  const here: Standing = standing(reach, air?.live ?? null)
+  // Off air is not an outage — nothing is broken — but it is the same screen:
+  // no music, and nothing on the page worth presenting as current.
+  const closed = here === 'off-air'
   // The record turns for exactly one reason: audio is coming out of it.
   const onAir = Boolean(joined && !stranded && !tuning && track && !paused)
 
@@ -294,14 +348,11 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
       live={status === 'connected'}
       refusal={refusalAbout(socketError, 'wish')}
       clearRefusal={clearSocketError}
-      inputRef={wishInput}
-      filter={filter}
     />
   )
   const chat = (
     <Chat
       messages={messages}
-      filter={filter}
       connection={connection}
       live={status === 'connected'}
       refusal={refusalAbout(socketError, 'say')}
@@ -314,6 +365,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
       rttMs={clock.rttMs}
       diff={drift?.diff ?? null}
       correction={drift?.correction ?? null}
+      trails={trails}
     />
   )
 
@@ -327,16 +379,10 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
 
       <div className="station__main">
         <Topbar
-          reach={reach}
+          reach={here}
           listeners={listeners?.length ?? null}
           admin={admin}
           showConsole={session.status === 'signed-in'}
-          filter={filter}
-          onFilterChange={setFilter}
-          // The console always has a library to narrow; a listener has nothing
-          // at all until they are in the room, and `sync` has no list on it.
-          searchable={admin || (joined && route !== 'sync')}
-          searchHint={searchHint(route, admin)}
         />
 
         {/* Above everything it is about. What is below stopped being live at the
@@ -344,7 +390,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
             kept presenting it as current would be the broken UI this replaces.
             The console says the same thing in its own words, so this is only
             for the listener page. */}
-        {!admin && joined && !stranded && <StaleNotice state={reach} />}
+        {!admin && joined && !stranded && <StaleNotice state={here} />}
 
         {/* The two sides of the station, and never both at once: the console
             takes the whole page, because whoever is running the decks is
@@ -352,18 +398,18 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
         {admin ? (
           <AdminPanel
             state={state}
+            air={air}
             queue={queue}
-            skips={tallyFor(skips, track?.id ?? null)}
             messages={messages}
-            filter={filter}
             serverNow={clock.serverNow}
             session={session}
             status={status}
             applyState={applyState}
             applyQueue={applyQueue}
+            applyAir={applyAir}
           />
         ) : !joined ? (
-          canTuneIn(reach) ? (
+          canTuneIn(here) ? (
             <div className="station__columns">
               <section className="column column--stage">
                 <Deck artwork={null} spinning={false} />
@@ -399,14 +445,30 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
               </section>
             </div>
           ) : (
-            <Outage state={reach} />
+            <Outage state={here} />
           )
-        ) : stranded ? (
-          <Outage state={reach} />
+        ) : stranded || closed ? (
+          <Outage state={here} />
         ) : route === 'on-air' ? (
-          // The design's listener page, whole: the deck and what it is playing
-          // on the left, what is coming and what the room is saying on the
-          // right. Every other view below is one of these given the screen.
+          // The listener page, whole: the deck and what it is playing on the
+          // left, the words to it on the right. Every other view below is one
+          // of the rail's destinations given the screen.
+          //
+          // On a phone it is only the first half. Stacked into one column the
+          // whole thing ran to about six screens of scrolling, and the record —
+          // the one thing on the page you came for — spent five of them off the
+          // top. So everything else lives at the rail's own destinations:
+          // `#lyrics`, `#history`, `#chat`, `#wishes`, `#sync`. Nothing is
+          // hidden, and nothing is duplicated; the deck simply stops being a
+          // lid on a pile.
+          //
+          // What is *coming* is deliberately not on this side at all any more:
+          // the queue is the admin's worksheet, and a listener page that
+          // printed it would spend its space answering a question the room
+          // did not ask. What was on is still at `#history`.
+          //
+          // The wishes and the clock are gone from here at every width — see
+          // the note further down.
           <div className="station__columns">
             <section className="column column--stage">
               <Deck artwork={artwork} spinning={onAir} />
@@ -419,37 +481,21 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                 <div className="stage">
                   <OnAir live={onAir} idleLabel={paused ? 'PAUSED' : 'OFF AIR'} />
 
+                  {/* No clock under the title. A listener is not seeking and
+                      cannot, so "1:46 / 4:00" was answering a question nobody
+                      on this side of the station gets to ask — and the badge
+                      above already says the thing that matters, which is that
+                      this is live. The numbers are still exact and still read:
+                      they are what the audio is aligned against, and what the
+                      sync view prints. */}
                   <div className="stage__head">
-                    <div>
-                      <h2 className="now-playing__title">{track.title}</h2>
-                      <p className="now-playing__artist">{track.artist ?? 'Unknown artist'}</p>
-                    </div>
-                    <WishShortcut onPress={askForSomething} />
+                    <h2 className="now-playing__title">{track.title}</h2>
+                    <p className="now-playing__artist">{track.artist ?? 'Unknown artist'}</p>
                   </div>
-
-                  <p className="now-playing__time">
-                    {formatClock(position)} / {formatClock(track.durationMs / 1000)}
-                    {paused && <span className="now-playing__paused"> — paused</span>}
-                  </p>
 
                   <Waveform live={onAir} />
 
                   <Mute muted={muted} onToggle={toggleMute} enabled={Boolean(track)} />
-
-                  {/* Under the track it is about. Only listeners ever see it:
-                      the console has a Play next button, and voting for
-                      something you can simply do is theatre. The tally still
-                      reaches the console — see AdminPanel. */}
-                  <SkipVote
-                    tally={tallyFor(skips, track.id)}
-                    listeners={listeners?.length ?? 0}
-                    connection={connection}
-                    live={status === 'connected'}
-                    refusal={refusalAbout(socketError, 'vote')}
-                    clearRefusal={clearSocketError}
-                  />
-
-                  {readout}
                 </div>
               ) : (
                 // The station is there and answering; it just isn't playing
@@ -464,18 +510,34 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                 </div>
               )}
 
-              {wishes}
-              <Listeners listeners={listeners} />
+              {/* No wishes here, and no clock, at any width.
+
+                  Both have a mark on the rail and a screen of their own, and
+                  both are things you go to rather than things the deck should
+                  be carrying. Asking for something wants the composer at full
+                  width with what you have already asked for listed under it,
+                  not a footnote below the record. The clock numbers want the
+                  glossary beside them that says what each one means, which is
+                  the only time anybody reads them — a strip of four figures
+                  under the mute button is a readout you glance at, worry
+                  about, and cannot act on. Both are at `#wishes` and `#sync`.
+
+                  Who else is here stays: that is not somewhere you go, it is
+                  something about the room you are already in. */}
+              {!narrow && <Listeners listeners={listeners} />}
             </section>
 
-            <section className="column column--aside">
-              <UpNext queue={queue} filter={filter} />
-              {/* Directly under what's coming, because it is the same question
-                  pointed the other way: what is about to be on, and what
-                  already was. */}
-              <Earlier plays={history} currentTrackId={track?.id ?? null} filter={filter} />
-              {chat}
-            </section>
+            {!narrow && (
+              <section className="column column--aside">
+                {/* The whole column, and nothing else on it. The queue, the
+                    evening and the room used to stack here; they all still
+                    exist, one rail mark away, where each gets a full screen
+                    instead of a third of a column. What sits beside the deck
+                    now is the one thing that belongs to *this* moment of the
+                    song and no other — the words. */}
+                <Lyrics state={state} serverNow={clock.serverNow} />
+              </section>
+            )}
           </div>
         ) : (
           // One thing, with the whole screen. Nothing here is new data — it is
@@ -484,17 +546,22 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
           // honestly offer on a station this size.
           <div className={`view view--${route}`}>
             {route === 'sync' && <SyncView readout={readout} synced={clock.synced} reach={reach} />}
-            {route === 'queue' && <UpNext queue={queue} filter={filter} standalone />}
-            {route === 'chat' && chat}
+            {/* Who is in the room, above what the room is saying. The roster is
+                the one panel on the landing view with no mark of its own, so
+                on a phone — where the landing view no longer carries it — this
+                is where it goes. It belongs here at every width: "the room" is
+                the people as much as the conversation. */}
+            {route === 'chat' && (
+              <>
+                <Listeners listeners={listeners} />
+                {chat}
+              </>
+            )}
             {route === 'wishes' && wishes}
             {route === 'history' && (
-              <Earlier
-                plays={history}
-                currentTrackId={track?.id ?? null}
-                filter={filter}
-                standalone
-              />
+              <Earlier plays={history} currentTrackId={track?.id ?? null} standalone />
             )}
+            {route === 'lyrics' && <Lyrics state={state} serverNow={clock.serverNow} />}
           </div>
         )}
       </div>
@@ -518,7 +585,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
  * button could do is exactly what is happening anyway, while implying the page
  * had given up and was waiting to be told to try again.
  */
-function Outage({ state }: { state: Availability }) {
+function Outage({ state }: { state: Standing }) {
   const notice = outage(state)
   if (!notice) return null
 
@@ -539,7 +606,7 @@ function Outage({ state }: { state: Availability }) {
  * presenting a frozen roster and a dead tally as live, and this line is the
  * difference between the two.
  */
-function StaleNotice({ state }: { state: Availability }) {
+function StaleNotice({ state }: { state: Standing }) {
   const notice = staleNotice(state)
   if (!notice) return null
 
@@ -547,62 +614,6 @@ function StaleNotice({ state }: { state: Availability }) {
     <p className="stale" data-testid="stale-notice" data-reach={state} role="status">
       {notice}
     </p>
-  )
-}
-
-/**
- * What's coming up, for listeners.
- *
- * The queue reaches every client, not just the admin — a station that has
- * decided what comes next may as well say so. Read-only: this is the same frame
- * the panel reorders, seen from the other side.
- */
-function UpNext({
-  queue,
-  filter,
-  standalone,
-}: {
-  queue: QueueEntry[] | null
-  filter: string
-  /**
-   * True when this panel is the whole page. An empty queue is worth no space at
-   * all in a column beside the deck, but on its own view a blank screen is a
-   * dead end — so there it says that nothing is queued rather than nothing.
-   */
-  standalone?: boolean
-}) {
-  const entries = queue ?? []
-  if (entries.length === 0 && !standalone) return null
-  const shown = entries.filter((entry) =>
-    matchesFilter(filter, entry.track.title, entry.track.artist),
-  )
-
-  return (
-    <section className="panel" id="up-next" data-testid="up-next">
-      <div className="panel__head">
-        <h2 className="panel__title">Up next</h2>
-        <p className="panel__aside">{countLabel(shown.length, entries.length, 'queued')}</p>
-      </div>
-      {entries.length === 0 ? (
-        <p className="panel__empty">Nothing is queued. Whatever is on now plays out on its own.</p>
-      ) : shown.length === 0 ? (
-        <p className="panel__empty">Nothing queued matches “{filter.trim()}”.</p>
-      ) : (
-        <ol className="rows">
-          {shown.map((entry, index) => (
-            <li className="row" key={entry.id} data-entry={entry.id}>
-              <span className="row__index">{trackNumber(index)}</span>
-              <span className="row__body">
-                <span className="row__title">{entry.track.title}</span>
-                <span className="row__sub">
-                  {entry.track.artist ?? 'Unknown artist'}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
   )
 }
 
@@ -615,20 +626,22 @@ function UpNext({
  * newest row whatever is on right now — already shown in full beside this list —
  * so `playedEarlier` drops it and this list is only what was missed.
  *
- * Written down rather than held on the socket, so unlike the roster and the skip
- * tally it survives a reload and covers an outage: whatever went on while a
- * listener was reconnecting arrives in the replay, merged by id.
+ * Written down rather than held on the socket, so unlike the roster it survives
+ * a reload and covers an outage: whatever went on while a listener was
+ * reconnecting arrives in the replay, merged by id.
  */
 function Earlier({
   plays,
   currentTrackId,
-  filter,
   standalone,
 }: {
   plays: Play[]
   currentTrackId: number | null
-  filter: string
-  /** True when this panel is the whole page — see the same prop on UpNext. */
+  /**
+   * True when this panel is the whole page. An empty history is worth no space
+   * beside the deck, but on its own view a blank screen is a dead end — so
+   * there it says the evening has not started rather than nothing.
+   */
   standalone?: boolean
 }) {
   // Four rows, as the design draws it, and the rest a press away. On its own
@@ -638,21 +651,17 @@ function Earlier({
   const earlier = playedEarlier(plays, currentTrackId)
   if (earlier.length === 0 && !standalone) return null
 
-  const matching = earlier.filter((play) =>
-    matchesFilter(filter, play.track.title, play.track.artist),
-  )
-  const capped = !standalone && !all && filter.trim().length === 0
-  const shown = capped ? matching.slice(0, EARLIER_SHOWN) : matching
+  const capped = !standalone && !all
+  const shown = capped ? earlier.slice(0, EARLIER_SHOWN) : earlier
 
   return (
     <section className="panel" id="earlier" data-testid="earlier">
       <div className="panel__head">
         <h2 className="panel__title">Recently Played</h2>
         {standalone ? (
-          <p className="panel__aside">{countLabel(matching.length, earlier.length, 'played')}</p>
+          <p className="panel__aside">{earlier.length} played</p>
         ) : (
-          matching.length > EARLIER_SHOWN &&
-          filter.trim().length === 0 && (
+          earlier.length > EARLIER_SHOWN && (
             <button type="button" className="panel__more" onClick={() => setAll(!all)}>
               {all ? 'Show less' : 'View all'}
             </button>
@@ -663,8 +672,6 @@ function Earlier({
         <p className="panel__empty">
           Nothing has been on yet this session. What plays from here shows up in this list.
         </p>
-      ) : shown.length === 0 ? (
-        <p className="panel__empty">Nothing played earlier matches “{filter.trim()}”.</p>
       ) : (
         <ol className="rows">
           {shown.map((play, index) => (
@@ -719,70 +726,6 @@ function Listeners({ listeners }: { listeners: Listener[] | null }) {
   )
 }
 
-interface SkipVoteProps {
-  /** As the station last described it, and only ever about the track that is on. */
-  tally: SkipTally
-  /** How many are in the room — the tally is a fraction of this. */
-  listeners: number
-  connection: StationConnection | null
-  live: boolean
-  /** The last refusal that was about a vote, if any. */
-  refusal: SocketRefusal | null
-  clearRefusal(): void
-}
-
-/**
- * Voting on what is on.
- *
- * PLAN.md's last social piece: the room can say it would rather hear something
- * else, everyone can see how many agree, and the count starts again with every
- * track. What it deliberately is *not* is a control — no threshold here advances
- * the station, because the socket carries nothing that drives the decks and a
- * quorum that did would be exactly that, wearing a vote as a disguise. The tally
- * is the room telling whoever runs the decks something; what happens next is a
- * person's decision.
- *
- * Nothing is rendered optimistically, for the reason the chat renders nothing
- * optimistically: the count and the state of this listener's own vote both come
- * back from the station, so what is on screen is what the station holds — even
- * across a reconnect, which drops the vote this page just cast.
- */
-function SkipVote({ tally, listeners, connection, live, refusal, clearRefusal }: SkipVoteProps) {
-  function vote() {
-    if (!connection || !live) return
-    // Only this control's own notice — see the same line under the wishes.
-    if (refusal) clearRefusal()
-    // Where the listener now stands, not "toggle": a second press of a button
-    // that has not caught up yet leaves one vote rather than cancelling itself.
-    connection.send({ type: 'vote_skip', voted: !tally.voted })
-  }
-
-  const refusalNotice = refusal ? voteRefusal(refusal.error.code) : null
-
-  return (
-    <div className="skips" id="skips" data-testid="skips">
-      <p className="skips__tally" data-testid="skips-tally" data-votes={tally.votes}>
-        {skipTallyLabel(tally.votes, listeners)}
-      </p>
-      <button
-        type="button"
-        className={`skips__vote${tally.voted ? ' skips__vote--in' : ''}`}
-        data-testid="skips-vote"
-        aria-pressed={tally.voted}
-        disabled={!live}
-        onClick={vote}
-      >
-        {voteButtonLabel(tally.voted)}
-      </button>
-      {refusalNotice && (
-        <p className="skips__refusal" role="status" data-testid="skips-refusal">
-          {refusalNotice}
-        </p>
-      )}
-    </div>
-  )
-}
-
 interface WishesProps {
   /** This listener's own — the only ones the station tells them about. */
   wishes: Wish[]
@@ -791,10 +734,6 @@ interface WishesProps {
   /** The last refusal that was about a wish, if any. */
   refusal: SocketRefusal | null
   clearRefusal(): void
-  /** So the heart beside the title can put the cursor in here. */
-  inputRef: RefObject<HTMLInputElement | null>
-  /** From the top bar. Narrows what is listed, never what can be sent. */
-  filter: string
 }
 
 /**
@@ -816,8 +755,6 @@ function Wishes({
   live,
   refusal,
   clearRefusal,
-  inputRef,
-  filter,
 }: WishesProps) {
   const [draft, setDraft] = useState('')
   // What went out and has not been answered, so a refusal can hand it back.
@@ -845,7 +782,6 @@ function Wishes({
   }
 
   const refusalNotice = refusal ? wishRefusal(refusal.error.code) : null
-  const shownWishes = wishes.filter((wish) => matchesFilter(filter, wish.text))
 
   return (
     <section className="panel panel--stage" id="wishes" data-testid="wishes">
@@ -857,11 +793,9 @@ function Wishes({
         <p className="panel__empty">
           Ask for anything. Whoever's on the decks reads these — no promises.
         </p>
-      ) : shownWishes.length === 0 ? (
-        <p className="panel__empty">None of your wishes match “{filter.trim()}”.</p>
       ) : (
         <ol className="wishes__list" data-testid="wishes-list">
-          {shownWishes.map((wish) => (
+          {wishes.map((wish) => (
             <li key={wish.id} className="wishes__line" data-wish={wish.id}>
               <span className="wishes__text">{wish.text}</span>
               {/* Only ever "asked" for now: nothing tells a listener their wish
@@ -885,7 +819,6 @@ function Wishes({
           id="wish-input"
           className="compose__input"
           data-testid="wish-input"
-          ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={live ? 'anything off Rumours…' : 'reconnecting…'}
@@ -903,8 +836,6 @@ function Wishes({
 
 interface ChatProps {
   messages: ChatMessage[]
-  /** From the top bar. Narrows what is listed, never what can be sent. */
-  filter: string
   connection: StationConnection | null
   /** False while reconnecting — a send would go on the floor unannounced. */
   live: boolean
@@ -923,7 +854,7 @@ interface ChatProps {
  * no local-only line that a refused message would leave sitting there looking
  * sent.
  */
-function Chat({ messages, filter, connection, live, refusal, clearRefusal }: ChatProps) {
+function Chat({ messages, connection, live, refusal, clearRefusal }: ChatProps) {
   const [draft, setDraft] = useState('')
   const list = useRef<HTMLOListElement>(null)
   // What went out and has not been answered, so a refusal can hand it back.
@@ -963,11 +894,6 @@ function Chat({ messages, filter, connection, live, refusal, clearRefusal }: Cha
   }
 
   const refusalNotice = refusal ? chatRefusal(refusal.error.code) : null
-  // Nickname as well as text: "what did ben say" is the question people
-  // actually have about a scrollback.
-  const shownMessages = messages.filter((message) =>
-    matchesFilter(filter, message.text, message.nickname),
-  )
 
   return (
     <section className="panel" id="chat" data-testid="chat">
@@ -975,17 +901,15 @@ function Chat({ messages, filter, connection, live, refusal, clearRefusal }: Cha
         <h2 className="panel__title">Live Chat</h2>
         <p className="panel__aside">
           <span className="panel__dot" aria-hidden="true" />
-          {countLabel(shownMessages.length, messages.length, 'messages')}
+          {messages.length} messages
         </p>
       </div>
       <div className="chat__panel">
         {messages.length === 0 ? (
           <p className="panel__empty">Nobody has said anything yet.</p>
-        ) : shownMessages.length === 0 ? (
-          <p className="panel__empty">Nothing said matches “{filter.trim()}”.</p>
         ) : (
           <ol className="chat__list" data-testid="chat-list" ref={list}>
-            {shownMessages.map((message) => (
+            {messages.map((message) => (
               <li key={message.id} className="chat__line" data-message={message.id}>
                 <Avatar nickname={message.nickname} />
                 <span className="chat__body">
@@ -1065,37 +989,9 @@ function hueFor(nickname: string): number {
   return total
 }
 
-/**
- * What the top bar's field promises on the view you are looking at.
- *
- * Named for what it will actually narrow, rather than a single vague "Search"
- * everywhere — the field reaches only the lists on screen, and saying so is the
- * difference between a control and a guess.
- */
-function searchHint(route: Route, admin: boolean): string {
-  if (admin) return 'Search the library'
-  switch (route) {
-    case 'queue':
-      return "Search what's coming"
-    case 'history':
-      return "Search what's been on"
-    case 'chat':
-      return 'Search the conversation'
-    case 'wishes':
-      return 'Search your wishes'
-    default:
-      return 'Search tracks and artists'
-  }
-}
-
 /** "01", "02" — the design's numbering, which is a position and not an id. */
 function trackNumber(index: number): string {
   return String(index + 1).padStart(2, '0')
-}
-
-/** How a filtered list reports itself: "4 queued", or "2 of 9 queued". */
-function countLabel(shown: number, total: number, noun: string): string {
-  return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`
 }
 
 /**
@@ -1158,37 +1054,6 @@ function SyncView({ readout, synced, reach }: SyncViewProps) {
 
       {readout}
 
-      <dl className="glossary">
-        <div>
-          <dt>clock offset</dt>
-          <dd>
-            How far this browser's clock is from the station's. Any size is fine — it is measured,
-            not assumed, and every position on the page is worked out through it.
-          </dd>
-        </div>
-        <div>
-          <dt>rtt</dt>
-          <dd>
-            How long a round trip to the station takes. It sets how precisely the offset can be
-            known, so a big number here is the one worth caring about.
-          </dd>
-        </div>
-        <div>
-          <dt>drift</dt>
-          <dd>
-            How far this player has wandered from where the station says it should be. Small
-            numbers are normal; they are what the correction below is answering.
-          </dd>
-        </div>
-        <div>
-          <dt>correcting</dt>
-          <dd>
-            What is being done about the drift right now — a rate nudge of a fraction of a percent,
-            a hard seek when it has gone too far to nudge, or nothing at all.
-          </dd>
-        </div>
-      </dl>
-
       {reach !== 'live' && (
         <p className="panel__empty">
           These stopped updating when the station went away. They will pick up again by themselves
@@ -1204,34 +1069,218 @@ interface ClockReadoutProps {
   rttMs: number | null
   diff: number | null
   correction: Correction | null
+  trails: SyncTrails
 }
 
-/** Visible sync diagnostics — the whole project lives or dies on these numbers. */
-function ClockReadout({ offsetMs, rttMs, diff, correction }: ClockReadoutProps) {
+/** How tall the chart is. One frame, so the whole height belongs to it. */
+const CHART_HEIGHT = 280
+
+/**
+ * The three lines, in the order they are drawn and listed. The colors are the
+ * one place this page steps outside the monochrome design: three lines in one
+ * frame need identities, and identity is what categorical color is for. The
+ * trio was validated (CVD ΔE ≥ 8, ≥3:1 on this background) — see styles.css.
+ */
+const SYNC_SERIES = [
+  { key: 'offset', label: 'clock offset', testId: 'sync-offset' },
+  { key: 'rtt', label: 'rtt', testId: 'sync-rtt' },
+  { key: 'drift', label: 'drift', testId: 'sync-drift' },
+] as const
+
+/** How far apart two line-end labels have to sit before they collide. */
+const TAG_GAP = 15
+
+/**
+ * Visible sync diagnostics — the whole project lives or dies on these numbers.
+ *
+ * One graph, three lines, one scale. Everything here is milliseconds, and the
+ * point of drawing the three together is that their sizes compare: the drift
+ * should be small against the offset, the rtt should be small against both,
+ * and a line that suddenly stands taller than its neighbours is the story.
+ * Each line is named twice — at its right-hand end, and in the legend under
+ * the frame, where the live numbers are. No cards and no captions: the graph
+ * is the reading.
+ *
+ * Pointing anywhere in the frame holds that moment: a crosshair, a dot per
+ * line, and the legend swaps to what each metric was then.
+ */
+function ClockReadout({ offsetMs, rttMs, diff, correction, trails }: ClockReadoutProps) {
+  const frameRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  const [heldAt, setHeldAt] = useState<number | null>(null)
+
+  // Real pixels, measured — so a 2px line is 2px and the hover dots are round.
+  useEffect(() => {
+    const frame = frameRef.current
+    if (!frame) return
+    const measure = () => setWidth(frame.clientWidth)
+    measure()
+    const watcher = new ResizeObserver(measure)
+    watcher.observe(frame)
+    return () => watcher.disconnect()
+  }, [])
+
+  const now = Date.now()
+  const inMs = (value: number) => `${Math.round(value)}ms`
+  const trailOf = { offset: trails.offset, rtt: trails.rtt, drift: trails.drift }
+  const live = {
+    offset: inMs(offsetMs),
+    rtt: rttMs === null ? '—' : inMs(rttMs),
+    drift: diff === null ? '—' : inMs(diff * 1000),
+  }
+
+  const geometry = chart([trails.offset, trails.rtt, trails.drift], {
+    width,
+    height: CHART_HEIGHT,
+    now,
+    minSpanMs: 30,
+  })
+  const drawn = geometry.series.some((line) => line.points !== null)
+
+  // Each line's name at its right-hand end, nudged apart when two lines end
+  // at the same height — a label readable only by tracing the line back is
+  // not a label.
+  const tags = SYNC_SERIES.map((series, index) => ({
+    series,
+    line: geometry.series[index]!,
+    y: geometry.series[index]!.endY ?? 0,
+  }))
+    .filter((tag) => tag.line.points !== null)
+    .sort((a, b) => a.y - b.y)
+  for (let i = 0; i < tags.length; i++) {
+    const above = i === 0 ? 10 : tags[i - 1]!.y + TAG_GAP
+    tags[i]!.y = Math.min(Math.max(tags[i]!.y, above), CHART_HEIGHT - 6 - (tags.length - 1 - i) * TAG_GAP)
+  }
+
+  const held = heldAt !== null
+  const heldSample = (key: (typeof SYNC_SERIES)[number]['key']) =>
+    heldAt === null ? null : nearest(trailOf[key], heldAt)
+
+  function hold(event: ReactPointerEvent<SVGSVGElement>) {
+    const box = event.currentTarget.getBoundingClientRect()
+    if (box.width === 0) return
+    const fraction = Math.min(Math.max((event.clientX - box.left) / box.width, 0), 1)
+    setHeldAt(now - (1 - fraction) * TRAIL_WINDOW_MS)
+  }
+
   return (
-    <dl className="sync" data-testid="sync-readout">
-      <div>
-        <dt>clock offset</dt>
-        <dd data-testid="sync-offset">{Math.round(offsetMs)}ms</dd>
+    <div className="sync" data-testid="sync-readout">
+      <div className="sync__frame" ref={frameRef}>
+        {drawn ? (
+          <svg
+            className="sync__plot"
+            width={width}
+            height={CHART_HEIGHT}
+            onPointerMove={hold}
+            onPointerLeave={() => setHeldAt(null)}
+            role="img"
+            aria-label="Clock offset, rtt and drift over the last three minutes"
+          >
+            {geometry.zeroY !== null && (
+              <>
+                <line
+                  className="sync__zero"
+                  x1={0}
+                  x2={width}
+                  y1={geometry.zeroY}
+                  y2={geometry.zeroY}
+                />
+                <text className="sync__scale" x={4} y={geometry.zeroY - 5}>
+                  0
+                </text>
+              </>
+            )}
+            {/* The scale, quietly: what the top and bottom of the frame mean. */}
+            <text className="sync__scale" x={4} y={12}>
+              {inMs(geometry.max)}
+            </text>
+            <text className="sync__scale" x={4} y={CHART_HEIGHT - 5}>
+              {inMs(geometry.min)}
+            </text>
+
+            {heldAt !== null && (
+              <line
+                className="sync__cross"
+                x1={geometry.xAt(heldAt)}
+                x2={geometry.xAt(heldAt)}
+                y1={0}
+                y2={CHART_HEIGHT}
+              />
+            )}
+
+            {SYNC_SERIES.map((series, index) => {
+              const line = geometry.series[index]!
+              if (line.points === null) return null
+              const sample = heldSample(series.key)
+              const spot = sample !== null ? geometry.project(sample) : null
+              return (
+                <g key={series.key}>
+                  <polyline className={`sync__line sync__line--${series.key}`} points={line.points} />
+                  {spot !== null ? (
+                    <circle
+                      className={`sync__spot sync__spot--${series.key}`}
+                      cx={spot.x}
+                      cy={spot.y}
+                      r={3.5}
+                    />
+                  ) : (
+                    line.endX !== null && (
+                      <circle
+                        className={`sync__spot sync__spot--${series.key}`}
+                        cx={line.endX}
+                        cy={line.endY ?? 0}
+                        r={3}
+                      />
+                    )
+                  )}
+                </g>
+              )
+            })}
+
+            {tags.map((tag) => (
+              <text
+                key={tag.series.key}
+                className="sync__tag"
+                x={(tag.line.endX ?? width) - 8}
+                y={tag.y + 4}
+                textAnchor="end"
+              >
+                {tag.series.label}
+              </text>
+            ))}
+          </svg>
+        ) : (
+          <p className="sync__waiting">waiting for the station…</p>
+        )}
       </div>
-      <div>
-        <dt>rtt</dt>
-        <dd data-testid="sync-rtt">{rttMs === null ? '—' : `${Math.round(rttMs)}ms`}</dd>
+
+      <div className="sync__legend">
+        {SYNC_SERIES.map((series) => {
+          const sample = heldSample(series.key)
+          return (
+            <p className="sync__key" key={series.key}>
+              <span className={`sync__swatch sync__swatch--${series.key}`} aria-hidden="true" />
+              <span className="sync__name">{series.label}</span>
+              <span className="sync__reading" data-testid={series.testId}>
+                {sample !== null ? inMs(sample.value) : live[series.key]}
+              </span>
+            </p>
+          )
+        })}
+        <p className="sync__key">
+          <span className="sync__name">correcting</span>
+          <span className="sync__reading" data-testid="sync-correction">
+            {correction === null
+              ? '—'
+              : correction.kind === 'rate'
+                ? `${correction.playbackRate.toFixed(3)}×`
+                : correction.kind}
+          </span>
+        </p>
+        {held && heldAt !== null && (
+          <p className="sync__ago">{Math.max(0, Math.round((now - heldAt) / 1000))}s ago</p>
+        )}
       </div>
-      <div>
-        <dt>drift</dt>
-        <dd data-testid="sync-drift">{diff === null ? '—' : `${(diff * 1000).toFixed(0)}ms`}</dd>
-      </div>
-      <div>
-        <dt>correcting</dt>
-        <dd data-testid="sync-correction">
-          {correction === null
-            ? '—'
-            : correction.kind === 'rate'
-              ? `${correction.playbackRate.toFixed(3)}×`
-              : correction.kind}
-        </dd>
-      </div>
-    </dl>
+    </div>
   )
 }

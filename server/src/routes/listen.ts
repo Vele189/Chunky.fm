@@ -22,10 +22,12 @@ interface ListenDeps {
 /**
  * Looser than the admin sign-in throttle, and deliberately.
  *
- * A wrong key here is usually a stale link rather than somebody guessing —
- * a friend who kept the invite from before it was rotated, whose browser will
- * retry on its own. The key is long and random, so the rate is not what makes
- * it hard to find; this only stops a stranger hammering the endpoint.
+ * A wrong key here is usually a stale link or a typo rather than somebody
+ * guessing — a friend who kept the invite from before it was rotated, whose
+ * browser will retry on its own, or one typing the door code in by hand and
+ * missing. Ten in a minute is generous for both and still puts a ceiling on
+ * anyone working through the alphabet, which matters more now that the code can
+ * be short enough to say out loud.
  */
 const DEFAULT_REDEEM_BURST = 10
 const DEFAULT_REDEEM_REFILL_MS = 60_000
@@ -49,10 +51,15 @@ const REDEEM_SCHEMA = {
  * itself never sits in the page after that, and the link can be shared without
  * the receiving browser having to keep the secret anywhere script can read.
  *
- * On a station with no `STATION_KEY` set, every route here admits everyone.
- * That is the station PLAN.md describes — one permanent link, anyone who has it
- * can listen — and it stays the default so nothing already deployed changes
- * behaviour on upgrade.
+ * The key can arrive two ways, and they are the same key: out of the `?k=` on a
+ * link somebody was sent, or typed into the door on the refused screen. PLAN.md
+ * describes the first — "one permanent link" — and the second is what makes the
+ * station something you can tell a friend over the phone.
+ *
+ * Only a station opened deliberately (`STATION_OPEN=true`) admits everyone. An
+ * unset `STATION_KEY` no longer does: it falls back to the house key in
+ * `config.ts`, so a variable lost during a deploy leaves the door shut rather
+ * than open.
  */
 export function listenRoutes({
   config,

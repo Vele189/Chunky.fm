@@ -21,11 +21,16 @@ describe('routeFrom', () => {
 
   it('reads each view off the fragment', () => {
     expect(routeFrom(at('#sync'))).toBe('sync')
-    expect(routeFrom(at('#queue'))).toBe('queue')
     expect(routeFrom(at('#chat'))).toBe('chat')
+    expect(routeFrom(at('#lyrics'))).toBe('lyrics')
     expect(routeFrom(at('#wishes'))).toBe('wishes')
     expect(routeFrom(at('#history'))).toBe('history')
     expect(routeFrom(at('#admin'))).toBe('admin')
+  })
+
+  it('lands an old #queue bookmark on the deck rather than nowhere', () => {
+    // The listener queue view is gone — the queue is the admin's worksheet.
+    expect(routeFrom(at('#queue'))).toBe(DEFAULT_ROUTE)
   })
 
   it('honours /admin as a path, as it always has', () => {
@@ -58,7 +63,7 @@ describe('hashFor', () => {
   })
 
   it('round-trips every route', () => {
-    for (const route of ['sync', 'queue', 'chat', 'wishes', 'history', 'admin'] as const) {
+    for (const route of ['sync', 'lyrics', 'chat', 'wishes', 'history', 'admin'] as const) {
       expect(routeFrom(at(hashFor(route)))).toBe(route)
     }
   })
@@ -77,14 +82,14 @@ describe('stationUrl', () => {
   })
 
   it('never points at the page in front of the station', () => {
-    for (const route of ['on-air', 'sync', 'queue', 'chat', 'wishes', 'history', 'admin'] as const) {
+    for (const route of ['on-air', 'sync', 'lyrics', 'chat', 'wishes', 'history', 'admin'] as const) {
       expect(stationUrl(route)).not.toBe('/')
       expect(stationUrl(route).startsWith(STATION_PATH)).toBe(true)
     }
   })
 
   it('round-trips: what it builds is read back as the route it was built for', () => {
-    for (const route of ['sync', 'queue', 'chat', 'wishes', 'history', 'admin'] as const) {
+    for (const route of ['sync', 'lyrics', 'chat', 'wishes', 'history', 'admin'] as const) {
       const [pathname = '', hash = ''] = stationUrl(route).split(/(?=#)/)
       expect(routeFrom({ pathname, hash })).toBe(route)
     }
@@ -117,7 +122,7 @@ describe('needsJoin', () => {
   })
 
   it('is true for every view of what the station has said', () => {
-    for (const route of ['sync', 'queue', 'chat', 'wishes', 'history'] as const) {
+    for (const route of ['sync', 'lyrics', 'chat', 'wishes', 'history'] as const) {
       expect(needsJoin(route)).toBe(true)
     }
   })

@@ -1,16 +1,24 @@
 import multipart from '@fastify/multipart'
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
+import { OnAir } from './air.js'
 import { ChatLog } from './chat.js'
 import type { Config } from './config.js'
-import { type Db, closeSession, openSession } from './db.js'
+import type { Db } from './db.js'
 import { PlayLog } from './history.js'
 import { registerErrorHandlers } from './lib/errors.js'
+import { emptyLibrary } from './lib/library.js'
 import { ensureStorageDirs } from './lib/storage.js'
+import { LyricsService } from './lyrics.js'
+import { Mutes } from './mutes.js'
 import { PlaybackState } from './playback.js'
 import { type RealtimeHandle, attachRealtime } from './realtime.js'
 import { mayListen } from './lib/auth.js'
 import { adminRoutes } from './routes/admin.js'
+import { mutesRoutes } from './routes/mutes.js'
+import { sessionRoutes } from './routes/session.js'
+import { type ClientBundle, clientRoutes, doorwayHook, loadClientBundle } from './routes/client.js'
 import { listenRoutes } from './routes/listen.js'
+import { lyricsRoutes } from './routes/lyrics.js'
 import { mediaRoutes } from './routes/media.js'
 import { playbackRoutes } from './routes/playback.js'
 import { queueRoutes } from './routes/queue.js'
@@ -27,8 +35,10 @@ declare module 'fastify' {
     chat: ChatLog
     wishes: WishBook
     plays: PlayLog
-    /** The session everything this run writes down belongs to. */
-    sessionId: number
+    /** Whether the station is broadcasting, and the open session while it is. */
+    air: OnAir
+    mutes: Mutes
+    lyrics: LyricsService
   }
 }
 
@@ -43,16 +53,18 @@ export interface BuildAppOptions {
   closeGraceMs?: number
   chatHistoryLimit?: number
   playHistoryLimit?: number
+  /** Come up already on air. Tests that are about something else want this. */
+  live?: boolean
   chatBurst?: number
   chatRefillMs?: number
   joinBurst?: number
   joinRefillMs?: number
   wishBurst?: number
   wishRefillMs?: number
-  voteBurst?: number
-  voteRefillMs?: number
   signInBurst?: number
   signInRefillMs?: number
+  /** The seam tests mock LRCLIB through; production reaches the real archive. */
+  lyricsFetch?: typeof fetch
 }
 
 export async function buildApp({
@@ -65,16 +77,16 @@ export async function buildApp({
   closeGraceMs,
   chatHistoryLimit,
   playHistoryLimit,
+  live = false,
   chatBurst,
   chatRefillMs,
   joinBurst,
   joinRefillMs,
   wishBurst,
   wishRefillMs,
-  voteBurst,
-  voteRefillMs,
   signInBurst,
   signInRefillMs,
+  lyricsFetch,
 }: BuildAppOptions): Promise<FastifyInstance> {
   await ensureStorageDirs(config)
 
@@ -87,10 +99,23 @@ export async function buildApp({
     trustProxy: config.trustProxy,
   })
 
+  // Loaded before the error handlers because the app shell *is* the not-found
+  // handler when this process serves the client. Null under compose and in
+  // development, where nginx and Vite own the front door respectively.
+  const clientBundle: ClientBundle | null = config.clientDir
+    ? await loadClientBundle(config.clientDir)
+    : null
+
   // Before the routes: everything registered after this inherits the handlers,
   // so a schema rejection on /api/playback answers in the same shape the
   // handler's own refusals do.
-  registerErrorHandlers(app)
+  registerErrorHandlers(app, clientBundle)
+
+  // At the root, before routing, so it sees `/` and `/welcome` the way nginx
+  // sees them. Everything else it passes straight through.
+  if (clientBundle !== null) {
+    app.addHook('onRequest', doorwayHook(clientBundle))
+  }
 
   await app.register(multipart, {
     limits: {
@@ -104,37 +129,79 @@ export async function buildApp({
 
   const station = new Station({ playback, backstopIntervalMs })
 
-  // A run of the process is a session, and the chat belongs to it. When the
-  // admin can start and end sessions by hand, this is the line that changes.
-  const sessionId = openSession(db)
-  const chat = new ChatLog({ db, sessionId, historyLimit: chatHistoryLimit })
-  // Same session, same reason: a wish is about this time on air, and a station
-  // that came back up is not still being asked for what it missed.
-  const wishes = new WishBook({ db, sessionId })
-  // And the same session again: the history is what has been on *this* time on
-  // air, so a station that came back up starts its list rather than resuming
-  // one from before the restart.
-  // Stamped from the station clock rather than `Date.now`, so a play's time and
-  // the `startedAt` of the same track are the same instant expressed in the same
-  // timebase — everything time-shaped the server says reads from there.
+  // A session is a stretch of time the station is on air, opened and closed by
+  // whoever runs the decks — not a run of the process, which is what it used to
+  // be. Off air by default: a station that went live the instant it booted
+  // would put every deploy on air with an empty queue.
+  //
+  // Stamped from the station clock rather than `Date.now`, for the reason the
+  // play log takes one: everything time-shaped the server says reads from there.
+  const air = new OnAir({ db, now: () => playback.now(), live })
+  // All three are scoped to whatever session is open *now*, which is why they
+  // take the `air` object rather than a number. Going live opens a fresh room;
+  // ending the session empties it.
+  const chat = new ChatLog({ db, session: air, historyLimit: chatHistoryLimit })
+  const wishes = new WishBook({ db, session: air })
   const plays = new PlayLog({
     db,
-    sessionId,
+    session: air,
     limit: playHistoryLimit,
     now: () => playback.now(),
   })
 
+  // Ending a broadcast clears the decks and what was queued behind them. The
+  // station owns both, so this is wired here rather than reached for from
+  // inside OnAir — a record of a stretch of time should not be able to drive
+  // the decks directly.
+  //
+  // Only on the way *off* air: going live deliberately leaves the decks alone,
+  // so an admin who queued a set up before opening the doors still has it.
+  // A mute is about tonight, so it ends with the session — like the queue, and
+  // for the same reason. Somebody shouting over the music at midnight should
+  // not find themselves silenced next Tuesday by a rule nobody remembers.
+  const mutes = new Mutes()
+
+  const lyrics = new LyricsService({ db, baseUrl: config.lrclibBaseUrl, fetchFn: lyricsFetch })
+
+  air.on('change', (snapshot) => {
+    if (snapshot.live) return
+    station.playback.stop()
+    station.queue.clear()
+    mutes.clear()
+    // The set goes with the session it played in. The station is an evening,
+    // not an archive: ending the broadcast deletes every track, its file, its
+    // artwork and its lyrics, so the disk holds tonight and never everything.
+    // Uploads made *after* ending — an admin prepping the next set — land in
+    // an already-empty library and survive to their own session.
+    //
+    // Fire-and-forget for the same reason the handler above it is synchronous:
+    // an air change must never be able to fail on housekeeping. The files are
+    // unlinked after the rows are gone, and a straggler only wastes bytes.
+    void emptyLibrary(db, config).catch((err) => {
+      app.log.error({ err }, 'failed to empty the library after the session')
+    })
+  })
+
   await app.register(adminRoutes({ config, signInBurst, signInRefillMs }))
+  await app.register(sessionRoutes({ config, air }))
+  await app.register(mutesRoutes({ config, mutes }))
   await app.register(listenRoutes({ config }))
-  await app.register(uploadRoutes({ config, db }))
+  await app.register(uploadRoutes({ config, db, lyrics }))
   await app.register(mediaRoutes({ config, db }))
+  await app.register(lyricsRoutes({ config, db, lyrics }))
   await app.register(playbackRoutes({ config, db, station }))
   await app.register(queueRoutes({ config, db, station }))
   await app.register(wishesRoutes({ config, wishes }))
+  // Last of the routes, so nothing it registers can shadow an API path.
+  if (clientBundle !== null) {
+    await app.register(clientRoutes({ config }))
+  }
 
   const realtime = attachRealtime({
     server: app.server,
     station,
+    air,
+    mutes,
     // The socket is the station: refusing it is what makes a private station
     // private, since everything a listener sees arrives on it.
     admit: (headers) => mayListen(config, headers),
@@ -149,8 +216,6 @@ export async function buildApp({
     joinRefillMs,
     wishBurst,
     wishRefillMs,
-    voteBurst,
-    voteRefillMs,
     log: app.log,
   })
 
@@ -160,7 +225,9 @@ export async function buildApp({
   app.decorate('chat', chat)
   app.decorate('wishes', wishes)
   app.decorate('plays', plays)
-  app.decorate('sessionId', sessionId)
+  app.decorate('air', air)
+  app.decorate('mutes', mutes)
+  app.decorate('lyrics', lyrics)
 
   // preClose, not onClose: an upgraded websocket keeps the HTTP server open, so
   // the sockets have to be drained *before* Fastify tries to close it. Using
@@ -168,10 +235,10 @@ export async function buildApp({
   app.addHook('preClose', async () => {
     station.close()
     await realtime.close()
-    // The session is over the moment the process stops serving it — that is
-    // what made it a session. Ending it here means a restarted station reads
-    // as a new time on air rather than the same one resuming.
-    closeSession(db, sessionId)
+    // A session left open by a stop keeps a null `ended_at`, which reads as
+    // "still on air" forever. Closed quietly: the sockets are already drained,
+    // so there is nobody left to announce it to.
+    air.close()
   })
 
   return app

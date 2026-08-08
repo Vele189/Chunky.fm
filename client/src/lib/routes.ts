@@ -18,10 +18,10 @@ export type Route =
   | 'on-air'
   /** The clock numbers, in full. The project lives or dies on these. */
   | 'sync'
-  /** What is coming. */
-  | 'queue'
   /** The room, talking. */
   | 'chat'
+  /** The words to what is on, given the whole screen. Phones read them here. */
+  | 'lyrics'
   /** What this listener has asked for. */
   | 'wishes'
   /** The evening so far. */
@@ -43,8 +43,8 @@ export const DEFAULT_ROUTE: Route = 'on-air'
 const HASHES: Record<Route, string> = {
   'on-air': '',
   sync: '#sync',
-  queue: '#queue',
   chat: '#chat',
+  lyrics: '#lyrics',
   wishes: '#wishes',
   history: '#history',
   admin: '#admin',

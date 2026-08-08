@@ -272,3 +272,81 @@ describe('sign-in throttling', () => {
     for (let i = 0; i < 10; i++) expect((await session({ cookie })).statusCode).toBe(200)
   })
 })
+
+/**
+ * The two doors, when they are opened by the same string.
+ *
+ * An unconfigured station now derives both the admin password and the door code
+ * from the same house key, so the thing that keeps an invited listener out of
+ * the decks is no longer that they hold a different secret — it is only the
+ * domain separation in `lib/auth.ts`, where the two signing keys are HMACs of
+ * the same value under different labels.
+ *
+ * That is a load-bearing detail that used to be a nicety, so it gets a test.
+ * Without the labels, a listener cookie would verify as an admin cookie and
+ * every person invited to listen would silently own the station.
+ */
+describe('a listener cookie is not an admin cookie', () => {
+  let harness: Harness
+
+  beforeEach(async () => {
+    // The worst case on purpose: one string opening both doors.
+    harness = await startHarness({ stationKey: ADMIN_PASSWORD })
+  })
+  afterEach(() => harness.cleanup())
+
+  /** Redeem the door code the way a browser does, and keep the cookie. */
+  async function listenerCookieValue(): Promise<string> {
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/listen',
+      payload: { key: ADMIN_PASSWORD },
+    })
+    expect(res.statusCode).toBe(204)
+    return String(res.headers['set-cookie']).split(';')[0]!
+  }
+
+  it('does not open the admin session', async () => {
+    const cookie = await listenerCookieValue()
+    const res = await harness.app.inject({ method: 'GET', url: '/api/admin/session', headers: { cookie } })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('does not drive the decks', async () => {
+    const cookie = await listenerCookieValue()
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/playback',
+      payload: { action: 'pause' },
+      headers: { cookie },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('does not read the wish book or the mute list', async () => {
+    const cookie = await listenerCookieValue()
+    for (const url of ['/api/wishes', '/api/mutes', '/api/invite']) {
+      const res = await harness.app.inject({ method: 'GET', url, headers: { cookie } })
+      expect(res.statusCode, url).toBe(401)
+    }
+  })
+
+  it('is not accepted even when presented under the admin cookie name', async () => {
+    // The token itself must not verify, whatever jar it arrives in — the name
+    // is a convention, and the signature is the thing doing the work.
+    const listener = await listenerCookieValue()
+    const token = listener.split('=').slice(1).join('=')
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/admin/session',
+      headers: { cookie: `${ADMIN_COOKIE}=${token}` },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('still lets the real password through, so the test is not vacuous', async () => {
+    const cookie = await signIn(harness)
+    const res = await harness.app.inject({ method: 'GET', url: '/api/admin/session', headers: { cookie } })
+    expect(res.statusCode).toBe(200)
+  })
+})

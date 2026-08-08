@@ -29,6 +29,27 @@ export interface StateMessage {
  */
 export type PlaybackSnapshot = Omit<StateMessage, 'type'>
 
+/**
+ * Whether the station is broadcasting at all. Sent on connect, before anything
+ * else, and again on every change.
+ *
+ * Three different things can leave a page with no music, and a listener is owed
+ * a different sentence for each: the socket is down (no signal), the station is
+ * on air with nothing on the decks (a gap between songs), or nobody is
+ * broadcasting tonight. Only the last of those is this. It cannot be derived
+ * from the playback snapshot — an empty deck looks identical either way — which
+ * is the whole reason it is its own frame.
+ */
+export interface AirMessage {
+  type: 'air'
+  live: boolean
+  /** Server epoch ms at which this stretch on air began; null while off. */
+  since: number | null
+}
+
+/** The same pair as it comes back from `/api/session`, without the frame. */
+export type AirSnapshot = Omit<AirMessage, 'type'>
+
 /** A track waiting its turn. The id is the entry's, not the track's. */
 export interface QueueEntry {
   id: number
@@ -118,23 +139,6 @@ export interface HistoryMessage {
   plays: Play[]
 }
 
-/**
- * How much of the room wants the next one, and where this listener stands.
- *
- * Sent on connect, on every vote, and whenever a track change clears the tally.
- * `voted` is the station's answer rather than something the page remembers: a
- * vote is dropped when the socket that cast it closes, so a client that kept its
- * own flag would show a vote across a reconnect that the station no longer
- * holds. `trackId` is what the votes are about — a tally never outlives the
- * track it was cast against.
- */
-export interface SkipsMessage {
-  type: 'skips'
-  trackId: number | null
-  votes: number
-  voted: boolean
-}
-
 export interface PongMessage {
   type: 'pong'
   t0: number
@@ -162,16 +166,18 @@ export type SocketErrorCode =
   | 'no_wishes'
   | 'nothing_playing'
   | 'slow_down'
+  | 'off_air'
+  | 'muted'
 
 /**
  * Which frame a refusal is about, when it is about one.
  *
  * `slow_down` and `not_joined` can each come from more than one thing a
- * listener did — two composers and a vote button, all on one socket. Without
- * this, a wish refused for pace also puts "not sent" under the chat, telling
- * someone a message they never sent went nowhere.
+ * listener did — both composers, on one socket. Without this, a wish refused
+ * for pace also puts "not sent" under the chat, telling someone a message they
+ * never sent went nowhere.
  */
-export type SocketErrorAbout = 'join' | 'say' | 'wish' | 'vote'
+export type SocketErrorAbout = 'join' | 'say' | 'wish'
 
 export interface ErrorMessage {
   type: 'error'
@@ -204,12 +210,12 @@ export function refusalAbout(
 
 export type ServerMessage =
   | StateMessage
+  | AirMessage
   | QueueMessage
   | PresenceMessage
   | ChatMessagesMessage
   | WishedMessage
   | HistoryMessage
-  | SkipsMessage
   | PongMessage
   | ErrorMessage
 
@@ -239,25 +245,11 @@ export interface WishMessage {
   text: string
 }
 
-/**
- * "I'd rather hear something else."
- *
- * Not `skip` — that is the admin's command, over HTTP, and this is not it. The
- * frame carries where the listener now stands rather than "toggle", so sending
- * it twice leaves one vote: safe to retry, and safe to tap twice on a slow
- * connection. Which track it is about is the station's answer, not this page's.
- */
-export interface VoteSkipMessage {
-  type: 'vote_skip'
-  voted: boolean
-}
-
 export type ClientMessage =
   | PingMessage
   | JoinMessage
   | SayMessage
   | WishMessage
-  | VoteSkipMessage
 
 export const audioUrl = (track: Track) => `/api/audio/${track.filename}`
 export const artworkUrl = (track: Track) =>

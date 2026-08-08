@@ -1,13 +1,27 @@
+import type { AirSnapshot } from './air.js'
 import { type ChatMessage, MESSAGE_MAX_LENGTH, normalizeMessageText } from './chat.js'
 import type { Play } from './history.js'
 import type { PlaybackSnapshot } from './playback.js'
 import { type Listener, normalizeNickname } from './presence.js'
 import type { QueueEntry } from './queue.js'
-import type { SkipTally } from './skips.js'
 import { type Wish, WISH_MAX_LENGTH, normalizeWishText } from './wishes.js'
 
 /** Full playback state. Sent on connect and on every change. */
 export type StateMessage = PlaybackSnapshot & { type: 'state' }
+
+/**
+ * Whether the station is broadcasting at all. Sent on connect and on every
+ * change.
+ *
+ * Deliberately separate from `state`, and not derivable from it. "No track on
+ * the decks" and "not on air tonight" look identical in a playback snapshot and
+ * mean entirely different things to somebody staring at a page: the first is a
+ * gap between songs, the second is a room that is closed. It is also separate
+ * from the socket being up, which is the other thing a listener could mistake it
+ * for — a station that cannot be reached and a station that is deliberately off
+ * are told apart on the client, and only because this frame exists.
+ */
+export type AirMessage = AirSnapshot & { type: 'air' }
 
 /**
  * What's coming up. Kept out of `state` on purpose: playback changes several
@@ -76,25 +90,6 @@ export interface HistoryMessage {
 }
 
 /**
- * How much of the room wants the next one — and where the socket being told
- * stands, which is the one field here that differs per listener.
- *
- * `voted` is why this frame is sent socket by socket rather than serialised once
- * like every other broadcast. A page has to show whether *this* listener's vote
- * is in, and it cannot work that out on its own: the station drops a vote when
- * the socket that cast it closes, so a client that remembered "I voted" across a
- * reconnect would show a vote the station no longer holds. The room is under
- * thirty people — a stringify each is cheaper than a lie.
- *
- * Sent on connect, on every vote, and whenever a track change clears the tally.
- */
-export interface SkipsMessage extends SkipTally {
-  type: 'skips'
-  /** Whether the socket this frame was addressed to has voted. */
-  voted: boolean
-}
-
-/**
  * Reply to a clock probe. The client computes
  * `rtt = t2 - t0` and `offset = t1 - (t0 + rtt / 2)`, keeping the sample with
  * the lowest RTT — the fastest round trip is the least contaminated by
@@ -139,10 +134,20 @@ export type SocketErrorCode =
   | 'empty_wish'
   /** This station was built without a wish book. */
   | 'no_wishes'
-  /** A vote to skip a track, with nothing on the decks to skip. */
-  | 'nothing_playing'
   /** Doing that faster than the station will take it. */
   | 'slow_down'
+  /**
+   * The station is not on air. There is no session for a message or a wish to
+   * belong to, so both are refused until somebody goes live.
+   */
+  | 'off_air'
+  /**
+   * Whoever runs the decks has muted this nickname. Told rather than swallowed:
+   * a message that vanished silently would read exactly like one that was sent,
+   * and somebody would spend the evening talking to a room that cannot hear
+   * them without ever finding out.
+   */
+  | 'muted'
 
 /**
  * Which frame a refusal is about, when it is about one.
@@ -153,7 +158,7 @@ export type SocketErrorCode =
  * to know which composer. Without it, a wish refused for pace also lights up the
  * chat, telling someone a message they never sent was not sent.
  */
-export type SocketErrorAbout = 'join' | 'say' | 'wish' | 'vote'
+export type SocketErrorAbout = 'join' | 'say' | 'wish'
 
 export interface ErrorMessage {
   type: 'error'
@@ -175,12 +180,12 @@ export function errorMessage(
 
 export type ServerMessage =
   | StateMessage
+  | AirMessage
   | QueueMessage
   | PresenceMessage
   | ChatMessagesMessage
   | WishedMessage
   | HistoryMessage
-  | SkipsMessage
   | PongMessage
   | ErrorMessage
 
@@ -228,24 +233,7 @@ export interface WishMessage {
   text: string
 }
 
-/**
- * "I'd rather hear something else."
- *
- * Not `skip` — that name is taken, by the admin command this frame deliberately
- * is not. A vote is an opinion the room can see and the decks can act on; it
- * advances nothing by itself, and no number of them adds up to a command.
- *
- * Carries where the listener now stands rather than "toggle", so the frame says
- * what it means: two of them in a row leave one vote, which is what a listener
- * who tapped twice on a slow connection expects, and what a retry after a
- * refusal has to be safe to do.
- */
-export interface VoteSkipMessage {
-  type: 'vote_skip'
-  voted: boolean
-}
-
-export type ClientMessage = PingMessage | JoinMessage | SayMessage | WishMessage | VoteSkipMessage
+export type ClientMessage = PingMessage | JoinMessage | SayMessage | WishMessage
 
 /**
  * Frames that read as an attempt to drive the station.
@@ -270,6 +258,12 @@ const COMMAND_TYPES = new Set([
   'clear',
   'upload',
   'admin',
+  // Going live and ending the broadcast are commands like any other, and go
+  // over HTTP for the same reason: that is where the admin gate is.
+  'go_live',
+  'end_session',
+  'mute',
+  'unmute',
 ])
 
 /** Either a message the socket will act on, or why it won't. */
@@ -279,6 +273,10 @@ export type ParsedClientMessage =
 
 export function stateMessage(snapshot: PlaybackSnapshot): StateMessage {
   return { type: 'state', ...snapshot }
+}
+
+export function airMessage(snapshot: AirSnapshot): AirMessage {
+  return { type: 'air', ...snapshot }
 }
 
 export function queueMessage(entries: QueueEntry[]): QueueMessage {
@@ -299,10 +297,6 @@ export function wishedMessage(wish: Wish): WishedMessage {
 
 export function historyMessage(plays: Play[]): HistoryMessage {
   return { type: 'history', plays }
-}
-
-export function skipsMessage(tally: SkipTally, voted: boolean): SkipsMessage {
-  return { type: 'skips', ...tally, voted }
 }
 
 export function parseClientMessage(raw: string): ParsedClientMessage {
@@ -380,13 +374,6 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
       return { ok: false, code: 'empty_wish', error: 'an empty wish is not a wish', about: 'wish' }
     }
     return { ok: true, message: { type: 'wish', text } }
-  }
-  if (message.type === 'vote_skip' && typeof message.voted === 'boolean') {
-    // Nothing to normalise and nothing to cap: the whole frame is one boolean,
-    // and which track it is about is the station's answer rather than the
-    // client's — a vote that named its own track could be cast against the song
-    // before this one, or the one after.
-    return { ok: true, message: { type: 'vote_skip', voted: message.voted } }
   }
   if (typeof message.type === 'string' && COMMAND_TYPES.has(message.type)) {
     return {

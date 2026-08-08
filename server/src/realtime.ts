@@ -1,23 +1,24 @@
 import type { IncomingHttpHeaders, Server } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
+import type { AirSnapshot, OnAir } from './air.js'
 import { type ChatLog, RateLimit } from './chat.js'
 import type { PlayLog } from './history.js'
 import type { PlaybackSnapshot } from './playback.js'
+import type { Mutes } from './mutes.js'
 import { type Listener, Presence } from './presence.js'
 import {
   type ServerMessage,
+  airMessage,
   chatMessages,
   errorMessage,
   historyMessage,
   parseClientMessage,
   presenceMessage,
   queueMessage,
-  skipsMessage,
   stateMessage,
   wishedMessage,
 } from './protocol.js'
 import type { QueueEntry } from './queue.js'
-import { type SkipTally, SkipVotes } from './skips.js'
 import type { Station } from './station.js'
 import type { WishBook } from './wishes.js'
 
@@ -29,6 +30,13 @@ export interface RealtimeLogger {
 export interface RealtimeOptions {
   server: Server
   station: Station
+  /**
+   * Whether the station is broadcasting. Omit and it is always on, which is
+   * what the tests that are about something else want.
+   */
+  air?: OnAir
+  /** Who has been asked to stop talking. Omit and nobody is muted. */
+  mutes?: Mutes
   /** The session's chat. Omit and the socket refuses `say` frames. */
   chat?: ChatLog
   /** The session's wish book. Omit and the socket refuses `wish` frames. */
@@ -60,10 +68,6 @@ export interface RealtimeOptions {
   wishBurst?: number
   /** How long one of those costs to earn back. */
   wishRefillMs?: number
-  /** Tally-changing skip votes a socket may cast back to back. */
-  voteBurst?: number
-  /** How long one of those costs to earn back. */
-  voteRefillMs?: number
   log?: RealtimeLogger
 }
 
@@ -71,8 +75,6 @@ export interface RealtimeHandle {
   clientCount(): number
   /** Who has named themselves — a subset of the sockets `clientCount` counts. */
   listeners(): Listener[]
-  /** How much of the room wants the next one, and what they want it off. */
-  skips(): SkipTally
   broadcast(message: ServerMessage): void
   close(): Promise<void>
 }
@@ -99,17 +101,13 @@ const DEFAULT_JOIN_REFILL_MS = 5_000
  */
 const DEFAULT_WISH_BURST = 3
 const DEFAULT_WISH_REFILL_MS = 30_000
-/**
- * Paced like `join`, and for the same reason: a vote that lands is a frame to
- * every listener in the room. Changing your mind twice about one song is a
- * person; doing it forty times is a socket making the station shout.
- */
-const DEFAULT_VOTE_BURST = 5
-const DEFAULT_VOTE_REFILL_MS = 5_000
 
 function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
 }
+
+/** What a station with no `air` of its own reports: always broadcasting. */
+const ALWAYS_ON: AirSnapshot = { live: true, since: null }
 
 /**
  * Attaches the station's websocket surface to an existing HTTP server.
@@ -128,6 +126,8 @@ function send(socket: WebSocket, message: ServerMessage): void {
 export function attachRealtime({
   server,
   station,
+  air,
+  mutes,
   chat,
   wishes,
   plays,
@@ -141,11 +141,14 @@ export function attachRealtime({
   joinRefillMs = DEFAULT_JOIN_REFILL_MS,
   wishBurst = DEFAULT_WISH_BURST,
   wishRefillMs = DEFAULT_WISH_REFILL_MS,
-  voteBurst = DEFAULT_VOTE_BURST,
-  voteRefillMs = DEFAULT_VOTE_REFILL_MS,
   log,
 }: RealtimeOptions): RealtimeHandle {
   const { playback, queue } = station
+  // Omitting `air` means a station that is always on. Tests that are about the
+  // chat should not each have to open a session first, and a socket layer that
+  // refused everything without one would make them.
+  const onAir = (): boolean => air?.live ?? true
+  const airSnapshot = (): AirSnapshot => air?.snapshot() ?? ALWAYS_ON
   const wss = new WebSocketServer({
     server,
     path,
@@ -160,9 +163,7 @@ export function attachRealtime({
   // Sockets that have answered the most recent heartbeat.
   const responsive = new WeakSet<WebSocket>()
   const presence = new Presence()
-  const skips = new SkipVotes()
-  // Which listener a socket is, for the one frame that is addressed rather than
-  // broadcast: the skip tally tells each client whether its own vote is in.
+  // Which listener a socket is.
   const listenerIds = new WeakMap<WebSocket, number>()
   // Identifies a socket in the roster for as long as it lasts. Not reused: a
   // listener who reconnects is a new row, which is what "left and came back"
@@ -189,27 +190,6 @@ export function attachRealtime({
   }
 
   /**
-   * The tally, to everyone, with each socket told where *it* stands.
-   *
-   * The one thing here sent socket by socket instead of serialised once. It has
-   * to be: `voted` is a different answer per listener, and the alternative — a
-   * bare count, with each client remembering its own vote — is a client that
-   * shows a vote the station threw away when the socket carrying it closed.
-   * Under thirty listeners, that is thirty small writes on a button press.
-   */
-  function broadcastSkips(): void {
-    // Nothing to tell a room that is on its way out — see `broadcastPresence`.
-    if (draining) return
-    const tally = skips.tally()
-    log?.info({ ...tally, listeners: wss.clients.size }, 'broadcasting skip votes')
-    for (const socket of wss.clients) {
-      if (socket.readyState !== WebSocket.OPEN) continue
-      const id = listenerIds.get(socket)
-      send(socket, skipsMessage(tally, id !== undefined && skips.has(id)))
-    }
-  }
-
-  /**
    * Writes one message down and sends it to the room.
    *
    * The author is the nickname on the roster, looked up here rather than taken
@@ -223,9 +203,22 @@ export function attachRealtime({
       send(socket, errorMessage('no_chat', 'this station has no chat', 'say'))
       return
     }
+    if (!onAir()) {
+      // Before the roster check and before the pace check: being off air is the
+      // truest thing about the refusal, and telling somebody to name themselves
+      // first would send them round a loop that ends here anyway.
+      send(socket, errorMessage('off_air', 'the station is not on air', 'say'))
+      return
+    }
     const nickname = presence.nicknameOf(listenerId)
     if (nickname === null) {
       send(socket, errorMessage('not_joined', 'name yourself before saying anything', 'say'))
+      return
+    }
+    // After the name is known, because a mute is about a name — and before the
+    // pace check, so being muted does not also cost a token.
+    if (mutes?.has(nickname)) {
+      send(socket, errorMessage('muted', 'the decks have muted you', 'say'))
       return
     }
     if (!limit.take()) {
@@ -255,9 +248,20 @@ export function attachRealtime({
       send(socket, errorMessage('no_wishes', 'this station takes no wishes', 'wish'))
       return
     }
+    if (!onAir()) {
+      send(socket, errorMessage('off_air', 'the station is not on air', 'wish'))
+      return
+    }
     const nickname = presence.nicknameOf(listenerId)
     if (nickname === null) {
       send(socket, errorMessage('not_joined', 'name yourself before asking for anything', 'wish'))
+      return
+    }
+    // Muted covers wishes as well as chat. Both are text signed with a
+    // nickname, and a mute that left the wish book open would just move where
+    // somebody was shouting.
+    if (mutes?.has(nickname)) {
+      send(socket, errorMessage('muted', 'the decks have muted you', 'wish'))
       return
     }
     if (!limit.take()) {
@@ -270,46 +274,6 @@ export function attachRealtime({
     // Straight back to the one socket that asked, so the listener sees what was
     // written down rather than being left to assume.
     send(socket, wishedMessage(made))
-  }
-
-  /**
-   * Records where a listener stands on what is playing, and tells the room.
-   *
-   * The roster is the gate, as it is for chat and wishes: a vote is one
-   * listener's, and a socket that has not said who it is is not a listener. It
-   * is also the only thing keeping the count meaningful — without it, a script
-   * could open sockets and vote from each without ever appearing in the room the
-   * tally is a fraction of.
-   *
-   * A vote that changes nothing — the same answer twice, a withdrawal from
-   * somebody who never voted — broadcasts nothing and so costs nothing, exactly
-   * as a re-join under an unchanged name does. That is what makes a client safe
-   * to retry with, and what stops a double tap from spending a listener's pace.
-   *
-   * And it stops here. The tally is broadcast; nothing in this function reaches
-   * for `station.advance()`, however many votes are in.
-   */
-  function voteSkip(
-    socket: WebSocket,
-    listenerId: number,
-    limit: RateLimit,
-    voted: boolean,
-  ): void {
-    if (presence.nicknameOf(listenerId) === null) {
-      send(socket, errorMessage('not_joined', 'name yourself before voting', 'vote'))
-      return
-    }
-    if (playback.track === null) {
-      send(socket, errorMessage('nothing_playing', 'there is nothing on to skip', 'vote'))
-      return
-    }
-    if (voted === skips.has(listenerId)) return
-    if (!limit.take()) {
-      send(socket, errorMessage('slow_down', 'slow down', 'vote'))
-      return
-    }
-
-    if (skips.cast(listenerId, voted)) broadcastSkips()
   }
 
   /**
@@ -348,21 +312,20 @@ export function attachRealtime({
     const chatLimit = new RateLimit({ burst: chatBurst, refillMs: chatRefillMs })
     const joinLimit = new RateLimit({ burst: joinBurst, refillMs: joinRefillMs })
     const wishLimit = new RateLimit({ burst: wishBurst, refillMs: wishRefillMs })
-    const voteLimit = new RateLimit({ burst: voteBurst, refillMs: voteRefillMs })
 
+    // Whether there is a broadcast at all comes before what is on it: a page
+    // told the decks are empty without being told the station is off air would
+    // show a gap between songs that never ends.
+    send(socket, airMessage(airSnapshot()))
     // Drop straight into the moment: the snapshot alone is enough to align.
     send(socket, stateMessage(playback.snapshot()))
     send(socket, queueMessage(queue.list()))
     // Who is already here. This socket is not on that list yet — it has not
     // said who it is — and joins it the moment it does.
     send(socket, presenceMessage(presence.list()))
-    // What the room already thinks of what is on. A fresh socket has voted for
-    // nothing, which is also the truth after a reconnect: the vote this listener
-    // cast went with the socket that cast it.
-    send(socket, skipsMessage(skips.tally(), false))
     // What has been on, so a listener who arrives at 9pm can see what they
     // caught the end of. Written down, so this survives a reload — unlike the
-    // roster and the tally, which are only true while a socket is open.
+    // roster, which is only true while a socket is open.
     if (plays) send(socket, historyMessage(plays.recent()))
     // The conversation so far, so a joiner walks into a room mid-sentence
     // rather than an empty one. Also how a reconnecting client fills the gap.
@@ -384,7 +347,6 @@ export function attachRealtime({
       if (message.type === 'join') join(socket, listenerId, joinLimit, message.nickname)
       if (message.type === 'say') say(socket, listenerId, chatLimit, message.text)
       if (message.type === 'wish') wish(socket, listenerId, wishLimit, message.text)
-      if (message.type === 'vote_skip') voteSkip(socket, listenerId, voteLimit, message.voted)
     })
 
     // Every way a socket can end arrives here — a tab closing, a network that
@@ -392,10 +354,6 @@ export function attachRealtime({
     // only place a listener needs to be taken off the roster.
     socket.on('close', () => {
       if (presence.leave(listenerId)) broadcastPresence()
-      // A vote leaves with the listener who cast it. Otherwise a tally counts
-      // people who are not in the room any more, and can sit above the roster
-      // it is a fraction of — "4 of 3 want the next one".
-      if (skips.cast(listenerId, false)) broadcastSkips()
     })
 
     socket.on('error', (err) => {
@@ -410,10 +368,6 @@ export function attachRealtime({
       'broadcasting playback state',
     )
     broadcast(stateMessage(snapshot))
-    // After the state, not before: the tally is about whatever is on now, and a
-    // client that was told the votes were cleared before it knew the track had
-    // changed would show an empty tally against the song that just ended.
-    if (skips.retarget(snapshot.track?.id ?? null)) broadcastSkips()
     // A track going on is the one playback change worth writing down. `record`
     // is what decides that — most changes here are a pause, a seek or a resume,
     // and none of those is a new play. A batch of one, in the same frame the
@@ -425,6 +379,19 @@ export function attachRealtime({
     }
   }
   playback.on('change', onChange)
+
+  const onAirChange = (snapshot: AirSnapshot) => {
+    log?.info({ live: snapshot.live, listeners: wss.clients.size }, 'broadcasting air state')
+    broadcast(airMessage(snapshot))
+    // A session ending takes the chat and the history with it — they are scoped
+    // to it — so every client is told to start again rather than being left
+    // showing a conversation that no longer exists anywhere.
+    if (!snapshot.live) {
+      broadcast(chatMessages([]))
+      broadcast(historyMessage([]))
+    }
+  }
+  air?.on('change', onAirChange)
 
   const onQueueChange = (entries: QueueEntry[]) => {
     log?.info({ queued: entries.length, listeners: wss.clients.size }, 'broadcasting queue')
@@ -454,6 +421,7 @@ export function attachRealtime({
     clearInterval(heartbeat)
     playback.off('change', onChange)
     queue.off('change', onQueueChange)
+    air?.off('change', onAirChange)
 
     const sockets = [...wss.clients]
     const allClosed = Promise.all(
@@ -487,7 +455,6 @@ export function attachRealtime({
   return {
     clientCount: () => wss.clients.size,
     listeners: () => presence.list(),
-    skips: () => skips.tally(),
     broadcast,
     close() {
       closing ??= shutdown()

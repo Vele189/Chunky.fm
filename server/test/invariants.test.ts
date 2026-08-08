@@ -99,15 +99,18 @@ describe('the socket, over a real connection', () => {
     await harness.cleanup()
   })
 
-  it('opens with the whole room — state, queue, roster, votes, history, chat', async () => {
+  it('opens with the whole room — air, state, queue, roster, history, chat', async () => {
     for (let i = 0; i < 5; i++) {
       const client = await TestClient.connect(harness.wsUrl)
       await client.nextChat() // the last of the six
       expect(client.seen.map((m) => m.type)).toEqual([
+        // First, and deliberately: whether there is a broadcast at all comes
+        // before what is on it. A page told the decks are empty without being
+        // told the station is off air shows a gap between songs that never ends.
+        'air',
         'state',
         'queue',
         'presence',
-        'skips',
         'history',
         'chat',
       ])

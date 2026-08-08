@@ -20,6 +20,11 @@ body {
   color: var(--fg-soft);
   font: 400 14px/1.5 var(--font);
   -webkit-font-smoothing: antialiased;
+  /* Safari on a phone inflates the text of a narrow column when it is turned
+     on its side. The page is already sized for the width it is given, so the
+     only thing that would do here is move the layout out from under a
+     listener halfway through a song. */
+  -webkit-text-size-adjust: 100%;
 }
 
 h1,
@@ -34,10 +39,16 @@ h2 {
  * it is how you get around the page, so it has to stay where it was.
  */
 
+/* `dvh` after `vh`, and both on purpose: on a phone `100vh` is the height the
+   window has with the browser's own bars *hidden*, so a page sized to it hangs
+   a toolbar's worth of itself below the fold and never quite settles as the bar
+   slides away. `dvh` is that measurement done honestly. The `vh` line stays as
+   what a browser too old for `dvh` falls back to. */
 .station {
   display: flex;
   gap: 12px;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 12px;
 }
 
@@ -85,8 +96,28 @@ h2 {
   justify-content: center;
   gap: 24px;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 24px;
   text-align: center;
+}
+
+/* The door itself: somewhere to put a code you were told rather than sent.
+ *
+ * It borrows the console's gate input, which is the same control doing the same
+ * job one rung down — but not its spacing. `.gate__form` carries a top margin
+ * for a form sitting under a heading inside a panel; here the column's own gap
+ * already does that, and keeping both would push the door away from the
+ * sentence explaining it. The width is set because this is a flex item in a
+ * centred column, where `flex: 1` on the input has nothing to divide up and
+ * would collapse the field to its placeholder. */
+.doorway .gate__form {
+  width: 360px;
+  max-width: 100%;
+  margin-top: 0;
+}
+
+.doorway .console__error {
+  margin: 0;
 }
 
 /* One panel with the whole screen. Capped rather than full-bleed: these are
@@ -105,6 +136,7 @@ h2 {
    conversation is read down. */
 .view--chat .chat__list {
   max-height: calc(100vh - 260px);
+  max-height: calc(100dvh - 260px);
 }
 
 /* Panels sized for the stage column take the view's width instead, so a page
@@ -112,46 +144,6 @@ h2 {
 .view .panel--stage,
 .view .sync {
   width: 100%;
-}
-
-/* What each sync number means, beside the numbers themselves. */
-.glossary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  margin: 0;
-}
-
-.glossary div {
-  display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
-  gap: 16px;
-  align-items: baseline;
-  padding: 12px 16px;
-  border-radius: 14px;
-  background: var(--card);
-  box-shadow: var(--ring);
-}
-
-.glossary dt {
-  color: var(--fg-dim);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.glossary dd {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 19.5px;
-}
-
-@media (max-width: 640px) {
-  .glossary div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
 }
 
 /* --- the rail --------------------------------------------------------------
@@ -170,6 +162,7 @@ h2 {
   justify-content: space-between;
   width: 56px;
   height: calc(100vh - 24px);
+  height: calc(100dvh - 24px);
   padding: 20px 0;
   border-radius: 24px;
   background: var(--panel);
@@ -260,42 +253,6 @@ h2 {
 
 .topbar__right {
   gap: 8px;
-}
-
-.search {
-  position: relative;
-  width: 256px;
-  max-width: 100%;
-}
-
-.search__icon {
-  position: absolute;
-  top: 10px;
-  left: 12px;
-  width: 16px;
-  height: 16px;
-  pointer-events: none;
-}
-
-.search__input {
-  width: 100%;
-  height: 36px;
-  padding: 0 16px 0 36px;
-  border: 0;
-  border-radius: var(--pill);
-  background: var(--panel);
-  box-shadow: var(--ring);
-  color: var(--fg-soft);
-  font: 400 13px/19.5px var(--font);
-}
-
-.search__input::placeholder {
-  color: var(--faint);
-}
-
-.search__input:focus {
-  outline: none;
-  box-shadow: var(--ring-strong);
 }
 
 /* Two links dressed as one control. Which side is lit comes from the address,
@@ -435,10 +392,6 @@ h2 {
 }
 
 .stage__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
   padding-top: 12px;
 }
 
@@ -456,45 +409,6 @@ h2 {
   font-size: 14px;
   line-height: 21px;
   overflow-wrap: anywhere;
-}
-
-.stage__wish {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: var(--pill);
-  background: var(--raised);
-  cursor: pointer;
-}
-
-.stage__wish:hover {
-  background: var(--raised-soft);
-}
-
-.stage__wish img {
-  display: block;
-}
-
-/* The chip under the title: where this listener is in the song, in the shape
-   the design gives the show name. Tabular, so it does not twitch every second. */
-.now-playing__time {
-  align-self: flex-start;
-  margin: 0;
-  padding: 4px 12px;
-  border-radius: var(--pill);
-  background: var(--raised);
-  color: var(--fg-dim);
-  font-family: var(--font-numeric);
-  font-size: 12px;
-  line-height: 18px;
-  font-variant-numeric: tabular-nums;
-}
-
-.now-playing__paused {
-  color: var(--live-text);
 }
 
 /* --- the mute button ------------------------------------------------------ */
@@ -684,6 +598,99 @@ h2 {
    than allowed to stretch the column the numbers line up in. */
 .earlier__title {
   min-width: 0;
+}
+
+/* --- the words -------------------------------------------------------------
+ *
+ * Deliberately not a panel. Everything else in the aside was a list in a card;
+ * the words are the song's, not the interface's, so they get no border, no
+ * heading and no background — text floating next to the deck, the current line
+ * bright, the rest dimmed, the way a lyric sheet reads rather than the way a
+ * queue does. The mask is what makes it float: lines fade in and out of
+ * nothing instead of being cut off by an edge nobody drew.
+ */
+
+.lyrics {
+  width: 100%;
+  max-height: calc(100vh - 220px);
+  max-height: calc(100dvh - 220px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 15%,
+    #000 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, transparent 0, #000 15%, #000 82%, transparent 100%);
+}
+
+.lyrics::-webkit-scrollbar {
+  display: none;
+}
+
+/* Room above the first line and below the last, so both can reach the centre
+   of the sheet where the bright line lives. */
+.lyrics__breath {
+  height: 30vh;
+}
+
+.lyrics__line {
+  margin: 0 0 26px;
+  color: var(--fg);
+  opacity: 0.25;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.3;
+  transform-origin: left center;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+/* A phone reads the words on the #lyrics view, where the screen is the sheet:
+   smaller type, or three long lines are the whole page. 720 is the same line
+   useNarrow draws, quoted for the same reason the other queries quote it. */
+@media (max-width: 720px) {
+  .lyrics__line {
+    margin-bottom: 18px;
+    font-size: 22px;
+  }
+}
+
+.lyrics__line--bright {
+  opacity: 1;
+  transform: scale(1.02);
+}
+
+/* A timestamped silence — an intro, a solo — shown as a quiet beat mark. */
+.lyrics__line--hum {
+  letter-spacing: 3px;
+}
+
+/* Plain words with no clock on them: the whole sheet, evenly lit, smaller —
+   this is reading, not following along. */
+.lyrics--plain .lyrics__line--even {
+  opacity: 0.75;
+  font-size: 17px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.lyrics__break {
+  height: 20px;
+}
+
+.lyrics--quiet {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.lyrics__none {
+  margin: 0;
+  color: var(--faint);
+  font-size: 14px;
 }
 
 /* --- who is here -----------------------------------------------------------
@@ -934,67 +941,6 @@ h2 {
   text-transform: uppercase;
 }
 
-/* --- skip votes ------------------------------------------------------------
- *
- * Sits under the track it is about. One line of count and one button: the room
- * saying what it wants, not a control — nothing here takes a track off.
- */
-
-.skips {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  width: 100%;
-  padding: 10px 10px 10px 16px;
-  border-radius: var(--pill);
-  background: var(--card);
-  box-shadow: var(--ring);
-  scroll-margin-top: 24px;
-}
-
-.skips__tally {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.skips__vote {
-  margin-left: auto;
-  height: 30px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--pill);
-  background: var(--raised);
-  color: var(--fg-dim);
-  font: 600 12px/18px var(--font);
-  cursor: pointer;
-}
-
-.skips__vote:hover:not(:disabled) {
-  background: var(--raised-soft);
-}
-
-/* This listener's vote is in — the button now takes it back, and says so. */
-.skips__vote--in {
-  background: var(--live-wash);
-  color: var(--live-text);
-  box-shadow: inset 0 0 0 1px rgb(251 44 54 / 30%);
-}
-
-.skips__vote:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.skips__refusal {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--live-text);
-  font-size: 12px;
-}
-
 /* --- tuning in -------------------------------------------------------------
  *
  * The only screen with no station on it yet. It sits where the deck sits, so
@@ -1123,35 +1069,151 @@ h2 {
  */
 
 .sync {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  width: 380px;
-  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
   margin: 0;
-  padding: 12px;
-  border-radius: 16px;
-  background: var(--card);
-  box-shadow: var(--ring);
-  color: var(--faint);
 }
 
-.sync div {
-  text-align: center;
+/* One frame, no card: like the lyrics, the graph floats on the sheet rather
+   than sitting in a panel. Three lines share it, so each gets an identity —
+   the one place this page steps outside monochrome. The trio is categorical
+   color doing its one job, and it was picked with the dataviz validator:
+   against this #0a0a0a background the three pass the colorblind separation
+   floor (worst pair ΔE 9.4), the normal-vision floor (20.9) and 3:1 contrast.
+   Red stays reserved for "on the air", so no line wears it. */
+.sync__frame {
+  width: 100%;
+  min-height: 120px;
 }
 
-.sync dt {
+.sync__plot {
+  display: block;
+  touch-action: none;
+}
+
+.sync__line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sync__line--offset {
+  stroke: #3987e5;
+}
+
+.sync__line--rtt {
+  stroke: #d95926;
+}
+
+.sync__line--drift {
+  stroke: #199e70;
+}
+
+/* The newest sample of each line, or the one held under the pointer. */
+.sync__spot--offset {
+  fill: #3987e5;
+}
+
+.sync__spot--rtt {
+  fill: #d95926;
+}
+
+.sync__spot--drift {
+  fill: #199e70;
+}
+
+/* Zero, when it is in frame — what the drift is being pulled back to. */
+.sync__zero {
+  stroke: rgb(255 255 255 / 10%);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.sync__cross {
+  stroke: rgb(255 255 255 / 18%);
+  stroke-width: 1;
+}
+
+/* Each line's name at its right-hand end. Ink, not the series color — the
+   line beside it carries the identity. */
+.sync__tag {
+  fill: var(--fg-dim);
+  font-family: var(--font);
+  font-size: 11px;
+}
+
+/* What the top, bottom and zero of the frame mean. The whole of the axis. */
+.sync__scale {
+  fill: var(--faint);
+  font-family: var(--font-numeric);
   font-size: 10px;
+}
+
+.sync__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 24px;
+}
+
+.sync__key {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+
+.sync__swatch {
+  width: 10px;
+  height: 10px;
+  align-self: center;
+  border-radius: 3px;
+}
+
+.sync__swatch--offset {
+  background: #3987e5;
+}
+
+.sync__swatch--rtt {
+  background: #d95926;
+}
+
+.sync__swatch--drift {
+  background: #199e70;
+}
+
+.sync__name {
+  color: var(--muted);
+  font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.sync dd {
-  margin: 4px 0 0;
-  color: var(--fg-dim);
+.sync__reading {
+  color: var(--fg);
   font-family: var(--font-numeric);
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+
+/* The age of the moment held under the pointer. */
+.sync__ago {
+  margin: 0;
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sync__waiting {
+  margin: 0;
+  padding-top: 48px;
+  color: var(--faint);
+  font-size: 12px;
+  text-align: center;
 }
 
 /* --- narrower windows ------------------------------------------------------
@@ -1162,46 +1224,174 @@ h2 {
  */
 
 @media (max-width: 1000px) {
+  /* One column — and one measure inside it. The two sides of the design are
+     not the same width (the deck's is 380px, the aside's is whatever column it
+     is given), which is right when they sit beside each other and wrong the
+     moment they stack: a tablet got a centred deck over full-bleed panels,
+     reading as two different pages with two different left margins. Stacked,
+     everything on the listener page takes the same measure, capped near the
+     deck's own so the lists stay a width you can read rather than stretching
+     the whole way across.
+
+     The console is deliberately not in this list. It is a desk with two
+     columns of its own and its own narrower-windows rules at the foot of this
+     file; a 560px cap would squeeze the queue and the library into a strip. */
+  .station__main > .topbar,
+  .station__main > .stale,
+  .station__main > .station__columns,
+  .station__main > .view,
+  .station__main > .outage {
+    width: 100%;
+    max-width: 560px;
+    margin-inline: auto;
+  }
+
   .station__columns {
     grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
   }
 
   .column--stage {
-    align-items: center;
+    align-items: stretch;
+  }
+
+  /* The deck keeps its size. It is an object sitting on the page rather than a
+     panel, so it centres in the column instead of filling it. */
+  .column--stage .deck {
+    margin-inline: auto;
+  }
+
+  .column--stage .stage,
+  .column--stage .panel--stage,
+  .column--stage .join,
+  .column--stage .off-air,
+  .column--stage .sync {
+    width: 100%;
   }
 }
 
 @media (max-width: 720px) {
   .station {
     flex-direction: column;
-    padding: 8px;
+    gap: 8px;
+    /* Room for the rounded corner and the home bar on a phone that has them,
+       and the shell's own 12px on every phone that does not. */
+    padding: 12px;
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
   }
 
+  /* Lying down across the top, and staying there. The listener page is a long
+     scroll on a phone — deck, wishes, roster, queue, history, the room — and a
+     rail that scrolled away with it left somebody at the foot of the history
+     with no way anywhere but back up. Spread across the full width rather than
+     bunched at one end, which is the shape a row of destinations has on a
+     phone and gives every mark a thumb's worth of room. */
   .rail {
-    position: static;
+    position: sticky;
+    top: max(12px, env(safe-area-inset-top));
+    z-index: 5;
     flex-direction: row;
     width: auto;
     height: auto;
-    padding: 8px 16px;
+    padding: 6px 8px;
     border-radius: var(--pill);
+    /* --panel is 70% translucent, which is right for a panel lying still on
+       the sheet and wrong for one the page slides underneath: the rows would
+       read straight through the marks. Opaque enough to sit on top, with the
+       blur so it is still glass rather than a grey bar. */
+    background: rgb(23 23 23 / 92%);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
   }
 
   .rail__group {
+    flex: 1;
     flex-direction: row;
+    justify-content: space-around;
+    gap: 0;
   }
 
+  .rail__mark {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* The rail already holds the page off its edges, so the column inside it
+     lines its cards up with the rail's own sides rather than inset again. */
   .station__main {
-    padding: 8px;
+    gap: 16px;
+    padding: 0;
   }
 
-  .topbar__left,
-  .topbar__right {
-    flex-wrap: wrap;
+  .station__columns {
+    gap: 20px;
+  }
+
+  .column {
+    gap: 20px;
+  }
+
+  /* Anchors land under the sticky rail otherwise — the rail's height plus the
+     gap under it, so a heading arrives clear of the marks. */
+  .panel {
+    scroll-margin-top: 76px;
+  }
+
+  /* The bar wraps by half rather than by item. It used to let anything that
+     did not fit take a line of its own, which on a phone left the signal bell
+     sitting alone under everything with nothing beside it — a lone dot that
+     read as something having gone wrong.
+
+     Now it is a wordmark and two or three chips, and they share the one line:
+     the name at the left, the count and the bell at the right, which is what
+     the base rule's `space-between` already does. Only the console's extra
+     chip can push the right-hand half onto a second line, and it goes whole. */
+  .topbar {
     gap: 12px;
   }
 
-  .search {
-    width: 100%;
+  .topbar__left {
+    flex: 1 1 auto;
+    gap: 12px;
+  }
+
+  /* One group, never split. The shrinking further down is what keeps the
+     three of them on the one line on a narrow phone. */
+  .topbar__right {
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-width: 0;
+  }
+}
+
+/* --- phones, at their narrowest ---------------------------------------------
+ *
+ * A 320px screen is 40px short of what the top bar's three chips want. The
+ * count is the number, not the word beside it, and the two sides of the
+ * segmented control are legible with less air around them.
+ */
+
+@media (max-width: 400px) {
+  /* Only when the console's chip is on the row as well. A listener has the
+     count and the bell and nothing else, and those two fit at 320px with the
+     word intact — it is the third chip that costs it. */
+  .segmented ~ .headcount .headcount__word {
+    display: none;
+  }
+
+  .segmented__side {
+    gap: 4px;
+    padding: 6px 10px;
+  }
+
+  /* 34px is the design's headline for a title with a column to itself. At this
+     width it is two or three lines of a song's name before anything else on
+     the page gets a look in. */
+  .now-playing__title {
+    font-size: 28px;
+    line-height: 33.6px;
   }
 }
 
@@ -1680,19 +1870,6 @@ h2 {
   color: var(--faint);
 }
 
-.votes {
-  flex: none;
-  color: var(--faint);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-}
-
-/* Only once somebody has actually asked — a quiet room should not look like a
-   readout that needs answering. */
-.votes--wanted {
-  color: var(--live-text);
-}
-
 /* --- the scrub bar ---------------------------------------------------------
  *
  * A range input, dressed. Every browser draws these differently, so the track
@@ -2010,6 +2187,54 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 
+/* Muting somebody, from the message that made you want to.
+ *
+ * Held back until the row is hovered or the button itself is focused: a console
+ * showing a Mute button beside every line of a friendly conversation reads as a
+ * page expecting trouble. Focus is what keeps it reachable from the keyboard,
+ * where there is no hover to reveal it — without that clause the control would
+ * exist for a mouse and for nobody else. Already-muted stays visible whatever
+ * the pointer is doing, because that one is a state and not an offer. */
+.comments__mute {
+  flex: none;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--pill);
+  background: transparent;
+  color: var(--faint);
+  font: 600 10px/15px var(--font);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.comments__row:hover .comments__mute,
+.comments__mute:focus-visible,
+.comments__mute[aria-pressed='true'] {
+  opacity: 1;
+}
+
+.comments__mute:hover:not(:disabled) {
+  background: var(--raised-soft);
+  color: var(--fg-dim);
+}
+
+.comments__mute[aria-pressed='true'] {
+  background: var(--live-wash);
+  color: var(--live-text);
+}
+
+.comments__mute:disabled {
+  cursor: not-allowed;
+}
+
+@media (hover: none) {
+  /* No hover to reveal it, so it simply is revealed. */
+  .comments__mute {
+    opacity: 1;
+  }
+}
+
 /* The only place arbitrary text from a listener is rendered on this page:
    break it rather than letting a wall of characters stretch the layout. */
 .comments__text {
@@ -2035,5 +2260,45 @@ h2 {
   /* No hover to reveal them on a touch screen, so they are simply there. */
   .queue__moves {
     opacity: 1;
+  }
+}
+
+/* --- touch -------------------------------------------------------------------
+ *
+ * Not "narrow" — a phone held in a hand, which a wide tablet also is and a
+ * small window on a laptop is not. Nothing here moves the layout; it is all
+ * about the finger and the browser's own habits.
+ *
+ * Last in the file on purpose: several of these controls set their size in a
+ * `font` shorthand further up, and a shorthand later in the sheet would put
+ * the font-size back however these were written.
+ */
+
+@media (pointer: coarse) {
+  /* 16px is the threshold under which Safari zooms the page in on a focused
+     field — and it does not zoom back out afterwards. Typing a nickname, a
+     line of chat or a door code would leave the station scaled up and scrolled
+     off to one side for the rest of the evening. */
+  .compose__input,
+  .join__input,
+  .gate__input,
+  .invite__url {
+    font-size: 16px;
+  }
+
+  /* The invite field is drawn at a console's density; at 16px it needs the
+     height to match, or the text sits against its own rim. */
+  .invite__url {
+    height: 36px;
+  }
+
+  /* Controls sized for a cursor, given a thumb's worth of height. */
+  .compose__send {
+    height: 40px;
+  }
+
+  /* A bare line of text otherwise, and about 18px of it to hit. */
+  .panel__more {
+    padding: 6px 0;
   }
 }

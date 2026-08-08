@@ -41,6 +41,12 @@ function constantTimeEquals(a: string, b: string): boolean {
  * ADMIN_PASSWORD then invalidates every cookie already handed out, which is
  * what changing a password is supposed to do. It also leaves one secret to
  * configure, and no session key to lose across a restart.
+ *
+ * The label is what keeps this apart from the listener key below, and it earns
+ * its keep now that both can be derived from the *same* string: on a station
+ * where nobody set ADMIN_PASSWORD, the admin password and the door code are one
+ * value, and without domain separation a listener cookie would be a valid admin
+ * cookie. The two labels are the only reason it is not.
  */
 function sessionKey(config: Config): Buffer {
   return createHmac('sha256', config.adminPassword).update(KEY_LABEL).digest()
@@ -97,7 +103,8 @@ export function isValidStationKey(config: Config, candidate: unknown): boolean {
 /**
  * May this request hear the station?
  *
- * An open station admits everyone, which is what an unset STATION_KEY means.
+ * An open station admits everyone — which now means one opened on purpose with
+ * STATION_OPEN, or a config assembled without the field at all, as the tests do.
  * Otherwise: a valid invite cookie, the key presented directly (for curl and
  * the QA scripts, which have nowhere to keep a cookie), or admin credentials —
  * whoever runs the decks does not also need an invite to their own station.

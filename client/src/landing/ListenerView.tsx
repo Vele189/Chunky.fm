@@ -4,10 +4,9 @@ import chatIcon from '../assets/icons/chat.svg'
 import clockIcon from '../assets/icons/clock.svg'
 import heartIcon from '../assets/icons/heart.svg'
 import scheduleIcon from '../assets/icons/schedule.svg'
-import searchIcon from '../assets/icons/search.svg'
 import usersIcon from '../assets/icons/users.svg'
 import { Deck, OnAir, Waveform } from '../Turntable.js'
-import { BEEN_ON, clock, initial, ROOM, SESSION, SKIPS, WISHES } from './session.js'
+import { BEEN_ON, initial, ROOM, SESSION, WISHES } from './session.js'
 
 /**
  * The listener's page, drawn small.
@@ -71,10 +70,6 @@ export function ListenerView() {
           <p className="listener__wordmark">
             chunky<span className="wordmark__tld">.fm</span>
           </p>
-          <span className="listener__search">
-            <img src={searchIcon} alt="" width={9} height={9} />
-            Search this session
-          </span>
           <span className="listener__count">
             <img src={usersIcon} alt="" width={9} height={9} />
             {SESSION.listeners} listening
@@ -94,13 +89,7 @@ export function ListenerView() {
               <OnAir live idleLabel="OFF AIR" />
               <p className="listener__title">{SESSION.title}</p>
               <p className="listener__artist">{SESSION.artist}</p>
-              <p className="listener__time">
-                {clock(AT)} / {clock(SESSION.duration)}
-              </p>
               <Waveform live />
-              <p className="listener__skip">
-                Skip this one? <span className="listener__tally">{SKIPS.votes} of {SKIPS.of}</span>
-              </p>
             </div>
 
             {/* Under the deck, where the station puts them: what this listener

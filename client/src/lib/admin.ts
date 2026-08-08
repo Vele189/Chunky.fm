@@ -1,4 +1,11 @@
-import type { PlaybackSnapshot, QueueEntry, Track, Wish, WishStatus } from './protocol.js'
+import type {
+  AirSnapshot,
+  PlaybackSnapshot,
+  QueueEntry,
+  Track,
+  Wish,
+  WishStatus,
+} from './protocol.js'
 
 /** Where the admin controls live. */
 export const ADMIN_HASH = '#admin'
@@ -171,6 +178,50 @@ export class AdminApi {
   /** Answers with the state the command produced — a snapshot, not a frame. */
   command(command: PlaybackCommand): Promise<PlaybackSnapshot> {
     return this.#json<PlaybackSnapshot>('POST', '/api/playback', command)
+  }
+
+  /**
+   * Who has been asked to stop talking.
+   *
+   * Admin-only in both directions, unlike `/api/session`: publishing the list
+   * would turn a quiet word into a public naming, and hand the room a roster of
+   * who to needle about it.
+   */
+  async mutes(): Promise<string[]> {
+    return (await this.#json<{ nicknames: string[] }>('GET', '/api/mutes')).nicknames
+  }
+
+  /**
+   * Mute a nickname, or lift it. Answers with the whole list rather than the
+   * one row, so the panel responds to the click instead of waiting for a poll.
+   *
+   * Carries where the nickname now stands rather than "toggle", the same shape
+   * a re-join takes — two of these in a row leave one mute, so a retry after
+   * a dropped response is safe.
+   */
+  async mute(nickname: string, muted: boolean): Promise<string[]> {
+    return (
+      await this.#json<{ nicknames: string[] }>('POST', '/api/mutes', { nickname, muted })
+    ).nicknames
+  }
+
+  /**
+   * Whether the station is on air. Open, unlike everything else on this class —
+   * it is the first thing a listener's page needs, and it is not a secret.
+   */
+  air(): Promise<AirSnapshot> {
+    return this.#json<AirSnapshot>('GET', '/api/session')
+  }
+
+  /**
+   * Go on air, or end the broadcast. Answers with the state it produced.
+   *
+   * Both are idempotent at the station, so a double-click is not an error and
+   * this needs no guard of its own. Ending a session clears the decks and the
+   * queue and closes the room — see `OnAir` on the server.
+   */
+  session(action: 'start' | 'end'): Promise<AirSnapshot> {
+    return this.#json<AirSnapshot>('POST', '/api/session', { action })
   }
 
   async queue(): Promise<QueueEntry[]> {

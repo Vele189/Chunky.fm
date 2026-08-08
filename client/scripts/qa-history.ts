@@ -7,7 +7,7 @@
  * the line appear the moment the next track starts, without touching anything.
  * And *persists* — this is the one social list that is written down rather than
  * held on a socket, so a reload and a late arrival both get the evening back,
- * which is exactly what the roster and the skip tally cannot do.
+ * which is exactly what the roster cannot do.
  *
  * Needs a running server and a running Vite dev server, and two uploaded
  * tracks. See README.
@@ -21,6 +21,7 @@ import {
   TRACK_ID,
   playbackCommand,
   tuneIn,
+  visit,
   wait,
 } from './qa-env.js'
 
@@ -58,6 +59,9 @@ async function join(browser: Browser, nickname: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage()
   await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, nickname)
+  // The evening lives behind its rail mark now — the aside beside the deck is
+  // the lyrics' alone.
+  await visit(page, '#history')
   return page
 }
 
@@ -103,7 +107,7 @@ try {
 
   // --- and it is written down ------------------------------------------------------
   //
-  // The roster and the skip tally live on a socket and start again with a new
+  // The roster lives on a socket and starts again with a new
   // one. This does not: it is in the database, so a reload gets it back.
   await ana.reload({ waitUntil: 'domcontentloaded' })
   await tuneIn(ana, 'ana')

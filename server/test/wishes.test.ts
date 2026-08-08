@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 const book = (options: { limit?: number; now?: () => number } = {}) =>
-  new WishBook({ db, sessionId, ...options })
+  new WishBook({ db, session: { current: sessionId }, ...options })
 
 describe('normalizeWishText', () => {
   it('trims and collapses whitespace', () => {
@@ -97,7 +97,7 @@ describe('WishBook', () => {
     book().make('sam', 'first session')
 
     closeSession(db, sessionId)
-    const second = new WishBook({ db, sessionId: openSession(db) })
+    const second = new WishBook({ db, session: { current: openSession(db) } })
     second.make('ana', 'second session')
 
     expect(second.list().map((wish) => wish.text)).toEqual(['second session'])
@@ -129,7 +129,7 @@ describe('WishBook', () => {
     const mine = book().make('sam', 'this session')
 
     closeSession(db, sessionId)
-    const later = new WishBook({ db, sessionId: openSession(db) })
+    const later = new WishBook({ db, session: { current: openSession(db) } })
 
     // Null is what the route turns into a 404: the admin of this time on air
     // has no business editing the last one's book.

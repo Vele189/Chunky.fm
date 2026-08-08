@@ -1,0 +1,40 @@
+# Context for the root Dockerfile — the single image, which needs both
+# workspaces. The per-workspace Dockerfiles that compose builds have their own
+# .dockerignore files; this one does not replace them.
+
+.git
+.github
+node_modules
+*/node_modules
+
+# Built by the image, never copied into it.
+dist
+*/dist
+.vite
+*/.vite
+
+# The library and the database. Never in an image.
+audio_storage
+data
+uploads
+*.sqlite
+*.sqlite3
+*.db
+*-wal
+*-shm
+
+.env
+.env.*
+!.env.example
+
+# The hero model as it came off Sketchfab — 30 MB of PNG textures. What ships is
+# the 1 MB glb already committed under client/src/assets/models.
+client/assets-src
+
+docs
+*.md
+!README.md
+*.log
+.DS_Store
+.idea
+.vscode

@@ -2,7 +2,7 @@ import broadcastIcon from './assets/icons/broadcast.svg'
 import chatIcon from './assets/icons/chat.svg'
 import clockIcon from './assets/icons/clock.svg'
 import heartIcon from './assets/icons/heart.svg'
-import scheduleIcon from './assets/icons/schedule.svg'
+import lyricsIcon from './assets/icons/lyrics.svg'
 import settingsIcon from './assets/icons/settings.svg'
 import slidersIcon from './assets/icons/sliders.svg'
 import { hashFor, needsJoin, type Route } from './lib/routes.js'
@@ -10,8 +10,10 @@ import { hashFor, needsJoin, type Route } from './lib/routes.js'
 /**
  * The rail down the left-hand side.
  *
- * Six marks and the way to the decks, exactly as the design draws them — and
- * every one of them goes somewhere. The landing view is the design's listener
+ * Six marks and the way to the decks, and every one of them goes somewhere.
+ * The design's queue mark is gone on purpose: what is coming is the admin's
+ * worksheet, not the room's, and the history already answers the question a
+ * listener actually has. The landing view is the design's listener
  * page whole; the other five give one of the things on it the entire screen,
  * which is what a rail full of destinations is for.
  *
@@ -30,8 +32,8 @@ interface Destination {
 
 const DESTINATIONS: Destination[] = [
   { route: 'on-air', icon: broadcastIcon, label: 'On air' },
+  { route: 'lyrics', icon: lyricsIcon, label: 'Lyrics' },
   { route: 'sync', icon: slidersIcon, label: 'Sync' },
-  { route: 'queue', icon: scheduleIcon, label: 'Up next' },
   { route: 'chat', icon: chatIcon, label: 'Chat' },
   { route: 'wishes', icon: heartIcon, label: 'Wishes' },
   { route: 'history', icon: clockIcon, label: 'History' },

@@ -9,7 +9,14 @@ import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import { openDb } from '../src/db.js'
 
-const config = loadConfig({ ADMIN_PASSWORD: 'x', AUDIO_STORAGE_DIR: '/tmp/claude-1000/sync-check' })
+// Opened on purpose: an unset STATION_KEY now means the house key, and this
+// script's listeners join anonymously. The door has its own tests; this one is
+// about whether two strangers hear the same instant.
+const config = loadConfig({
+  ADMIN_PASSWORD: 'x',
+  STATION_OPEN: 'true',
+  AUDIO_STORAGE_DIR: '/tmp/claude-1000/sync-check',
+})
 const app = await buildApp({ config, db: openDb(':memory:'), logger: false })
 await app.listen({ host: '127.0.0.1', port: 0 })
 const { port } = app.server.address() as AddressInfo

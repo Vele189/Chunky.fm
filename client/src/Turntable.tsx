@@ -1,4 +1,3 @@
-import heartIcon from './assets/icons/heart-outline.svg'
 import onAirIcon from './assets/icons/on-air.svg'
 import volumeIcon from './assets/icons/volume.svg'
 
@@ -36,21 +35,102 @@ export function Deck({ artwork, spinning }: DeckProps) {
   return (
     <div className="deck" data-spinning={spinning}>
       <div className="deck__well">
-        <div className="deck__record">
-          {artwork ? (
-            <img className="deck__label" src={artwork} alt="" />
-          ) : (
-            <div className="deck__label deck__label--blank" aria-hidden="true" />
-          )}
+        <div className="deck__platter">
+          <div className="deck__record">
+            {artwork ? (
+              <img className="deck__label" src={artwork} alt="" />
+            ) : (
+              <div className="deck__label deck__label--blank" aria-hidden="true" />
+            )}
+          </div>
+          {/*
+            The light on the record, and the one part of it that must not turn.
+            A highlight painted onto the disc would rotate with the grooves and
+            read as a mark *on* the vinyl; a real one stays where the lamp is
+            while the record goes round underneath. So it is a sibling of the
+            platter rather than a child of the record — the whole reason the two
+            are separate elements.
+          */}
+          <div className="deck__sheen" aria-hidden="true" />
+          {/* Through the label, so it sits above everything and never spins. */}
           <div className="deck__spindle" aria-hidden="true" />
         </div>
-        <div className="deck__pivot" aria-hidden="true">
-          <div className="deck__arm">
-            <div className="deck__arm-bar" />
-          </div>
-        </div>
+        <Tonearm />
       </div>
     </div>
+  )
+}
+
+/**
+ * The arm.
+ *
+ * Drawn rather than assembled out of rotated rectangles, because the shape is
+ * the point: a counterweight behind the pivot, a tube, and a headshell canted
+ * off the tube's line the way a real one is. Those angles are what make it read
+ * as a tonearm instead of a stick lying across a circle.
+ *
+ * It lifts when the decks stop. The rotation is about the pivot — `transform-box:
+ * view-box` in the stylesheet, so the origin is in the same coordinates these
+ * points are written in and survives the whole thing being scaled down on a
+ * phone.
+ */
+function Tonearm() {
+  return (
+    <svg
+      className="deck__tonearm"
+      viewBox="0 0 300 300"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <g className="deck__tonearm-swing">
+        {/*
+          The counterweight: a cylinder on the axis of the tube, behind the
+          pivot. Drawn as a rounded rect turned to the arm's angle rather than a
+          circle — a circle beside the round pivot read as two identical donuts
+          stacked in the corner, which is what the first attempt looked like.
+        */}
+        <g transform="rotate(110 284 52)">
+          <rect x="270" y="44" width="28" height="16" rx="7" fill="#1c1c1c" stroke="currentColor" strokeWidth="1.8" />
+          <line x1="279" y1="45" x2="279" y2="59" stroke="currentColor" strokeWidth="1" opacity="0.45" />
+        </g>
+
+        {/*
+          The tube, as the gentle S a real arm has. A straight line from pivot to
+          stylus is geometrically honest and looks like a stick; the curve is the
+          single thing that makes the shape read as a tonearm.
+
+          It runs from the counterweight's centre at (284,52) — through the
+          pivot, so the weight is carried by the tube rather than floating beside
+          it — down to a stylus at (210,202). That end is 79px from the record's
+          centre: out on the grooves, between the label at 44 and the rim at 123.
+
+          Three strokes: a dark casing, the metal, and a highlight down one side,
+          so the tube has a lit edge instead of being a flat bar.
+        */}
+        <path d="M284 52 C 264 112, 250 152, 210 202" stroke="#0a0a0a" strokeWidth="7" strokeLinecap="round" />
+        <path d="M284 52 C 264 112, 250 152, 210 202" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" />
+        <path
+          d="M283 56 C 264 113, 251 152, 212 199"
+          stroke="#c8c8c8"
+          strokeWidth="1"
+          strokeLinecap="round"
+          opacity="0.45"
+        />
+
+        {/* Headshell, canted off the tube the way a real one is, with the stylus
+            under its front corner and touching the record. */}
+        <g transform="rotate(-38 210 202)">
+          <rect x="198" y="196" width="26" height="12" rx="3.5" fill="#1c1c1c" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M203 208 L201 214" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </g>
+      </g>
+
+      {/* The pivot stays put while the arm swings around it, so it is outside
+          the rotating group. Sat outside the platter, as a real one is. */}
+      <circle cx="270" cy="78" r="12" fill="#2b2b2b" stroke="#454545" strokeWidth="1.5" />
+      <circle cx="270" cy="78" r="4" fill="#0a0a0a" />
+    </svg>
   )
 }
 
@@ -134,30 +214,5 @@ export function Mute({ muted, onToggle, enabled }: MuteProps) {
             : 'Streaming live — tap to mute'}
       </span>
     </div>
-  )
-}
-
-export interface WishShortcutProps {
-  onPress(): void
-}
-
-/**
- * The round button beside the title.
- *
- * A heart, and it does the one thing a heart can honestly do on a station with
- * no library and no favourites: it takes you to the composer where you ask for
- * something. Nothing is saved by pressing it.
- */
-export function WishShortcut({ onPress }: WishShortcutProps) {
-  return (
-    <button
-      type="button"
-      className="stage__wish"
-      onClick={onPress}
-      title="Ask for something"
-      aria-label="Ask for something"
-    >
-      <img src={heartIcon} alt="" width={16} height={16} />
-    </button>
   )
 }

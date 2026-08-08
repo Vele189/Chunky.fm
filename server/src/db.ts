@@ -19,6 +19,15 @@ export interface TrackRow {
   uploaded_at: number
 }
 
+/** A track's lyrics as LRCLIB handed them over. See the schema note. */
+export interface LyricsRow {
+  track_id: number
+  /** LRC text, `[mm:ss.xx] line` per line, or null when only plain was found. */
+  synced: string | null
+  plain: string | null
+  fetched_at: number
+}
+
 /** A stretch of the station being on air. See `openSession`. */
 export interface SessionRow {
   id: number
@@ -76,6 +85,23 @@ CREATE TABLE IF NOT EXISTS tracks (
   uploaded_at   INTEGER NOT NULL
 );
 
+-- What LRCLIB knows about a track, written down once so the station asks the
+-- internet about each song one time rather than once per listener. One row per
+-- track that has been looked up and found; a track nobody could find keeps no
+-- row, so a restart gets to ask again.
+--
+-- Not a foreign key, for the reason a play isn't: the row is written from a
+-- background errand after the upload has already answered, and a note about a
+-- track must never be able to break the track it is a note about. The wipe
+-- that deletes a track deletes its lyrics row alongside.
+CREATE TABLE IF NOT EXISTS lyrics (
+  track_id    INTEGER PRIMARY KEY,
+  -- LRC text: "[mm:ss.xx] line" per line. Null when only plain text was found.
+  synced      TEXT,
+  plain       TEXT,
+  fetched_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   started_at  INTEGER NOT NULL,
@@ -131,6 +157,24 @@ CREATE TABLE IF NOT EXISTS plays (
 -- is read in, and for the same reason.
 CREATE INDEX IF NOT EXISTS plays_session_id ON plays (session_id, id);
 `
+
+/**
+ * Which session the things written down during one belong to.
+ *
+ * An object rather than a number because the answer changes while the process
+ * runs: the admin goes live, and the chat, the wish book and the history all
+ * have to start writing to the session that just opened. Handing each of them a
+ * number at construction time would pin them to whichever session happened to
+ * be open at boot, which is what they used to do back when a session *was* a
+ * run of the process.
+ *
+ * Null while the station is off air. There is no session then, so there is
+ * nothing to write to and nothing to read — see the three logs, which all treat
+ * it as an empty room rather than reaching for the last one.
+ */
+export interface SessionRef {
+  readonly current: number | null
+}
 
 /**
  * Starts a session, and returns its id.

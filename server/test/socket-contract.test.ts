@@ -38,7 +38,6 @@ async function settle(client: TestClient): Promise<void> {
   await client.nextState()
   await client.nextQueue()
   await client.nextPresence()
-  await client.nextSkips()
   await client.nextHistory()
   await client.nextChat()
 }
@@ -76,17 +75,6 @@ describe('every socket refusal is machine-readable', () => {
       expect(typeof refusal.message).toBe('string')
       expect(refusal.message.length).toBeGreaterThan(0)
     }
-
-    // The odd one out, driven after the loop because it needs a listener on the
-    // roster — which the first case above deliberately does not have. The
-    // station is off air for the whole of this test, so a vote to skip has
-    // nothing to be about.
-    await client.join('sam')
-    client.send({ type: 'vote_skip', voted: true })
-    const noTrack = await nextError(client)
-    isCode(noTrack.code)
-    expect(noTrack.code).toBe('nothing_playing')
-    expect(noTrack.message.length).toBeGreaterThan(0)
   })
 
   it('says which composer it is about when the code alone would not', async () => {
@@ -101,8 +89,6 @@ describe('every socket refusal is machine-readable', () => {
         chatRefillMs: 60_000,
         wishBurst: 1,
         wishRefillMs: 60_000,
-        voteBurst: 2,
-        voteRefillMs: 60_000,
       },
     )
     const client = await connect()
@@ -116,16 +102,6 @@ describe('every socket refusal is machine-readable', () => {
 
     client.send({ type: 'wish', text: 'one too many' })
     expect(await nextError(client)).toMatchObject({ code: 'slow_down', about: 'wish' })
-
-    // Three things a listener can send, three boxes on the page. A vote refused
-    // for pace must not put "not sent" under either composer.
-    harness.playback.play(makeTrack({ id: 1 }))
-    await client.nextState()
-    await client.voteSkip(true)
-    await client.voteSkip(false)
-
-    client.send({ type: 'vote_skip', voted: true })
-    expect(await nextError(client)).toMatchObject({ code: 'slow_down', about: 'vote' })
   })
 
   it('says so by code when a message is refused for pace, not for content', async () => {

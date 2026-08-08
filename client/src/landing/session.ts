@@ -158,15 +158,6 @@ export const WISHES: readonly Wish[] = [
   { says: 'anything with a room in it. people, not a studio' },
 ]
 
-/**
- * A skip vote in progress.
- *
- * Real, and one of the few things a listener can do besides talk: the room can
- * say it would rather hear something else, and it arrives on the decks as a
- * tally rather than as a veto — whoever is running it still decides.
- */
-export const SKIPS = { votes: 7, of: SESSION.listeners, voted: true } as const
-
 export interface Played {
   /** Wall clock, because this is the evening rather than the song. */
   at: string
