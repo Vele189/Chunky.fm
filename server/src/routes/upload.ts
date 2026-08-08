@@ -11,6 +11,7 @@ import { UnsupportedAudioError, extractMetadata, looksLikeAudioUpload } from '..
 import { requireAdmin } from '../lib/auth.js'
 import { artworkFilePath, discard, trackFilePath } from '../lib/storage.js'
 import { toTrack } from '../lib/track.js'
+import type { LyricsService } from '../lyrics.js'
 
 const TOO_LARGE_CODES = new Set(['FST_REQ_FILE_TOO_LARGE', 'FST_FILE_TOO_LARGE'])
 const BAD_MULTIPART_CODES = new Set([
@@ -30,6 +31,7 @@ function errorCode(err: unknown): string | undefined {
 interface UploadDeps {
   config: Config
   db: Db
+  lyrics: LyricsService
 }
 
 interface Outcome {
@@ -45,7 +47,7 @@ function duplicateBody(existing: TrackRow) {
   }
 }
 
-export function uploadRoutes({ config, db }: UploadDeps): FastifyPluginAsync {
+export function uploadRoutes({ config, db, lyrics }: UploadDeps): FastifyPluginAsync {
   const findByHash = (hash: string) =>
     db.prepare('SELECT * FROM tracks WHERE content_hash = ?').get(hash) as TrackRow | undefined
 
@@ -144,6 +146,11 @@ export function uploadRoutes({ config, db }: UploadDeps): FastifyPluginAsync {
             .get(result.lastInsertRowid) as TrackRow
 
           request.log.info({ trackId: row.id, filename, bytes: bytesWritten }, 'track uploaded')
+          // An errand, not a step: the upload is done, and whether the archive
+          // knows the words changes nothing about whether the track is in the
+          // library. The service answers null on any trouble, so there is
+          // nothing here to catch.
+          void lyrics.fetchFor(toTrack(row))
           return { status: 201, body: { track: toTrack(row) } }
         } catch (err) {
           // Two identical files racing each other. The bytes on disk are the

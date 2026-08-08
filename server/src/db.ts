@@ -19,6 +19,15 @@ export interface TrackRow {
   uploaded_at: number
 }
 
+/** A track's lyrics as LRCLIB handed them over. See the schema note. */
+export interface LyricsRow {
+  track_id: number
+  /** LRC text, `[mm:ss.xx] line` per line, or null when only plain was found. */
+  synced: string | null
+  plain: string | null
+  fetched_at: number
+}
+
 /** A stretch of the station being on air. See `openSession`. */
 export interface SessionRow {
   id: number
@@ -36,6 +45,32 @@ export interface MessageRow {
   created_at: number
 }
 
+export interface WishRow {
+  id: number
+  session_id: number
+  /** The nickname as it stood when the wish was made. Same copy as a message's. */
+  nick: string
+  text: string
+  created_at: number
+  /**
+   * Where the wish stands with whoever runs the decks. Named `WishStatus` in
+   * `wishes.ts`, which is where the values mean anything; the column is here.
+   */
+  status: 'new' | 'handled'
+}
+
+/**
+ * A track going on air. PLAN.md's now-playing history, one row per time a track
+ * started — so a track played twice in an evening is two rows, not one.
+ */
+export interface PlayRow {
+  id: number
+  session_id: number
+  track_id: number
+  /** Server epoch ms at which the track went on. */
+  played_at: number
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tracks (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,6 +83,23 @@ CREATE TABLE IF NOT EXISTS tracks (
   content_hash  TEXT    NOT NULL UNIQUE,
   gain_db       REAL    NOT NULL DEFAULT 0,
   uploaded_at   INTEGER NOT NULL
+);
+
+-- What LRCLIB knows about a track, written down once so the station asks the
+-- internet about each song one time rather than once per listener. One row per
+-- track that has been looked up and found; a track nobody could find keeps no
+-- row, so a restart gets to ask again.
+--
+-- Not a foreign key, for the reason a play isn't: the row is written from a
+-- background errand after the upload has already answered, and a note about a
+-- track must never be able to break the track it is a note about. The wipe
+-- that deletes a track deletes its lyrics row alongside.
+CREATE TABLE IF NOT EXISTS lyrics (
+  track_id    INTEGER PRIMARY KEY,
+  -- LRC text: "[mm:ss.xx] line" per line. Null when only plain text was found.
+  synced      TEXT,
+  plain       TEXT,
+  fetched_at  INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -66,7 +118,63 @@ CREATE TABLE IF NOT EXISTS messages (
 
 -- Chat is only ever read as "the last N of one session", newest first.
 CREATE INDEX IF NOT EXISTS messages_session_id ON messages (session_id, id);
+
+CREATE TABLE IF NOT EXISTS wishes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  INTEGER NOT NULL REFERENCES sessions(id),
+  nick        TEXT    NOT NULL,
+  text        TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL,
+  -- Constrained here as well as in the type: a status nothing can render is a
+  -- row the admin panel would show as a blank, and the column outlives the
+  -- process that wrote it.
+  status      TEXT    NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'handled'))
+);
+
+-- Read as "this session's wishes, oldest first", which is the order they were
+-- asked in and the order they are worked through.
+CREATE INDEX IF NOT EXISTS wishes_session_id ON wishes (session_id, id);
+
+CREATE TABLE IF NOT EXISTS plays (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  INTEGER NOT NULL REFERENCES sessions(id),
+  -- A reference rather than a copy of the title, unlike a message's nickname:
+  -- nothing deletes a track, and a retagged one should read correctly in the
+  -- history as well as in the library.
+  --
+  -- Deliberately *not* a foreign key, though, which is the one place this table
+  -- differs from the others. A play is written from inside playback's change
+  -- event, so a constraint that could refuse the insert would throw into
+  -- whatever put the track on — an admin command answering 500 after the track
+  -- already changed, or the end-of-track timer dying mid-set. A note about what
+  -- happened must never be able to break the thing it is a note about, and the
+  -- read below drops a row it cannot name rather than failing.
+  track_id    INTEGER NOT NULL,
+  played_at   INTEGER NOT NULL
+);
+
+-- Read as "the last N of this session", newest first — the same shape the chat
+-- is read in, and for the same reason.
+CREATE INDEX IF NOT EXISTS plays_session_id ON plays (session_id, id);
 `
+
+/**
+ * Which session the things written down during one belong to.
+ *
+ * An object rather than a number because the answer changes while the process
+ * runs: the admin goes live, and the chat, the wish book and the history all
+ * have to start writing to the session that just opened. Handing each of them a
+ * number at construction time would pin them to whichever session happened to
+ * be open at boot, which is what they used to do back when a session *was* a
+ * run of the process.
+ *
+ * Null while the station is off air. There is no session then, so there is
+ * nothing to write to and nothing to read — see the three logs, which all treat
+ * it as an empty room rather than reaching for the last one.
+ */
+export interface SessionRef {
+  readonly current: number | null
+}
 
 /**
  * Starts a session, and returns its id.

@@ -1,4 +1,6 @@
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { type ClientBundle, sendDocument } from '../routes/client.js'
+import { isServerPath } from './doorway.js'
 
 /**
  * One error shape for the whole API.
@@ -38,7 +40,18 @@ export function errorBody(statusCode: number, message: string): ErrorBody {
   return { error: CODES[statusCode] ?? fallback, message }
 }
 
-export function registerErrorHandlers(app: FastifyInstance): void {
+/**
+ * @param appShell The built station document, when this process is also serving
+ *   the client. Given one, an unknown path is answered with it rather than with
+ *   a 404 — the station is a single document that decides what to show from the
+ *   fragment, so `/listen`, `/listen#chat` and anything else a listener types
+ *   all have to arrive at the same place. Null under compose and in
+ *   development, where nginx's `try_files` and Vite's SPA fallback do this.
+ */
+export function registerErrorHandlers(
+  app: FastifyInstance,
+  appShell: ClientBundle | null = null,
+): void {
   app.setErrorHandler((err: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
     const status = err.statusCode ?? 500
 
@@ -56,7 +69,20 @@ export function registerErrorHandlers(app: FastifyInstance): void {
     return reply.code(status).send(errorBody(status, err.message))
   })
 
-  app.setNotFoundHandler((request: FastifyRequest, reply: FastifyReply) =>
-    reply.code(404).send(errorBody(404, `no route for ${request.method} ${request.url}`)),
-  )
+  app.setNotFoundHandler((request: FastifyRequest, reply: FastifyReply) => {
+    // An unknown path is the station — but only when there is a station
+    // document to answer with, and only for the kind of request a browser
+    // makes for a page. A mistyped API route (`/api/wishez`) must still be
+    // told there is no such route, in the shape every other refusal uses:
+    // handing it a page of HTML with a 200 on it would make a typo look like
+    // a working endpoint returning nonsense.
+    if (appShell !== null && (request.method === 'GET' || request.method === 'HEAD')) {
+      const cut = request.url.indexOf('?')
+      const path = cut === -1 ? request.url : request.url.slice(0, cut)
+      if (!isServerPath(path)) {
+        return sendDocument(reply, appShell.index)
+      }
+    }
+    return reply.code(404).send(errorBody(404, `no route for ${request.method} ${request.url}`))
+  })
 }

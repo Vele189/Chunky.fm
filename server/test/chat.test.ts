@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 const log = (options: { historyLimit?: number; now?: () => number } = {}) =>
-  new ChatLog({ db, sessionId, ...options })
+  new ChatLog({ db, session: { current: sessionId }, ...options })
 
 describe('normalizeMessageText', () => {
   it('trims and collapses whitespace', () => {
@@ -107,7 +107,7 @@ describe('ChatLog', () => {
     log().post('sam', 'first session')
 
     closeSession(db, sessionId)
-    const second = new ChatLog({ db, sessionId: openSession(db) })
+    const second = new ChatLog({ db, session: { current: openSession(db) } })
     second.post('ana', 'second session')
 
     expect(second.recent().map((m) => m.text)).toEqual(['second session'])

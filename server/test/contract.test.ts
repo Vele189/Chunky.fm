@@ -54,6 +54,7 @@ const MUTATING_ROUTES = [
   { method: 'POST' as const, url: '/api/queue/move', payload: { entryId: 1, toIndex: 0 } },
   { method: 'DELETE' as const, url: '/api/queue/1', payload: undefined },
   { method: 'DELETE' as const, url: '/api/queue', payload: undefined },
+  { method: 'POST' as const, url: '/api/wishes/1', payload: { status: 'handled' } },
 ]
 
 describe('the admin gate is the same gate everywhere', () => {
@@ -87,6 +88,17 @@ describe('the admin gate is the same gate everywhere', () => {
     for (const url of ['/api/tracks', '/api/queue', '/api/playback', '/health']) {
       expect((await harness.app.inject({ method: 'GET', url })).statusCode, url).toBe(200)
     }
+  })
+
+  it('except the wish book, which was never broadcast to anyone', async () => {
+    // The open reads are open because the socket already sends the same thing
+    // to every listener. Wishes are the one thing it does not: a wish goes to
+    // the admin and back to whoever made it, so reading the book is a
+    // privilege rather than a second way to see what you were already sent.
+    expect((await harness.app.inject({ method: 'GET', url: '/api/wishes' })).statusCode).toBe(401)
+    expect(
+      (await harness.app.inject({ method: 'GET', url: '/api/wishes', headers: admin() })).statusCode,
+    ).toBe(200)
   })
 })
 
@@ -229,6 +241,17 @@ describe('the wire shapes the client compiles against', () => {
       'title',
       'uploadedAt',
     ])
+  })
+
+  it('a wish is camelCase, with no storage columns leaking through', async () => {
+    harness.app.wishes.make('sam', 'something off Rumours')
+    const [wish] = (await harness.app.inject({
+      method: 'GET',
+      url: '/api/wishes',
+      headers: admin(),
+    })).json().wishes
+
+    expect(Object.keys(wish).sort()).toEqual(['at', 'id', 'nickname', 'status', 'text'])
   })
 
   it('a queue entry is {id, track} and nothing else', async () => {

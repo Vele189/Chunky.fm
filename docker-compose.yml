@@ -11,7 +11,17 @@ services:
       context: ./server
     image: chunky-fm/server:latest
     environment:
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required — copy .env.example to .env and set it}
+      # No longer required. Unset, the server falls back to the same code the
+      # door uses, so one code opens both — see `loadConfig`. Set it here (or in
+      # .env) to give the decks a password of their own.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Optional. Empty is *not* an open station any more — it falls back to the
+      # code baked into the server, so a compose stack has a door on it out of
+      # the box. Set this to choose your own; rotating it ends every invite.
+      STATION_KEY: ${STATION_KEY:-}
+      # `true` takes the door off. Nothing else does, and an explicit
+      # STATION_KEY still wins over it — see .env.example.
+      STATION_OPEN: ${STATION_OPEN:-}
       AUDIO_STORAGE_DIR: /data
       HOST: 0.0.0.0
       PORT: "3000"

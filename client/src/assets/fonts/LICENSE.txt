@@ -1,0 +1,12 @@
+The font files in this directory are redistributed under the SIL Open Font
+License, Version 1.1.
+
+  Space Grotesk — Copyright (c) 2020 Florian Karsten
+                  https://github.com/floriankarsten/space-grotesk
+  Cousine       — Copyright (c) Steve Matteson
+                  https://fonts.google.com/specimen/Cousine
+
+Full licence text: https://openfontlicense.org/open-font-license-official-text/
+
+Both were fetched from Google Fonts and subset to latin. Only the URLs in
+fonts.css were changed; the font binaries are unmodified.

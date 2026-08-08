@@ -15,7 +15,7 @@ import {
   AUDIO,
   type AudioState,
   CHROME_PATH,
-  CLIENT_URL,
+  STATION_URL,
   Checks,
   tuneIn,
   wait,
@@ -24,7 +24,7 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const UPLOAD_FILE =
   process.env.QA_UPLOAD_FILE ?? path.resolve(HERE, '../../server/test/fixtures/tagged.mp3')
-const ADMIN_URL = `${CLIENT_URL}/#admin`
+const ADMIN_URL = `${STATION_URL}#admin`
 
 const checks = new Checks()
 
@@ -34,12 +34,6 @@ const present = (page: Page, testId: string) =>
 /** The queue as the admin sees it: entry ids, top to bottom. */
 const queueIds = (page: Page): Promise<string[]> =>
   page.$$eval('[data-testid="admin-queue"] li', (rows) =>
-    rows.map((row) => row.getAttribute('data-entry') ?? ''),
-  )
-
-/** The same queue as a listener sees it — read-only, no controls. */
-const upNextIds = (page: Page): Promise<string[]> =>
-  page.$$eval('[data-testid="up-next"] li', (rows) =>
     rows.map((row) => row.getAttribute('data-entry') ?? ''),
   )
 
@@ -71,7 +65,7 @@ const browser = await chromium.launch({
 
 try {
   // --- the listener page ships no controls -----------------------------------
-  const listener = await openPage(browser, CLIENT_URL)
+  const listener = await openPage(browser, STATION_URL)
   await tuneIn(listener, 'listener')
   await wait(1_000)
 
@@ -176,32 +170,18 @@ try {
     `${after.join(',')} → ${remaining.join(',')}`,
   )
 
-  // --- every client agrees, in real time -------------------------------------
-  // A second listener that was not there when the queue was built: it should
-  // arrive already knowing about it, from the frame sent on connect.
-  const latecomer = await openPage(browser, CLIENT_URL)
+  // --- a second listener, for the transport checks below ----------------------
+  // Listeners no longer render the queue — what is coming is the admin's
+  // worksheet alone — so whether the frame reached them is checked the way a
+  // listener would notice: both ears end up on the same file at the skip.
+  const latecomer = await openPage(browser, STATION_URL)
   await tuneIn(latecomer, 'latecomer')
   await wait(1_500)
 
-  checks.run(
-    'a listener joining late is handed the queue as it stands',
-    (await upNextIds(latecomer)).join(',') === remaining.join(','),
-    `listener ${(await upNextIds(latecomer)).join(',')} vs admin ${remaining.join(',')}`,
-  )
-
-  // Now change it, and watch both listeners follow without touching them.
+  // Queue one more behind the current track, so the skip below has somewhere
+  // to land.
   await admin.getByRole('button', { name: 'Queue' }).first().click()
   await wait(1_200)
-
-  const adminQueue = await queueIds(admin)
-  const seenByListener = await upNextIds(listener)
-  const seenByLatecomer = await upNextIds(latecomer)
-  checks.run(
-    'a queue change reaches every client without a reload',
-    seenByListener.join(',') === adminQueue.join(',') &&
-      seenByLatecomer.join(',') === adminQueue.join(','),
-    `admin ${adminQueue.join(',')} | listeners ${seenByListener.join(',')} / ${seenByLatecomer.join(',')}`,
-  )
 
   // --- transport -------------------------------------------------------------
   const audioOf = (page: Page) => page.evaluate<AudioState>(AUDIO)

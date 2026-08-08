@@ -1,11 +1,14 @@
 import { WebSocket } from 'ws'
 import type {
+  AirMessage,
   ChatMessagesMessage,
   ClientMessage,
+  HistoryMessage,
   PresenceMessage,
   QueueMessage,
   ServerMessage,
   StateMessage,
+  WishedMessage,
 } from '../src/protocol.js'
 
 const DEFAULT_TIMEOUT_MS = 2_000
@@ -78,6 +81,10 @@ export class TestClient {
     })
   }
 
+  async nextAir(timeoutMs?: number): Promise<AirMessage> {
+    return (await this.waitFor((m) => m.type === 'air', timeoutMs)) as AirMessage
+  }
+
   async nextState(timeoutMs?: number): Promise<StateMessage> {
     return (await this.waitFor((m) => m.type === 'state', timeoutMs)) as StateMessage
   }
@@ -94,10 +101,20 @@ export class TestClient {
     return (await this.waitFor((m) => m.type === 'chat', timeoutMs)) as ChatMessagesMessage
   }
 
+  async nextHistory(timeoutMs?: number): Promise<HistoryMessage> {
+    return (await this.waitFor((m) => m.type === 'history', timeoutMs)) as HistoryMessage
+  }
+
   /** Says something and waits for it to come back around. */
   async say(text: string): Promise<ChatMessagesMessage> {
     this.send({ type: 'say', text })
     return this.nextChat()
+  }
+
+  /** Asks for something and waits for the station's note back. */
+  async wish(text: string): Promise<WishedMessage> {
+    this.send({ type: 'wish', text })
+    return (await this.waitFor((m) => m.type === 'wished')) as WishedMessage
   }
 
   /**

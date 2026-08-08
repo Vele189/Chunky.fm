@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { type Availability, INITIALLY, nextAvailability } from '../lib/availability.js'
 import { mergeMessages } from '../lib/chat.js'
+import { mergePlays } from '../lib/history.js'
 import type {
+  AirSnapshot,
   ChatMessage,
-  ErrorMessage,
   Listener,
+  Play,
   PlaybackSnapshot,
   QueueEntry,
   ServerMessage,
+  SocketRefusal,
   StateMessage,
+  Wish,
 } from '../lib/protocol.js'
 import { StationConnection, type StationStatus } from '../lib/station.js'
+import { mergeWishes } from '../lib/wishes.js'
 
 export function defaultStationUrl(): string {
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -17,14 +23,51 @@ export function defaultStationUrl(): string {
 }
 
 export interface Station {
+  /** The socket itself. What decides whether a send would land. */
   status: StationStatus
+  /**
+   * What this page can honestly say about the station — the same story with
+   * its history folded in, which is what a screen needs and a single status
+   * cannot give: whether an outage is one this page has ever seen the other
+   * side of. See `lib/availability.ts`.
+   */
+  reach: Availability
   state: StateMessage | null
+  /**
+   * Whether the station is broadcasting, and since when. Null until the first
+   * `air` frame arrives — which is the first frame of all, so the gap is a few
+   * milliseconds and reads as "not yet known" rather than as "off".
+   *
+   * Deliberately not folded into `reach`: that is about whether this page can
+   * reach the station, and this is about whether there is anything to reach.
+   * `standing()` in lib/availability.ts is where the two become one answer.
+   */
+  air: AirSnapshot | null
   /** What's coming up. Null until the first queue frame arrives. */
   queue: QueueEntry[] | null
   /** Who else is here. Null until the first roster arrives. */
   listeners: Listener[] | null
   /** The conversation, oldest first. Empty until the first chat frame arrives. */
   messages: ChatMessage[]
+  /**
+   * What *this* listener has asked for, oldest first.
+   *
+   * Only their own: a wish goes to whoever runs the decks, and the station
+   * answers the socket that made it rather than the room. Nothing replays it,
+   * so this survives a reconnect — the connection is remade under the same
+   * hook — and starts empty on a reload, while the wishes themselves are still
+   * in the book the admin reads.
+   */
+  myWishes: Wish[]
+  /**
+   * What has been on this session, oldest first. Empty until the first history
+   * frame arrives.
+   *
+   * Written down by the station rather than held on the socket, so unlike the
+   * roster this survives a reload: a listener who refreshes at 10 still sees
+   * the evening, and one who arrives then sees what they missed.
+   */
+  history: Play[]
   /**
    * The last thing the socket refused, and a sequence number that goes up on
    * every refusal.
@@ -34,7 +77,7 @@ export interface Station {
    * react to the second one. Without it a repeat is the same value and nothing
    * downstream ever hears about it. Null until something is refused.
    */
-  socketError: { error: ErrorMessage; seq: number } | null
+  socketError: SocketRefusal | null
   clearSocketError(): void
   connection: StationConnection | null
   /**
@@ -48,6 +91,8 @@ export interface Station {
    */
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
+  /** Fold in what `POST /api/session` just answered — see `applyState`. */
+  applyAir(snapshot: AirSnapshot): void
 }
 
 /** Holds the websocket open and tracks the station's broadcast state. */
@@ -56,11 +101,15 @@ export function useStation(
   onMessage?: (message: ServerMessage) => void,
 ): Station {
   const [status, setStatus] = useState<StationStatus>('connecting')
+  const [reach, setReach] = useState<Availability>(INITIALLY)
   const [state, setState] = useState<StateMessage | null>(null)
+  const [air, setAir] = useState<AirSnapshot | null>(null)
   const [queue, setQueue] = useState<QueueEntry[] | null>(null)
   const [listeners, setListeners] = useState<Listener[] | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [socketError, setSocketError] = useState<{ error: ErrorMessage; seq: number } | null>(null)
+  const [myWishes, setMyWishes] = useState<Wish[]>([])
+  const [history, setHistory] = useState<Play[]>([])
+  const [socketError, setSocketError] = useState<SocketRefusal | null>(null)
   const [connection, setConnection] = useState<StationConnection | null>(null)
 
   // Kept in a ref so a changing handler doesn't tear down the socket.
@@ -68,17 +117,37 @@ export function useStation(
   messageHandler.current = onMessage
 
   useEffect(() => {
+    // A different url is a different station, and nothing this page learned
+    // about the last one is about this one.
+    setReach(INITIALLY)
+    // A different station has its own answer to whether it is on air, and this
+    // page has not heard it yet.
+    setAir(null)
     const station = new StationConnection({
       url,
-      onStatus: setStatus,
+      onStatus: (next) => {
+        setStatus(next)
+        setReach((current) => nextAvailability(current, next))
+      },
       onMessage: (message) => {
         if (message.type === 'state') setState(message)
+        if (message.type === 'air') setAir({ live: message.live, since: message.since })
         if (message.type === 'queue') setQueue(message.entries)
         if (message.type === 'presence') setListeners(message.listeners)
         // Merged rather than replaced: a batch is either the history or one new
         // line, and both fold into what is already on screen the same way.
         if (message.type === 'chat') {
           setMessages((current) => mergeMessages(current, message.messages))
+        }
+        // The station's note back, and the only wish frame a listener ever
+        // sees: their own, as it was written down.
+        if (message.type === 'wished') {
+          setMyWishes((current) => mergeWishes(current, [message.wish]))
+        }
+        // Merged rather than replaced, exactly as the chat is: a batch is
+        // either the evening so far or the one track that just started.
+        if (message.type === 'history') {
+          setHistory((current) => mergePlays(current, message.plays))
         }
         // Kept rather than dropped. A refusal is the *only* thing the server
         // says about a frame that went nowhere — a rate-limited message would
@@ -103,18 +172,24 @@ export function useStation(
     [],
   )
   const applyQueue = useCallback((entries: QueueEntry[]) => setQueue(entries), [])
+  const applyAir = useCallback((snapshot: AirSnapshot) => setAir(snapshot), [])
   const clearSocketError = useCallback(() => setSocketError(null), [])
 
   return {
     status,
+    reach,
     state,
+    air,
     queue,
     listeners,
     messages,
+    myWishes,
+    history,
     socketError,
     clearSocketError,
     connection,
     applyState,
     applyQueue,
+    applyAir,
   }
 }

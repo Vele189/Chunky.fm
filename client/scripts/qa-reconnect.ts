@@ -12,7 +12,7 @@ import {
   AUDIO,
   type AudioState,
   CHROME_PATH,
-  CLIENT_URL,
+  STATION_URL,
   Checks,
   PLAYING,
   STATUS,
@@ -37,7 +37,7 @@ try {
   await playbackCommand({ action: 'play', trackId: TRACK_ID })
 
   const page = await (await browser.newContext()).newPage()
-  await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
+  await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, 'reconnect qa')
   await page.waitForFunction(PLAYING, null, { timeout: 15_000 })
   console.log('listener playing')

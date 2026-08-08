@@ -72,7 +72,11 @@ export function useAdminSession({
       try {
         const accepted = await api.signIn(candidate)
         setStatus(accepted ? 'signed-in' : 'signed-out')
-        if (!accepted) setError('wrong password')
+        // Names which of the two it wanted. The station has a door code as well
+        // now, and they are different secrets for different things — somebody
+        // who was let in to listen and then typed that same code here is the
+        // ordinary way to arrive at this message, not an unlikely one.
+        if (!accepted) setError('wrong admin password — this is not the station door code')
         return accepted
       } catch (err) {
         setStatus('signed-out')

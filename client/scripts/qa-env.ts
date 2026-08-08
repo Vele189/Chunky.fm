@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url'
 import type { Page } from 'playwright-core'
 
 export const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173'
+/**
+ * The station itself, which is not the origin: `/` is the page in front of it.
+ * Every script here drives the app, so this is what they all open — see
+ * STATION_PATH in src/lib/routes.ts, which this has to agree with.
+ */
+export const STATION_URL = `${CLIENT_URL.replace(/\/+$/, '')}/listen`
 export const API_URL = process.env.API_URL ?? 'http://localhost:3000'
 export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'change-me'
 export const CHROME_PATH = process.env.CHROME_PATH ?? '/usr/bin/google-chrome'
@@ -64,6 +70,20 @@ export interface AudioState {
 export async function tuneIn(page: Page, nickname = 'qa'): Promise<void> {
   await page.getByLabel('What should everyone call you?').fill(nickname)
   await page.getByRole('button', { name: 'Tune in' }).click()
+}
+
+/**
+ * Give one of the rail's destinations the whole screen.
+ *
+ * The landing view is the deck and the words now; the queue, the evening and
+ * the room each live behind their mark on the rail, which is where a script
+ * that wants to read them has to go — the same trip a person makes.
+ */
+export async function visit(page: Page, hash: string): Promise<void> {
+  await page.evaluate((destination) => {
+    window.location.hash = destination
+  }, hash)
+  await wait(400)
 }
 
 export function playbackCommand(body: unknown): Promise<unknown> {

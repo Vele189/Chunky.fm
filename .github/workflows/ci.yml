@@ -81,6 +81,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ADMIN_PASSWORD: ci-admin-password
+      # Set explicitly so the job drives the door rather than the house key it
+      # would otherwise fall back to — see `stationKeyFromEnv`. A station with
+      # no STATION_KEY is private now, not open, so a job that assumed the old
+      # default would be testing a 401.
+      STATION_KEY: ci-station-key
       WEB_PORT: '18173'
       SERVER_PORT: '13000'
     steps:
@@ -105,17 +110,78 @@ jobs:
         run: |
           curl -fsS "http://localhost:$SERVER_PORT/health" | grep -q '"ok":true'
 
-      - name: The page is served, and the bundle with it
+      - name: The station is served at /listen, and the bundle with it
+        run: |
+          page=$(curl -fsS "http://localhost:$WEB_PORT/listen")
+          grep -q 'id="root"' <<<"$page"
+          asset=$(grep -o '/assets/station-[^"]*\.js' <<<"$page" | head -1)
+          test -n "$asset" || { echo "/listen is not the station entry"; exit 1; }
+          curl -fsS -o /dev/null "http://localhost:$WEB_PORT$asset"
+
+      # The landing page is a second Vite entry, and there are two ways for it
+      # to break that a build alone will not catch: the entry silently missing
+      # from the image, and the nginx rule not being there — in which case
+      # `location /` would answer the root with the station and everything below
+      # except the wordmark would still pass. Hence checking for the landing
+      # bundle by name rather than for any bundle at all.
+      - name: The root is the landing page
         run: |
           page=$(curl -fsS "http://localhost:$WEB_PORT/")
           grep -q 'id="root"' <<<"$page"
-          asset=$(grep -o '/assets/[^"]*\.js' <<<"$page" | head -1)
-          test -n "$asset" || { echo "no hashed bundle referenced by index.html"; exit 1; }
+          asset=$(grep -o '/assets/landing-[^"]*\.js' <<<"$page" | head -1)
+          test -n "$asset" || { echo "/ is not the landing entry"; exit 1; }
           curl -fsS -o /dev/null "http://localhost:$WEB_PORT$asset"
 
-      - name: The API answers
+      # The one thing the landing page may not swallow. Invite links handed out
+      # before the doorway moved say `/?k=<key>`, and a key handed to a document
+      # with no code in it to redeem it is every one of those links broken. So a
+      # request for `/` carrying a key must leave for the station with the key
+      # still on it.
+      - name: An invite at the root still reaches the station
         run: |
-          curl -fsS "http://localhost:$WEB_PORT/api/tracks" | grep -q 'tracks'
+          head=$(curl -fsS -o /dev/null -D - "http://localhost:$WEB_PORT/?k=abc123")
+          grep -qi '^HTTP/1.1 302' <<<"$head" || { echo "an invite at / was not sent on"; exit 1; }
+          # Relative on purpose — `absolute_redirect off`. An absolute Location
+          # would be built from nginx's own listen port, which is 80 in the
+          # container and $WEB_PORT out here, and the invite would land nowhere.
+          grep -qi "^location: /listen?k=abc123" <<<"$head" || {
+            echo "the invite did not arrive at the station with its key"; echo "$head"; exit 1
+          }
+          # And it is followable from out here, which is the thing that breaks
+          # if the redirect ever goes absolute again.
+          curl -fsS -L "http://localhost:$WEB_PORT/?k=abc123" | grep -q '/assets/station-'
+          # And a root with no key on it is the landing page, not a redirect —
+          # `if ($arg_k != "")` rather than nginx's own idea of truth.
+          curl -fsS "http://localhost:$WEB_PORT/?utm=x" | grep -q '/assets/landing-'
+
+      # Where the landing page used to be. In the README and in whatever the
+      # station itself linked to, so it has to arrive rather than 404.
+      - name: /welcome still arrives
+        run: |
+          curl -fsS -L "http://localhost:$WEB_PORT/welcome" | grep -q '/assets/landing-'
+
+      # The door is on, and it is the library it guards — not the documents. A
+      # page has to load in order to redeem a code typed into it, so the two
+      # checks above must keep passing without any credential at all.
+      - name: The library is behind the door
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$WEB_PORT/api/tracks")
+          test "$code" = 401 || { echo "expected the library to be private, got $code"; exit 1; }
+
+      - name: A code opens it, and the API answers
+        run: |
+          curl -fsS -X POST -H 'content-type: application/json' \
+            -d "{\"key\":\"$STATION_KEY\"}" -c listener.txt \
+            "http://localhost:$WEB_PORT/api/listen"
+          grep -q chunky_listener listener.txt || { echo "no listener cookie"; exit 1; }
+          curl -fsS -b listener.txt "http://localhost:$WEB_PORT/api/tracks" | grep -q 'tracks'
+
+      - name: The wrong code is refused
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'content-type: application/json' -d '{"key":"not-the-code"}' \
+            "http://localhost:$WEB_PORT/api/listen")
+          test "$code" = 401 || { echo "expected 401, got $code"; exit 1; }
 
       # Proves ADMIN_PASSWORD reached the container and the cookie is issued —
       # the wrong-password half matters just as much, since a misread password
@@ -147,3 +213,97 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v --remove-orphans
+
+  # The other supported deployment: one container, no nginx, Fastify serving the
+  # client as well as the API. That is what ships to Railway, and the front-door
+  # rules it enforces are a *second copy* of the ones the `stack` job checks
+  # against nginx — so they get the same assertions, or the two drift and only
+  # whichever environment holds the odd copy is wrong.
+  single-image:
+    name: single image
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_PASSWORD: ci-admin-password
+      STATION_KEY: ci-station-key
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the one image
+        run: docker build -t chunky-fm/all-in-one:ci .
+
+      - name: Start it
+        run: |
+          docker run -d --name chunky -e ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+            -e STATION_KEY="$STATION_KEY" -p 13000:3000 chunky-fm/all-in-one:ci
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' chunky)" = healthy ] && exit 0
+            sleep 2
+          done
+          echo "never became healthy"; docker logs chunky; exit 1
+
+      - name: Health
+        run: curl -fsS http://localhost:13000/health | grep -q '"ok":true'
+
+      # The same three front-door assertions the `stack` job makes of nginx.
+      - name: The root is the landing page
+        run: |
+          curl -fsS http://localhost:13000/ | grep -q '/assets/landing-'
+          curl -fsS "http://localhost:13000/?utm=x" | grep -q '/assets/landing-'
+
+      - name: An invite at the root still reaches the station
+        run: |
+          head=$(curl -fsS -o /dev/null -D - "http://localhost:13000/?k=abc123")
+          grep -qi '^HTTP/1.1 302' <<<"$head" || { echo "an invite at / was not sent on"; exit 1; }
+          # Relative, for the reason nginx needs `absolute_redirect off`: an
+          # absolute Location would be built from a host header the container
+          # cannot trust, and the invite would land nowhere.
+          grep -qi "^location: /listen?k=abc123" <<<"$head" || {
+            echo "the invite did not arrive at the station with its key"; echo "$head"; exit 1
+          }
+          curl -fsS -L "http://localhost:13000/?k=abc123" | grep -q '/assets/station-'
+
+      - name: The station and its assets are served
+        run: |
+          asset=$(curl -fsS http://localhost:13000/listen | grep -o '/assets/station-[^"]*\.js' | head -1)
+          test -n "$asset" || { echo "/listen is not the station entry"; exit 1; }
+          curl -fsS -o /dev/null "http://localhost:13000$asset"
+          curl -fsS -o /dev/null -D - "http://localhost:13000$asset" | grep -qi 'cache-control:.*immutable'
+          curl -fsS -L http://localhost:13000/welcome | grep -q '/assets/landing-'
+
+      # The failure the app-shell fallback would cause if it were not fenced off:
+      # a mistyped API route answered with a page of HTML and a 200.
+      - name: A mistyped API route is still a JSON 404
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:13000/api/wishez)
+          test "$code" = 404 || { echo "expected 404, got $code"; exit 1; }
+          curl -s http://localhost:13000/api/wishez | grep -q not_found
+
+      # Same shape as the compose job: the door guards the library, never the
+      # documents — a page that would not load could never redeem a code.
+      - name: The library is behind the door, and a code opens it
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:13000/api/tracks)
+          test "$code" = 401 || { echo "expected the library to be private, got $code"; exit 1; }
+          curl -fsS -X POST -H 'content-type: application/json' \
+            -d "{\"key\":\"$STATION_KEY\"}" -c listener.txt \
+            http://localhost:13000/api/listen
+          curl -fsS -b listener.txt http://localhost:13000/api/tracks | grep -q tracks
+
+      - name: Admin sign-in works
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'content-type: application/json' -d '{"password":"definitely-not-it"}' \
+            http://localhost:13000/api/admin/session)
+          test "$code" = 401 || { echo "expected 401, got $code"; exit 1; }
+          curl -fsS -X POST -H 'content-type: application/json' \
+            -d "{\"password\":\"$ADMIN_PASSWORD\"}" -c cookies.txt \
+            http://localhost:13000/api/admin/session | grep -q '"ok":true'
+          grep -q chunky_admin cookies.txt || { echo "no session cookie set"; exit 1; }
+
+      - name: Logs
+        if: failure()
+        run: docker logs chunky
+
+      - name: Tear down
+        if: always()
+        run: docker rm -f chunky || true

@@ -200,6 +200,41 @@ describe('AdminApi queue', () => {
   })
 })
 
+describe('AdminApi wishes', () => {
+  const book = { wishes: [{ id: 3, nickname: 'sam', text: 'some Bowie', at: 0, status: 'new' }], outstanding: 1 }
+
+  it('reads the book whole, count and all', async () => {
+    respond = () => json(book)
+
+    // Not unwrapped to just the list: the count comes from the server so the
+    // heading and the rows can never disagree about what is outstanding.
+    expect(await api().wishes()).toEqual(book)
+    expect(calls[0]).toMatchObject({ url: '/api/wishes' })
+    expect(calls[0]!.init.method).toBe('GET')
+  })
+
+  it('marks one handled by id, and can put it back', async () => {
+    respond = () => json({ wish: { id: 3, status: 'handled' }, ...book })
+
+    await api().markWish(3, 'handled')
+    await api().markWish(3, 'new')
+
+    expect(calls[0]).toMatchObject({ url: '/api/wishes/3' })
+    expect(calls[0]!.init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ status: 'handled' })
+    expect(JSON.parse(String(calls[1]!.init.body))).toEqual({ status: 'new' })
+  })
+
+  it('throws a session-ended error when the cookie has lapsed', async () => {
+    respond = () => json({ error: 'unauthorized', message: 'nope' }, 401)
+
+    // The panel polls this on a timer, so it is the first request likely to
+    // meet a lapsed session — and it has to be the same error every other
+    // control reacts to by signing out.
+    await expect(api().wishes()).rejects.toMatchObject({ name: 'AdminError', status: 401 })
+  })
+})
+
 describe('AdminApi upload', () => {
   const file = () => new File(['audio bytes'], 'track.mp3', { type: 'audio/mpeg' })
 
@@ -259,5 +294,56 @@ describe('refusalMessage', () => {
     // And a network failure is not an AdminError at all.
     expect(refusalMessage(new TypeError('Failed to fetch'))).toBeNull()
     expect(refusalMessage(undefined)).toBeNull()
+  })
+})
+
+describe('going on and off air', () => {
+  it('asks the station which way round it is', async () => {
+    respond = () => json({ live: true, since: 1_700_000_000_000 })
+    expect(await api().air()).toEqual({ live: true, since: 1_700_000_000_000 })
+    expect(calls[0]?.url).toBe('/api/session')
+    expect(calls[0]?.init.method).toBe('GET')
+  })
+
+  it('sends the verb the station takes', async () => {
+    respond = () => json({ live: true, since: 1 })
+    await api().session('start')
+    expect(calls[0]?.url).toBe('/api/session')
+    expect(calls[0]?.init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ action: 'start' })
+  })
+
+  it('ends it', async () => {
+    respond = () => json({ live: false, since: null })
+    expect(await api().session('end')).toEqual({ live: false, since: null })
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ action: 'end' })
+  })
+})
+
+describe('muting a nickname', () => {
+  it('reads the list', async () => {
+    respond = () => json({ nicknames: ['sam'] })
+    expect(await api().mutes()).toEqual(['sam'])
+    expect(calls[0]?.url).toBe('/api/mutes')
+    expect(calls[0]?.init.method).toBe('GET')
+  })
+
+  it('says where the nickname now stands, not "toggle"', async () => {
+    // The same shape a re-join takes: two of these in a row leave one mute,
+    // so a retry after a dropped response is safe.
+    respond = () => json({ nicknames: ['sam'] })
+    expect(await api().mute('sam', true)).toEqual(['sam'])
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ nickname: 'sam', muted: true })
+  })
+
+  it('lifts one', async () => {
+    respond = () => json({ nicknames: [] })
+    expect(await api().mute('sam', false)).toEqual([])
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ nickname: 'sam', muted: false })
+  })
+
+  it('reports a refusal the way every other call does', async () => {
+    respond = () => json({ error: 'unauthorized', message: 'sign in first' }, 401)
+    await expect(api().mute('sam', true)).rejects.toBeInstanceOf(AdminError)
   })
 })

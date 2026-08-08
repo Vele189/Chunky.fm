@@ -1,4 +1,4 @@
-import type { Db, MessageRow } from './db.js'
+import type { Db, MessageRow, SessionRef } from './db.js'
 
 /**
  * Chat was the first thing here worth pacing, so the token bucket was written
@@ -65,20 +65,21 @@ export function isSendableMessage(raw: string): boolean {
 
 export interface ChatLogOptions {
   db: Db
-  sessionId: number
+  /** Which session's chat this is. Reads `null` while the station is off air. */
+  session: SessionRef
   historyLimit?: number
   now?: () => number
 }
 
 export class ChatLog {
   readonly #db: Db
-  readonly #sessionId: number
+  readonly #session: SessionRef
   readonly #historyLimit: number
   readonly #now: () => number
 
-  constructor({ db, sessionId, historyLimit = DEFAULT_HISTORY_LIMIT, now = Date.now }: ChatLogOptions) {
+  constructor({ db, session, historyLimit = DEFAULT_HISTORY_LIMIT, now = Date.now }: ChatLogOptions) {
     this.#db = db
-    this.#sessionId = sessionId
+    this.#session = session
     this.#historyLimit = historyLimit
     this.#now = now
   }
@@ -91,8 +92,15 @@ export class ChatLog {
    * the author of its own messages could sign someone else's name to them.
    */
   post(nickname: string, text: string): ChatMessage {
+    const sessionId = this.#session.current
+    if (sessionId === null) {
+      // The socket layer refuses a `say` before it gets here, so reaching this
+      // is a bug rather than a listener doing something unusual — and a message
+      // written to no session would be invisible the moment it was stored.
+      throw new Error('nothing can be said off air — there is no session to say it in')
+    }
     const row = {
-      session_id: this.#sessionId,
+      session_id: sessionId,
       nick: nickname,
       text: normalizeMessageText(text),
       created_at: this.#now(),
@@ -114,17 +122,23 @@ export class ChatLog {
    * its beginning.
    */
   recent(limit = this.#historyLimit): ChatMessage[] {
+    // Off air there is no conversation, rather than last night's. Going live
+    // opens a fresh room, which is what scoping the chat to a session is for.
+    const sessionId = this.#session.current
+    if (sessionId === null) return []
     const rows = this.#db
       .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?')
-      .all(this.#sessionId, limit) as MessageRow[]
+      .all(sessionId, limit) as MessageRow[]
     return rows.reverse().map(toChatMessage)
   }
 
   /** For tests and for the log line on startup. */
   count(): number {
+    const sessionId = this.#session.current
+    if (sessionId === null) return 0
     const row = this.#db
       .prepare('SELECT COUNT(*) AS n FROM messages WHERE session_id = ?')
-      .get(this.#sessionId) as { n: number }
+      .get(sessionId) as { n: number }
     return row.n
   }
 }

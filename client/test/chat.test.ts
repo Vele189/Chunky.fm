@@ -139,3 +139,14 @@ describe('a message the room refused', () => {
     expect(draftAfterRefusal('', null)).toBe('')
   })
 })
+
+describe('what the composer says about the new refusals', () => {
+  it('names being muted, rather than letting the message vanish', () => {
+    // A message that disappeared quietly reads exactly like one that was sent.
+    expect(chatRefusal('muted')).toMatch(/muted/)
+  })
+
+  it('says the station is off air', () => {
+    expect(chatRefusal('off_air')).toMatch(/not on air/)
+  })
+})

@@ -8,10 +8,15 @@ import { vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { ChatLog } from '../src/chat.js'
 import type { Config } from '../src/config.js'
+import type { OnAir } from '../src/air.js'
+import type { Mutes } from '../src/mutes.js'
 import { type Db, openDb } from '../src/db.js'
 import type { Track } from '../src/lib/track.js'
 import { PlaybackState } from '../src/playback.js'
 import type { Station } from '../src/station.js'
+import type { PlayLog } from '../src/history.js'
+import type { LyricsService } from '../src/lyrics.js'
+import type { WishBook } from '../src/wishes.js'
 
 export const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
 export const ADMIN_PASSWORD = 'hunter2-for-tests'
@@ -23,6 +28,11 @@ export interface Harness {
   playback: PlaybackState
   station: Station
   chat: ChatLog
+  wishes: WishBook
+  plays: PlayLog
+  air: OnAir
+  mutes: Mutes
+  lyrics: LyricsService
   /** Only set when the harness was started with `listen: true`. */
   wsUrl: string
   cleanup(): Promise<void>
@@ -33,12 +43,29 @@ export interface HarnessOptions {
   heartbeatIntervalMs?: number
   backstopIntervalMs?: number
   chatHistoryLimit?: number
+  playHistoryLimit?: number
+  /**
+   * Whether to come up on air. Defaults true, which is the opposite of
+   * production: almost every test here is about chat, wishes, votes or history,
+   * all of which need a session to write to, and making each of them open one
+   * first would be ceremony that tests nothing. The tests that *are* about
+   * going on and off air pass `live: false` and drive it by hand.
+   */
+  live?: boolean
   chatBurst?: number
   chatRefillMs?: number
   joinBurst?: number
   joinRefillMs?: number
+  wishBurst?: number
+  wishRefillMs?: number
   signInBurst?: number
   signInRefillMs?: number
+  /**
+   * Stands in for LRCLIB. Defaults to an archive that knows nothing, so no
+   * test reaches the real internet by accident; the lyrics tests hand in one
+   * that answers.
+   */
+  lyricsFetch?: typeof fetch
   /** Bind a real port — required for anything that opens a websocket. */
   listen?: boolean
 }
@@ -50,12 +77,17 @@ export async function startHarness(
     heartbeatIntervalMs,
     backstopIntervalMs,
     chatHistoryLimit,
+    playHistoryLimit,
+    live = true,
     chatBurst,
     chatRefillMs,
     joinBurst,
     joinRefillMs,
+    wishBurst,
+    wishRefillMs,
     signInBurst,
     signInRefillMs,
+    lyricsFetch = async () => new Response(null, { status: 404 }),
     listen = false,
   }: HarnessOptions = {},
 ): Promise<Harness> {
@@ -69,7 +101,15 @@ export async function startHarness(
     tmpDir: path.join(storageDir, 'tmp'),
     dbPath: ':memory:',
     adminPassword: ADMIN_PASSWORD,
+    // Open by default, which is what an unset STATION_KEY means and what most
+    // tests want. The ones about the gate pass a key through `overrides`.
+    stationKey: null,
     maxUploadBytes: 10 * 1024 * 1024,
+    // Never resolved: the harness stubs the fetch itself — see `lyricsFetch`.
+    lrclibBaseUrl: 'http://lrclib.invalid',
+    // No client bundle: these tests are about the API. The doorway tests build
+    // a bundle in a temp dir and pass it through `overrides`.
+    clientDir: null,
     // As deployed: something is always in front of this, and anything keyed on
     // the caller's address is only correct if it reads through it.
     trustProxy: true,
@@ -85,12 +125,17 @@ export async function startHarness(
     heartbeatIntervalMs,
     backstopIntervalMs,
     chatHistoryLimit,
+    playHistoryLimit,
+    live,
     chatBurst,
     chatRefillMs,
     joinBurst,
     joinRefillMs,
+    wishBurst,
+    wishRefillMs,
     signInBurst,
     signInRefillMs,
+    lyricsFetch,
   })
 
   let wsUrl = ''
@@ -107,6 +152,11 @@ export async function startHarness(
     playback,
     station: app.station,
     chat: app.chat,
+    wishes: app.wishes,
+    plays: app.plays,
+    air: app.air,
+    mutes: app.mutes,
+    lyrics: app.lyrics,
     wsUrl,
     async cleanup() {
       await app.close()
