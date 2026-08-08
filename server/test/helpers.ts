@@ -58,8 +58,6 @@ export interface HarnessOptions {
   joinRefillMs?: number
   wishBurst?: number
   wishRefillMs?: number
-  voteBurst?: number
-  voteRefillMs?: number
   signInBurst?: number
   signInRefillMs?: number
   /**
@@ -87,8 +85,6 @@ export async function startHarness(
     joinRefillMs,
     wishBurst,
     wishRefillMs,
-    voteBurst,
-    voteRefillMs,
     signInBurst,
     signInRefillMs,
     lyricsFetch = async () => new Response(null, { status: 404 }),
@@ -137,8 +133,6 @@ export async function startHarness(
     joinRefillMs,
     wishBurst,
     wishRefillMs,
-    voteBurst,
-    voteRefillMs,
     signInBurst,
     signInRefillMs,
     lyricsFetch,
