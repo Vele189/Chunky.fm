@@ -17,7 +17,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
  * (<https://ui.aceternity.com/components/draggable-card>), which is written for
  * a Tailwind + shadcn project and arrives via `npx shadcn add`. This is neither:
  * there is no Tailwind here, no `cn`, and no `components/ui`. So the physics is
- * kept exactly — the same spring, the same tilt range, the same velocity fling —
+ * kept exactly (the same spring, the same tilt range, the same velocity fling)
  * and everything that was a utility class is a rule in landing.css instead,
  * drawn from tokens.css like the rest of the page.
  *

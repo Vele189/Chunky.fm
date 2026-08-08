@@ -4,7 +4,7 @@
  * PLAN.md's presence story in full: a socket → nickname map, broadcast on join
  * and on leave. It is deliberately not the connection count. A tab that has
  * loaded the page holds a socket open before anyone has named themselves, and a
- * roster built from sockets would show those as phantom listeners — so a
+ * roster built from sockets would show those as phantom listeners, so a
  * listener enters this map when they say who they are, and leaves it when their
  * socket does.
  *
@@ -12,7 +12,7 @@
  * because every socket it describes dies with it too.
  */
 
-/** Mirrors `client/src/lib/nickname.ts` — keep the two in step. */
+/** Mirrors `client/src/lib/nickname.ts`; keep the two in step. */
 export const NICKNAME_MAX_LENGTH = 24
 
 export interface Listener {
@@ -22,7 +22,7 @@ export interface Listener {
 }
 
 /**
- * One line of printable text, trimmed and capped — the same rules the client
+ * One line of printable text, trimmed and capped: the same rules the client
  * applies before storing a nickname, applied again because a socket is not a
  * browser and nothing obliges a client to have applied them.
  */
@@ -42,7 +42,7 @@ export function normalizeNickname(raw: string): string {
  * a `change` event the way the queue does. The queue needs the event because it
  * is mutated from the HTTP routes, a long way from the socket that has to
  * broadcast; presence is only ever touched by the socket layer itself, and a
- * boolean there says the same thing without the indirection — and says it
+ * boolean there says the same thing without the indirection, and says it
  * precisely enough that a re-join under the name a listener already has costs
  * no broadcast at all.
  */
@@ -64,7 +64,7 @@ export class Presence {
 
   /**
    * What to call this socket, or null if it has not said. This is where chat
-   * gets the name it signs a message with — a client never supplies its own.
+   * gets the name it signs a message with; a client never supplies its own.
    */
   nicknameOf(id: number): string | null {
     return this.#listeners.get(id) ?? null
@@ -72,7 +72,7 @@ export class Presence {
 
   /**
    * Name a socket, or rename one that already has a name. False when nothing
-   * changed — an unusable nickname, or the one this socket is already listed
+   * changed: an unusable nickname, or the one this socket is already listed
    * under.
    */
   join(id: number, nickname: string): boolean {

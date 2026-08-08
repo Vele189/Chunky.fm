@@ -18,7 +18,7 @@ async function connect(count = 1): Promise<TestClient[]> {
   return connected
 }
 
-/** A socket that carries what a browser would on the upgrade — cookies. */
+/** A socket that carries what a browser would on the upgrade: cookies. */
 async function connectWith(headers: Record<string, string>): Promise<TestClient> {
   const client = await TestClient.connect(harness.wsUrl, headers)
   clients.push(client)
@@ -56,7 +56,7 @@ describe('websocket connect', () => {
     const [client] = await connect()
     const state = await client!.nextState()
 
-    // The client derives 2:14 from startedAt alone — no special mid-song path.
+    // The client derives 2:14 from startedAt alone: no special mid-song path.
     expect(state.serverTime - state.startedAt).toBe(134_000)
   })
 
@@ -155,7 +155,7 @@ describe('state broadcast', () => {
 
 describe('queue broadcast', () => {
   it('sends the queue on connect', async () => {
-    harness.station.enqueue(track) // idle station — starts playing, nothing queued
+    harness.station.enqueue(track) // idle station: starts playing, nothing queued
     harness.station.enqueue(nextTrack)
 
     const [client] = await connect()
@@ -302,7 +302,7 @@ describe('presence', () => {
 
     const renamed = await client.join('samantha')
 
-    // Same row, new name — not a departure followed by an arrival.
+    // Same row, new name, not a departure followed by an arrival.
     expect(renamed.listeners).toEqual([{ id, nickname: 'samantha' }])
   })
 
@@ -353,7 +353,7 @@ describe('presence', () => {
 
 /**
  * Chat at the socket: several listeners talking, and everything that has to
- * hold while they do — that a message reaches everyone, that it is written
+ * hold while they do: that a message reaches everyone, that it is written
  * down, and that nobody can sign it with a name that isn't theirs.
  */
 describe('chat', () => {
@@ -511,7 +511,7 @@ describe('chat', () => {
  * The acceptance test for now-playing history, at the socket: what has been on
  * reaches everyone as it happens, and is still there for whoever turns up next.
  *
- * The tracks are put in the library first, because the history joins onto it —
+ * The tracks are put in the library first, because the history joins onto it;
  * the rest of this file plays tracks the station has never seen, which is fine
  * for a broadcast and is not a play anybody could name.
  */
@@ -715,7 +715,7 @@ describe('shutdown', () => {
     const connected = await connect(3)
     await Promise.all(connected.map((client) => client.nextState()))
 
-    // An upgraded socket keeps the HTTP server open — if this regresses, the
+    // An upgraded socket keeps the HTTP server open, and if this regresses, the
     // process only dies when the platform loses patience and kills it.
     await harness.app.close()
 
@@ -761,8 +761,8 @@ describe('malformed input', () => {
 
 /**
  * The socket's half of the admin gate. There is nothing privileged to
- * authenticate here — every mutation lives behind `requireAdmin` on an HTTP
- * route — so what has to hold is that the socket grants no control to anyone,
+ * authenticate here: every mutation lives behind `requireAdmin` on an HTTP
+ * route, so what has to hold is that the socket grants no control to anyone,
  * signed in or not.
  */
 describe('admin actions over the socket', () => {

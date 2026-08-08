@@ -1,12 +1,12 @@
 @import './tokens.css';
 
-/* chunky.fm — the objects both pages draw.
+/* chunky.fm: the objects both pages draw.
  *
  * The turntable, the LIVE badge and the level meter are the station's face: the
  * listener page puts them at the top of the deck column, and the landing page
  * puts the same three in its hero. They live here rather than in styles.css so
- * that a change to the record's size or the badge's red reaches both at once —
- * the components in Turntable.tsx are already shared, and a shared component
+ * that a change to the record's size or the badge's red reaches both at once.
+ * The components in Turntable.tsx are already shared, and a shared component
  * whose stylesheet was copied would drift the first time either was touched.
  */
 
@@ -69,7 +69,7 @@
  *   1. the smooth margin outside the last groove
  *   2. the smooth run-out around the label
  *   3. the grooves themselves
- *   4. the vinyl, which is not flat black — it lifts towards the rim, which is
+ *   4. the vinyl, which is not flat black: it lifts towards the rim, which is
  *      what stops a black circle reading as a hole cut in the page
  *
  * The grooves are a repeating gradient rather than an image so they stay sharp
@@ -93,7 +93,7 @@
   /*
    * `closest-side` on every layer, and it is load-bearing rather than tidiness:
    * a radial gradient defaults to `farthest-corner`, so on a square element
-   * 100% is the distance to the corner — 1.41x the radius. Percentages written
+   * 100% is the distance to the corner, 1.41x the radius. Percentages written
    * as if they were fractions of the record land at 0.7x of where they read,
    * which put the smooth outer margin halfway up the disc and crushed the
    * grooves into a ring around the label. With `closest-side`, 100% is the rim.
@@ -102,7 +102,7 @@
    *   1. the smooth margin outside the last groove
    *   2. the smooth run-out around the label
    *   3. the grooves
-   *   4. the vinyl, which is not flat black — it lifts towards the rim, which is
+   *   4. the vinyl, which is not flat black: it lifts towards the rim, which is
    *      what stops a black circle reading as a hole cut in the page
    *
    * 3px of groove pitch is a lie about a real record, which is nearer 0.1mm.
@@ -127,7 +127,7 @@
 }
 
 /* A record at 33⅓ would be a blur at this size, so it turns at a speed you can
-   read as turning. It stops — rather than slowing to a stylish halt — because
+   read as turning. It stops, rather than slowing to a stylish halt, because
    what it is reporting is that the audio stopped. */
 @keyframes deck-spin {
   from {
@@ -142,14 +142,14 @@
   animation: deck-spin 4s linear infinite;
 }
 
-/* The lamp. Fixed in the platter's frame, so the record turns underneath it —
+/* The lamp. Fixed in the platter's frame, so the record turns underneath it;
    see the note in Turntable.tsx. Two sweeps rather than one: a disc this shiny
    under a single source catches it on both sides of the centre, and one lonely
    streak reads as a scratch. */
 .deck__sheen {
   position: absolute;
   inset: 0;
-  /* The same share of the platter the record takes — see the note there. */
+  /* The same share of the platter the record takes. See the note there. */
   width: 92%;
   height: 92%;
   margin: auto;
@@ -193,7 +193,7 @@
 }
 
 /* The post through the middle. Above the label and outside the record, because
-   a spindle is part of the deck rather than part of the record — it is the one
+   a spindle is part of the deck rather than part of the record: it is the one
    thing at the centre that stays still. */
 .deck__spindle {
   position: absolute;
@@ -347,7 +347,7 @@
 }
 
 /* Some listeners have asked their machine not to animate things. The record
-   and the meter both carry meaning, so they keep their two states — they just
+   and the meter both carry meaning, so they keep their two states; they just
    stop moving between them. */
 @media (prefers-reduced-motion: reduce) {
   .deck[data-spinning='true'] .deck__record,
@@ -368,7 +368,7 @@
  *
  * The station's name, in the two weights the design gives it: the word in
  * white and the suffix in grey. It is a heading on the station and on the
- * doorway, and plain text on the landing page's masthead — so it is styled by
+ * doorway, and plain text on the landing page's masthead, so it is styled by
  * class rather than by element. */
 
 .wordmark {
@@ -414,8 +414,8 @@
   display: block;
 }
 
-/* Some of these are anchors — the way out of the doorway, the two on the
-   landing page — and a pill with an underline through it stops reading as a
+/* Some of these are anchors (the way out of the doorway, the two on the
+   landing page) and a pill with an underline through it stops reading as a
    pill. The colour is set above; only the browser's underline has to go. */
 a.button {
   text-decoration: none;
@@ -445,7 +445,7 @@ a.button {
  * A wash rather than a fill: red means "on the air right now" on this page, and
  * a solid red button would be a second bright thing competing with the one dot
  * that is allowed to be. A tint is enough to say this one is not like the
- * others — it stops the music, empties the queue and closes the room. */
+ * others: it stops the music, empties the queue and closes the room. */
 .button--danger {
   background: var(--live-wash);
   color: var(--live-text);
@@ -456,7 +456,7 @@ a.button {
   background: rgb(251 44 54 / 25%);
 }
 
-/* The two halves of "are you sure" — kept on one line so the destructive
+/* The two halves of "are you sure", kept on one line so the destructive
    choice never sits alone with nothing beside it to click instead. */
 .confirm {
   display: inline-flex;

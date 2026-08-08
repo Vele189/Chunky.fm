@@ -48,7 +48,7 @@ describe('mergePlays', () => {
     expect(merged.map((p) => p.id)).toEqual([1, 2, 3, 4])
   })
 
-  it('keys on the play, not the track — the same track twice is two rows', () => {
+  it('keys on the play, not the track: the same track twice is two rows', () => {
     const merged = mergePlays([play(1, 7)], [play(2, 7)])
 
     expect(merged).toHaveLength(2)
@@ -67,7 +67,7 @@ describe('mergePlays', () => {
 
 /**
  * The station writes a play down when a track *starts*, so the newest row is
- * whatever is on right now — which the page already shows in full at the top.
+ * whatever is on right now, which the page already shows in full at the top.
  */
 describe('what counts as earlier', () => {
   it('drops the row for the track that is on, and turns the rest newest first', () => {
@@ -107,7 +107,7 @@ describe('what counts as earlier', () => {
 
   it('names a track with its artist, and copes without one', () => {
     expect(playedLabel({ id: 1, track: track(1, 'Dreams', 'Fleetwood Mac'), at: 0 })).toBe(
-      'Dreams — Fleetwood Mac',
+      'Dreams · Fleetwood Mac',
     )
     expect(playedLabel({ id: 2, track: track(2, 'Untitled', null), at: 0 })).toBe('Untitled')
   })

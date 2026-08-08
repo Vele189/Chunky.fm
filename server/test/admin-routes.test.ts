@@ -35,7 +35,7 @@ describe('POST /api/admin/session', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.json().ok).toBe(true)
-    // Near enough the full TTL — the panel is told when the session lapses.
+    // Near enough the full TTL: the panel is told when the session lapses.
     expect(res.json().expiresAt).toBeGreaterThan(Date.now() + SESSION_TTL_MS - 5_000)
 
     expect(String(res.headers['set-cookie']).startsWith(`${ADMIN_COOKIE}=`)).toBe(true)
@@ -76,7 +76,7 @@ describe('POST /api/admin/session', () => {
     expect((await attempt('')).statusCode).toBe(400)
     expect((await attempt('x'.repeat(513))).statusCode).toBe(400)
     // Fastify coerces a JSON number to its digits, so this is simply wrong
-    // rather than malformed — and either way it never reaches the station.
+    // rather than malformed, and either way it never reaches the station.
     expect((await attempt(12345)).statusCode).toBe(401)
   })
 })
@@ -159,8 +159,8 @@ describe('DELETE /api/admin/session', () => {
 })
 
 /**
- * The password is the entire admin gate — it guards every upload, the queue and
- * the decks — so the rate at which a stranger can test guesses is part of how
+ * The password is the entire admin gate: it guards every upload, the queue and
+ * the decks, so the rate at which a stranger can test guesses is part of how
  * strong it is. Without pacing, a passphrase that would take centuries offline
  * is a few hours of HTTP requests, and nothing in the logs looks different from
  * one wrong attempt.
@@ -170,7 +170,7 @@ describe('sign-in throttling', () => {
 
   /**
    * These need their own limits, and `beforeEach` has already built a station
-   * with the defaults — so that one is closed rather than abandoned. A harness
+   * with the defaults, so that one is closed rather than abandoned. A harness
    * dropped on the floor keeps a Fastify instance, a database and a temp
    * directory alive for the rest of the run.
    */
@@ -187,7 +187,7 @@ describe('sign-in throttling', () => {
 
     const throttled = await wrong()
     expect(throttled.statusCode).toBe(429)
-    // The same shape as every other refusal in the API — see contract.test.ts.
+    // The same shape as every other refusal in the API; see contract.test.ts.
     expect(throttled.json()).toMatchObject({ error: 'too_many_requests' })
     expect(typeof throttled.json().message).toBe('string')
     // Something to wait for, rather than a closed door with no hint.
@@ -237,8 +237,8 @@ describe('sign-in throttling', () => {
         payload: { password: 'definitely-not-it' },
       })
 
-    // Nothing reaches this station directly — nginx is in front of it in
-    // compose, the platform edge is in production — so without reading through
+    // Nothing reaches this station directly: nginx is in front of it in
+    // compose, the platform edge is in production, so without reading through
     // the proxy every caller alive shares one bucket. That is not a limit on
     // guessing, it is a stranger locking the admin out of their own station
     // with five wrong passwords a minute, and the correct password refused
@@ -278,7 +278,7 @@ describe('sign-in throttling', () => {
  *
  * An unconfigured station now derives both the admin password and the door code
  * from the same house key, so the thing that keeps an invited listener out of
- * the decks is no longer that they hold a different secret — it is only the
+ * the decks is no longer that they hold a different secret; it is only the
  * domain separation in `lib/auth.ts`, where the two signing keys are HMACs of
  * the same value under different labels.
  *
@@ -332,7 +332,7 @@ describe('a listener cookie is not an admin cookie', () => {
   })
 
   it('is not accepted even when presented under the admin cookie name', async () => {
-    // The token itself must not verify, whatever jar it arrives in — the name
+    // The token itself must not verify, whatever jar it arrives in: the name
     // is a convention, and the signature is the thing doing the work.
     const listener = await listenerCookieValue()
     const token = listener.split('=').slice(1).join('=')

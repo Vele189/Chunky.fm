@@ -39,13 +39,13 @@ describe('who may listen', () => {
   const open = { stationKey: null } as never
   const shut = { stationKey: KEY, adminPassword: ADMIN_PASSWORD } as never
 
-  it('admits everyone when no key is set — the station PLAN.md describes', () => {
+  it('admits everyone when no key is set: the station PLAN.md describes', () => {
     expect(mayListen(open, {})).toBe(true)
   })
 
   /**
    * The whole point of the falsy check in `mayListen`. A config assembled
-   * without the field — an older deployment, a test helper, a partial object —
+   * without the field (an older deployment, a test helper, a partial object)
    * has always meant an open station, and adding a setting must not shut one
    * by being absent.
    */
@@ -201,7 +201,7 @@ describe('the invite the console hands out', () => {
   /**
    * The whole invitation policy in one check. A listener's browser cannot
    * rebuild an invite on its own, so this endpoint is the only way one could
-   * leak — and an admitted listener is exactly who must not have it, or one
+   * leak, and an admitted listener is exactly who must not have it, or one
    * invite quietly invites everyone they know.
    */
   it('refuses it to a listener who is already admitted', async () => {

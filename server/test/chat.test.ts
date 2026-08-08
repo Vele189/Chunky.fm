@@ -96,7 +96,7 @@ describe('ChatLog', () => {
     expect(chat.recent().map((m) => m.id)).toEqual([...chat.recent()].map((m) => m.id).sort())
   })
 
-  it('survives being reopened — the messages are in the database', () => {
+  it('survives being reopened: the messages are in the database', () => {
     log().post('sam', 'still here?')
 
     // A new log over the same session id is what a reconnect reads from.
@@ -217,7 +217,7 @@ describe('the say frame', () => {
     expect(parsed.ok === false && parsed.error).toMatch(/at most/)
   })
 
-  it('carries no author — that is the roster’s to say', () => {
+  it('carries no author: that is the roster’s to say', () => {
     const parsed = parseClientMessage(
       JSON.stringify({ type: 'say', text: 'hi', nickname: 'someone else', id: 1 }),
     )

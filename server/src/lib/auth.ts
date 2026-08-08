@@ -94,7 +94,7 @@ export function verifyListenerSession(stationKey: string, token: string, now = D
 /** Does this candidate match the station key? The gate on redeeming a link. */
 export function isValidStationKey(config: Config, candidate: unknown): boolean {
   // Falsy rather than `=== null`: an unset env var, an empty one and a config
-  // built without the field all mean the same thing — no key — and an open
+  // built without the field all mean the same thing (no key), and an open
   // station must never accept a key it does not have.
   if (!config.stationKey) return false
   return typeof candidate === 'string' && constantTimeEquals(candidate, config.stationKey)
@@ -103,10 +103,10 @@ export function isValidStationKey(config: Config, candidate: unknown): boolean {
 /**
  * May this request hear the station?
  *
- * An open station admits everyone — which now means one opened on purpose with
+ * An open station admits everyone, which now means one opened on purpose with
  * STATION_OPEN, or a config assembled without the field at all, as the tests do.
  * Otherwise: a valid invite cookie, the key presented directly (for curl and
- * the QA scripts, which have nowhere to keep a cookie), or admin credentials —
+ * the QA scripts, which have nowhere to keep a cookie), or admin credentials:
  * whoever runs the decks does not also need an invite to their own station.
  *
  * Raw headers rather than a `FastifyRequest`, so the websocket upgrade can ask
@@ -153,7 +153,7 @@ export interface AdminSession {
  * Mint a session for someone who has just proved they know the password.
  *
  * The expiry lives inside the signed payload, so it is the server's word rather
- * than the browser's — a client that ignores `Max-Age` and keeps the cookie
+ * than the browser's, so a client that ignores `Max-Age` and keeps the cookie
  * still finds it refused. The nonce only makes two sessions minted in the same
  * millisecond distinct from each other.
  */
@@ -185,7 +185,7 @@ export function sessionCookie(session: AdminSession, secure: boolean, now = Date
   return cookie(session.token, Math.max(0, Math.floor((session.expiresAt - now) / 1000)), secure)
 }
 
-/** `Set-Cookie` that drops the session — signing out, or shedding a stale one. */
+/** `Set-Cookie` that drops the session: signing out, or shedding a stale one. */
 export function clearedCookie(secure: boolean): string {
   return cookie('', 0, secure)
 }
@@ -217,7 +217,7 @@ function cookie(value: string, maxAgeSeconds: number, secure: boolean, name = AD
 /**
  * `Secure` would make the cookie unusable over plain HTTP, which is exactly how
  * the station is developed, so it follows the scheme the request arrived on.
- * Railway terminates TLS in front of the app — hence the forwarded header.
+ * Railway terminates TLS in front of the app, hence the forwarded header.
  */
 export function isSecureRequest(request: FastifyRequest): boolean {
   const forwarded = request.headers['x-forwarded-proto']
@@ -250,7 +250,7 @@ function presentedPassword(headers: IncomingHttpHeaders): string | null {
 }
 
 /**
- * Is this request the admin? Either credential is enough — a valid session
+ * Is this request the admin? Either credential is enough: a valid session
  * cookie, or the password itself.
  *
  * Takes raw headers rather than a `FastifyRequest` so the websocket upgrade,
@@ -277,8 +277,8 @@ export function isValidPassword(config: Config, candidate: unknown): boolean {
 export function requireAdmin(config: Config) {
   return async function adminGuard(request: FastifyRequest, reply: FastifyReply) {
     if (!hasAdminCredentials(config, request.headers)) {
-      // Shed the cookie on the way out: a signature that no longer verifies —
-      // usually a restart with a different password — would otherwise be sent
+      // Shed the cookie on the way out: a signature that no longer verifies
+      // (usually a restart with a different password) would otherwise be sent
       // again on every request the browser makes for the rest of the session.
       return reply
         .header('set-cookie', clearedCookie(isSecureRequest(request)))

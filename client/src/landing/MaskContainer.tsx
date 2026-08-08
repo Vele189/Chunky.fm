@@ -9,7 +9,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
  * (<https://ui.aceternity.com/components/svg-mask-effect>). The mechanism is
  * theirs exactly: a lit panel laid over the section, given a `mask-image` of a
  * single circle at `mask-repeat: no-repeat`, with the mask's size and position
- * animated — position tracking the pointer at 0.15s linear, size springing from
+ * animated: position tracking the pointer at 0.15s linear, size springing from
  * 10px to 600px over 0.3s when the pointer is actually on the words. A mask
  * shows its element only where the mask image is opaque, so what you get is a
  * disc of the covered layer travelling under the cursor.
@@ -18,14 +18,14 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
  *
  *  - **The mask is inlined, not fetched.** The original points at `/mask.svg`
  *    in the public directory, and that file turns out to be one `<circle>` on a
- *    1298 viewBox. It is the same circle here, as a data URI in the stylesheet —
- *    this app does not reach off its own origin for anything, and a mask that
+ *    1298 viewBox. It is the same circle here, as a data URI in the stylesheet,
+ *    since this app does not reach off its own origin for anything, and a mask that
  *    404s is a panel that covers the section completely with no hole in it.
  *  - **It is inert without a fine pointer.** The whole effect is a cursor, and a
  *    phone does not have one: there, this renders both texts plainly, one after
  *    the other, with no panel over anything. The alternative is a section that
  *    hides half of what it says from every visitor on a touchscreen, which is a
- *    mistake this page has already made once — see the note on `WishWall`.
+ *    mistake this page has already made once. See the note on `WishWall`.
  *  - **The hole starts off-canvas.** The original's first render puts the mask
  *    at `NaN px NaN px` because it has no pointer position yet. Parked well
  *    outside the box instead, so what is under the panel stays under it until
@@ -67,7 +67,7 @@ export function MaskContainer({
   const [at, setAt] = useState({ x: OFF, y: OFF })
   const cursor = useFinePointer()
 
-  // No cursor, no effect — and then no panel either. Both texts, in order.
+  // No cursor, no effect, and then no panel either. Both texts, in order.
   if (!cursor) {
     return (
       <div className={`mask mask--flat ${className}`}>

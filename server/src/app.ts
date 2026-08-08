@@ -25,6 +25,8 @@ import { queueRoutes } from './routes/queue.js'
 import { uploadRoutes } from './routes/upload.js'
 import { wishesRoutes } from './routes/wishes.js'
 import { Station } from './station.js'
+import { Schedule } from './schedule.js'
+import { scheduleRoutes } from './routes/schedule.js'
 import { WishBook } from './wishes.js'
 
 declare module 'fastify' {
@@ -37,6 +39,8 @@ declare module 'fastify' {
     plays: PlayLog
     /** Whether the station is broadcasting, and the open session while it is. */
     air: OnAir
+    /** The next session, announced. Outlives every session; see `Schedule`. */
+    schedule: Schedule
     mutes: Mutes
     lyrics: LyricsService
   }
@@ -91,7 +95,7 @@ export async function buildApp({
   await ensureStorageDirs(config)
 
   // trustProxy so `request.ip` is the caller rather than whatever proxy is in
-  // front — see Config.trustProxy. The sign-in throttle is keyed on it, and one
+  // front. See Config.trustProxy. The sign-in throttle is keyed on it, and one
   // bucket shared by everyone behind the proxy would be a lockout, not a limit.
   const app = Fastify({
     logger: logger ?? true,
@@ -130,7 +134,7 @@ export async function buildApp({
   const station = new Station({ playback, backstopIntervalMs })
 
   // A session is a stretch of time the station is on air, opened and closed by
-  // whoever runs the decks — not a run of the process, which is what it used to
+  // whoever runs the decks, not a run of the process, which is what it used to
   // be. Off air by default: a station that went live the instant it booted
   // would put every deploy on air with an empty queue.
   //
@@ -151,15 +155,21 @@ export async function buildApp({
 
   // Ending a broadcast clears the decks and what was queued behind them. The
   // station owns both, so this is wired here rather than reached for from
-  // inside OnAir — a record of a stretch of time should not be able to drive
+  // inside OnAir: a record of a stretch of time should not be able to drive
   // the decks directly.
   //
   // Only on the way *off* air: going live deliberately leaves the decks alone,
   // so an admin who queued a set up before opening the doors still has it.
-  // A mute is about tonight, so it ends with the session — like the queue, and
+  // A mute is about tonight, so it ends with the session, like the queue, and
   // for the same reason. Somebody shouting over the music at midnight should
   // not find themselves silenced next Tuesday by a rule nobody remembers.
   const mutes = new Mutes()
+
+  // Deliberately not wired to the air change below. Everything else in this
+  // file is about tonight and goes when tonight does; an announcement is about
+  // a night that has not happened, and ending a broadcast is usually the moment
+  // it becomes worth reading.
+  const schedule = new Schedule({ db, now: () => playback.now() })
 
   const lyrics = new LyricsService({ db, baseUrl: config.lrclibBaseUrl, fetchFn: lyricsFetch })
 
@@ -168,10 +178,19 @@ export async function buildApp({
     station.playback.stop()
     station.queue.clear()
     mutes.clear()
+    // And everything written down during it. Scoping already made all three
+    // unreadable; this is about the rows. The chat and the book are free text
+    // somebody typed, signed with the name they were using, said to a room that
+    // no longer exists. The play log is only ids and times, but the library
+    // wipe below strands it anyway, and a row nothing can ever read again is
+    // not a record, it is litter. See `ChatLog.forgetAll`.
+    chat.forgetAll()
+    wishes.forgetAll()
+    plays.forgetAll()
     // The set goes with the session it played in. The station is an evening,
     // not an archive: ending the broadcast deletes every track, its file, its
     // artwork and its lyrics, so the disk holds tonight and never everything.
-    // Uploads made *after* ending — an admin prepping the next set — land in
+    // Uploads made *after* ending (an admin prepping the next set) land in
     // an already-empty library and survive to their own session.
     //
     // Fire-and-forget for the same reason the handler above it is synchronous:
@@ -184,6 +203,7 @@ export async function buildApp({
 
   await app.register(adminRoutes({ config, signInBurst, signInRefillMs }))
   await app.register(sessionRoutes({ config, air }))
+  await app.register(scheduleRoutes({ config, schedule }))
   await app.register(mutesRoutes({ config, mutes }))
   await app.register(listenRoutes({ config }))
   await app.register(uploadRoutes({ config, db, lyrics }))
@@ -201,6 +221,7 @@ export async function buildApp({
     server: app.server,
     station,
     air,
+    schedule,
     mutes,
     // The socket is the station: refusing it is what makes a private station
     // private, since everything a listener sees arrives on it.
@@ -226,6 +247,7 @@ export async function buildApp({
   app.decorate('wishes', wishes)
   app.decorate('plays', plays)
   app.decorate('air', air)
+  app.decorate('schedule', schedule)
   app.decorate('mutes', mutes)
   app.decorate('lyrics', lyrics)
 

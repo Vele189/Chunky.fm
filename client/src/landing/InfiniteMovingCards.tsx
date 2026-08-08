@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 /**
- * A row of cards that never stops going past — unless you take hold of it.
+ * A row of cards that never stops going past, unless you take hold of it.
  *
  * A port of Aceternity UI's Infinite Moving Cards
  * (<https://ui.aceternity.com/components/infinite-moving-cards>). The mechanism
@@ -16,7 +16,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
  *
  *  - **The second lap is rendered, not cloned.** The original walks the DOM and
  *    `cloneNode(true)`s every card into the same list. That is fine for its own
- *    cards, which are markup — but ours are `GlareCard`s, and a cloned node has
+ *    cards, which are markup, but ours are `GlareCard`s, and a cloned node has
  *    no React on it: half the cards in the row would sit there dead, not
  *    tilting, not catching the light, for no reason a visitor could work out.
  *    Rendering the list twice gives both laps live handlers.
@@ -24,13 +24,14 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
  *    is gone until the next lap. These cards are steps to be read, and a reader
  *    who looked up mid-sentence should be able to pull the row back rather than
  *    wait most of a lap for the sentence to come round again. So the drift is a
- *    transform written by `requestAnimationFrame` instead of a CSS animation —
- *    a keyframe owns its own clock and cannot be handed a finger's offset — and
+ *    transform written by `requestAnimationFrame` instead of a CSS animation,
+ *    since a keyframe owns its own clock and cannot be handed a finger's offset,
+ *    and
  *    a drag scrubs the same number the drift advances. Let go and the row
  *    drifts on from wherever you left it. `touch-action: pan-y` is what makes
  *    this work on a phone: sideways is the row's, up and down stays the page's.
  *  - **It pauses on hover, on focus and while held.** The original pauses on
- *    hover, which it has to — a glare card only shows you anything while a
+ *    hover, which it has to: a glare card only shows you anything while a
  *    pointer is on it, so a card that slid out from under the cursor would be
  *    the one thing on the page you cannot actually look at. Focus covers a
  *    keyboard, and a finger holding the row is a drag, which pauses it by
@@ -48,14 +49,14 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 /** The original's three. Seconds for one full lap of the row. */
 const SPEEDS = { fast: 20, normal: 40, slow: 80 } as const
 
-/** Half the track's 16px gap — the seam the 50% would otherwise count twice. */
+/** Half the track's 16px gap: the seam the 50% would otherwise count twice. */
 const HALF_GAP = 8
 
 export interface InfiniteMovingCardsProps {
   items: readonly { key: string; node: ReactNode }[]
   direction?: 'left' | 'right'
   speed?: keyof typeof SPEEDS
-  /** Also on focus and while dragging — see the note above. */
+  /** Also on focus and while dragging. See the note above. */
   pauseOnHover?: boolean
   className?: string
 }

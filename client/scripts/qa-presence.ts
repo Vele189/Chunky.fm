@@ -1,6 +1,6 @@
 /**
  * Presence QA in real browsers: listeners tune in one at a time, watch each
- * other arrive, watch each other go — and, after the station is taken out from
+ * other arrive, watch each other go and, after the station is taken out from
  * under them, put themselves back on the roster without being asked.
  *
  * This is the acceptance check for the roster updating *in real time*, which is
@@ -8,7 +8,7 @@
  * actually rendering, not on what the server thinks.
  *
  * Needs a running Vite dev server and a built server (`cd server && npm run
- * build`) — the restart phase owns the server process. See README.
+ * build`), and the restart phase owns the server process. See README.
  */
 import type { ChildProcess } from 'node:child_process'
 import { type Browser, type Page, chromium } from 'playwright-core'
@@ -44,7 +44,7 @@ async function expectRoster(
   { ordered = true, budgetMs = SETTLE_MS } = {},
 ): Promise<void> {
   // After a reconnect the roster is in whoever-got-back-first order, which is
-  // not something to assert on — so those checks compare it as a set.
+  // not something to assert on, so those checks compare it as a set.
   const same = (seen: string[]) =>
     seen.length === expected.length &&
     (ordered ? seen : [...seen].sort()).every(
@@ -62,7 +62,7 @@ async function expectRoster(
 }
 
 async function join(browser: Browser, nickname: string): Promise<Page> {
-  // A context each: separate localStorage, separate sockets — as many listeners
+  // A context each: separate localStorage, separate sockets: as many listeners
   // as far as the station is concerned.
   const page = await (await browser.newContext()).newPage()
   await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
@@ -94,7 +94,7 @@ try {
   await expectRoster(ana, 'ana alone', ['ana'])
 
   const ben = await join(browser, 'ben')
-  // The arrival reaches the listener who was already here — that is presence
+  // The arrival reaches the listener who was already here, which is presence
   // working, as opposed to each page merely rendering its own connect frame.
   await expectRoster(ana, 'ana after ben joins', ['ana', 'ben'])
   await expectRoster(ben, 'ben on arrival', ['ana', 'ben'])
@@ -105,7 +105,7 @@ try {
   await expectRoster(cleo, 'cleo on arrival', ['ana', 'ben', 'cleo'])
 
   // A tab that opens the page but never tunes in holds a socket open and is
-  // still not a listener — the roster is who named themselves, not who connected.
+  // still not a listener: the roster is who named themselves, not who connected.
   const lurker = await (await browser.newContext()).newPage()
   await lurker.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await wait(1_000)

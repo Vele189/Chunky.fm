@@ -46,7 +46,7 @@ export class RateLimit {
     return tokens >= 1 ? 0 : Math.ceil((1 - tokens) * this.#refillMs)
   }
 
-  /** Back to a full bucket — what a success earns after a run of failures. */
+  /** Back to a full bucket: what a success earns after a run of failures. */
   reset(): void {
     this.#tokens = this.#burst
     this.#last = this.#now()
@@ -57,7 +57,7 @@ export interface KeyedRateLimitOptions extends RateLimitOptions {
   /**
    * Ceiling on how many buckets are held at once.
    *
-   * Without it, a key that anyone can choose — a client address — is a map an
+   * Without it, a key that anyone can choose (a client address) is a map an
    * attacker grows for free. The eviction it forces only ever *resets* a
    * limiter, so the cost of being wrong here is bounded by the cap.
    */
@@ -72,13 +72,13 @@ const DEFAULT_MAX_KEYS = 1_024
  * Buckets that have sat long enough to refill completely are indistinguishable
  * from ones that never existed, so they are dropped first and nothing is lost by
  * it. Only when that isn't enough does this fall back to evicting the least
- * recently used — which is why every access moves its key to the end of the map.
+ * recently used, which is why every access moves its key to the end of the map.
  */
 export class KeyedRateLimit {
   readonly #options: RateLimitOptions
   readonly #now: () => number
   readonly #maxKeys: number
-  /** Time for an empty bucket to refill completely — see `#prune`. */
+  /** Time for an empty bucket to refill completely. See `#prune`. */
   readonly #idleMs: number
   readonly #buckets = new Map<string, { limit: RateLimit; seenAt: number }>()
 

@@ -61,13 +61,13 @@ describe('readAnswer', () => {
     expect(readAnswer(204, true)).toBe('admitted')
   })
 
-  it('refuses only on 401 — the one status the gate itself sends', () => {
+  it('refuses only on 401: the one status the gate itself sends', () => {
     expect(readAnswer(401, false)).toBe('refused')
   })
 
   /**
    * The rule that matters. With the station stopped, the thing in front of it
-   * answers instead — Vite's dev proxy with a 500, nginx with a 502 — and
+   * answers instead (Vite's dev proxy with a 500, nginx with a 502), and
    * reading either as "you are not invited" would tell a listener their link
    * was bad every time the station restarted under them.
    */
@@ -90,7 +90,7 @@ describe('inviteLink', () => {
   /**
    * The root is the landing page now. A link handed out from the console that
    * pointed there would send a listener to the page describing the station
-   * rather than into it — so this is the check that keeps it pointed at the app.
+   * rather than into it, so this is the check that keeps it pointed at the app.
    */
   it('points at the station rather than at the page in front of it', () => {
     for (const key of [null, 'abc123']) {
@@ -122,7 +122,7 @@ describe('codeRefusal', () => {
 
   it('says to wait when the door is being knocked on too fast', () => {
     // A short code can be guessed at, so the throttle is reachable by hand in a
-    // way a 24-character key never was — and "wrong code" would be a lie here.
+    // way a 24-character key never was, and "wrong code" would be a lie here.
     expect(codeRefusal(429)).toMatch(/wait/i)
     expect(codeRefusal(429)).not.toMatch(/not the code/i)
   })

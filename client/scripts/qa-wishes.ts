@@ -2,7 +2,7 @@
  * Wishes in real browsers: a listener asks for something, the room never hears
  * about it, and the admin reads it and marks it off.
  *
- * The property worth driving a browser for is the one no unit test can see —
+ * The property worth driving a browser for is the one no unit test can see:
  * that a wish reaches exactly two places. It goes to whoever runs the decks,
  * and back to the person who asked; every other listener in the room is told
  * nothing. Chat is the control here: two listeners who can see each other's
@@ -24,7 +24,7 @@ const ADMIN_URL = `${STATION_URL}#admin`
 const TAG = `run-${Date.now().toString(36).slice(-5)}`
 
 async function openPage(browser: Browser, url: string): Promise<Page> {
-  // A context each, so the listener cannot inherit the admin's cookie — the
+  // A context each, so the listener cannot inherit the admin's cookie, since the
   // whole point of one of the checks below is that they are different people.
   const page = await (await browser.newContext()).newPage()
   await page.goto(url, { waitUntil: 'domcontentloaded' })
@@ -105,7 +105,7 @@ try {
 
   // --- the admin reads it and marks it off ------------------------------------
   // No tuning in: the console is the whole page at #admin, and whoever is
-  // running the decks is not in the room — the wish book reaches them over
+  // running the decks is not in the room: the wish book reaches them over
   // HTTP, not over a listener's socket.
   const admin = await openPage(browser, ADMIN_URL)
   await admin.fill('[data-testid="admin-password"]', ADMIN_PASSWORD)

@@ -4,7 +4,7 @@ import { fetchLyrics, type LyricLine, type Lyrics, parseLrc } from '../lib/lyric
 /**
  * How long to wait before asking again, and how many times to bother. The
  * server looks the words up the moment a track is uploaded, so by the time
- * anything plays the answer is almost always already written down — a retry
+ * anything plays the answer is almost always already written down, and a retry
  * here only covers the track that went on air seconds after landing, while
  * the station's own errand to the archive is still in flight.
  */
@@ -14,7 +14,7 @@ const RETRIES = 2
 export interface LyricSheet {
   /** The synced sheet in time order. Empty when only plain words exist. */
   lines: LyricLine[]
-  /** The words with no clock on them — the fallback sheet. */
+  /** The words with no clock on them: the fallback sheet. */
   plain: string | null
   /** 'looking' until the station has answered; then 'found' or 'none'. */
   status: 'looking' | 'found' | 'none'
@@ -26,7 +26,7 @@ const EMPTY: LyricSheet = { lines: [], plain: null, status: 'none' }
  * The words for the track on the deck.
  *
  * Asks once per track, not per render, and forgets everything the moment the
- * track changes — the words to the last song bright on screen over the intro
+ * track changes: the words to the last song bright on screen over the intro
  * of this one would be worse than no words at all.
  */
 export function useLyrics(trackId: number | null): LyricSheet {

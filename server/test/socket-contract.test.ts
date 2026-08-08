@@ -3,14 +3,14 @@
  *
  * `contract.test.ts` does this for HTTP, and pins the property that made it
  * worth writing: every refusal carries a machine-readable code, whoever wrote
- * it. The socket is the other half of the same API and had no such guarantee —
+ * it. The socket is the other half of the same API and had no such guarantee:
  * its refusals were prose, so a client wanting to tell "you are going too fast"
  * from "say who you are" had to match on English, and any rewording of a message
  * was a silent break.
  *
  * The pacing tests below are here for the same reason and not in
  * `realtime.test.ts`: what they protect is not a feature of one frame but a
- * property of the room — that nothing a single anonymous socket sends turns into
+ * property of the room: that nothing a single anonymous socket sends turns into
  * unbounded work for every other listener.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -118,7 +118,7 @@ describe('every socket refusal is machine-readable', () => {
   it('refuses `say` by code on a station built without a chat', async () => {
     // Built by hand rather than through the harness: `buildApp` always wires a
     // chat, and the socket's own refusal for a station without one still has to
-    // hold — it is reachable from `attachRealtime` on its own.
+    // hold, since it is reachable from `attachRealtime` on its own.
     harness = await startHarness({}, { listen: true })
     const client = await connect()
     await settle(client)
@@ -145,7 +145,7 @@ describe('one socket cannot make the station shout at everyone', () => {
     const before = bystander.seen.filter((m) => m.type === 'presence').length
 
     // Every one of these changes the nickname, so before pacing every one of
-    // them was a roster frame to every other listener — an unauthenticated
+    // them was a roster frame to every other listener: an unauthenticated
     // socket turning one frame into N, with no nickname, password or chat
     // needed to do it.
     for (let i = 0; i < 200; i++) flooder.send({ type: 'join', nickname: `nick-${i}` })
@@ -161,8 +161,8 @@ describe('one socket cannot make the station shout at everyone', () => {
     const client = await connect()
     await settle(client)
 
-    // A client re-sending the name it already has — a reconnect that raced, a
-    // render it did not mean — broadcasts nothing, so it costs nothing. Only a
+    // A client re-sending the name it already has (a reconnect that raced, a
+    // render it did not mean) broadcasts nothing, so it costs nothing. Only a
     // roster the room has to be told about spends a token.
     await client.join('sam')
     for (let i = 0; i < 50; i++) client.send({ type: 'join', nickname: 'sam' })
@@ -202,7 +202,7 @@ describe('one socket cannot make the station shout at everyone', () => {
     // unaffected by what the socket next to them has been doing.
     //
     // Waited for by content rather than by `join`, which takes the next roster
-    // of any kind — and the flooder's own join already put one in this client's
+    // of any kind, and the flooder's own join already put one in this client's
     // queue, so "the next roster" is not this client's.
     arriving.send({ type: 'join', nickname: 'innocent' })
     const roster = (await arriving.waitFor(

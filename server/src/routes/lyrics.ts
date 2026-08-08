@@ -24,8 +24,8 @@ const PARAMS_SCHEMA = {
  * station the songs of the evening are the station, words included.
  *
  * Read-through rather than read: the upload's background errand usually got
- * here first, but if it lost its race with the track going on air — or lost
- * the network altogether — the first listener to ask sends the station back to
+ * here first, but if it lost its race with the track going on air (or lost
+ * the network altogether), the first listener to ask sends the station back to
  * the archive rather than going without. The service memoises hard enough that
  * a full room asking at once still costs one outbound request.
  */

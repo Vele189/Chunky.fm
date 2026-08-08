@@ -8,7 +8,7 @@
 #   ./start.sh status       what is up, and how healthy
 #   ./start.sh stop         stop the containers, keep the library
 #
-# The database is SQLite, opened in-process by the backend — there is no third
+# The database is SQLite, opened in-process by the backend, so there is no third
 # container to start. It lives in the chunky-fm_data volume together with the
 # audio and artwork, and survives `stop`, `--build`, and image rebuilds.
 
@@ -34,17 +34,17 @@ die()  { printf '%serror%s %s\n' "$red" "$reset" "$*" >&2; exit 1; }
 # --- prerequisites ----------------------------------------------------------
 
 command -v docker >/dev/null 2>&1 \
-  || die "docker is not installed — see https://docs.docker.com/get-docker/"
+  || die "docker is not installed. See https://docs.docker.com/get-docker/"
 
 docker info >/dev/null 2>&1 \
-  || die "the docker daemon is not reachable — is Docker running, and is your user in the docker group?"
+  || die "the docker daemon is not reachable. Is Docker running, and is your user in the docker group?"
 
 if docker compose version >/dev/null 2>&1; then
   compose() { docker compose "$@"; }
 elif command -v docker-compose >/dev/null 2>&1; then
   compose() { docker-compose "$@"; }
 else
-  die "docker compose is not available — install the Compose plugin (docker compose version)"
+  die "docker compose is not available. Install the Compose plugin (docker compose version)"
 fi
 
 # --- configuration ----------------------------------------------------------
@@ -59,23 +59,23 @@ generate_password() {
 
 ensure_env() {
   [[ -f $ENV_FILE ]] && return 0
-  [[ -f $EXAMPLE_ENV ]] || die "neither $ENV_FILE nor $EXAMPLE_ENV exists — cannot configure the station"
+  [[ -f $EXAMPLE_ENV ]] || die "neither $ENV_FILE nor $EXAMPLE_ENV exists, so the station cannot be configured"
 
   # Left empty rather than filled with a generated secret. The server falls back
-  # to the code baked into it, so an unconfigured station has one code that
-  # opens both the door and the decks — which is the whole point of the default,
-  # and generating a second password here would quietly take it away.
+  # to the code baked into it, which is the one thing an unconfigured station
+  # guards, and a password generated here would be one more thing to find before
+  # the station would run at all.
   sed "s|^ADMIN_PASSWORD=change-me$|ADMIN_PASSWORD=|" "$EXAMPLE_ENV" > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 
   info "Created $ENV_FILE."
-  say  "    ${dim}The station asks for a door code, and the same code opens the${reset}"
-  say  "    ${dim}admin panel. Set ADMIN_PASSWORD in $ENV_FILE to give the decks${reset}"
-  say  "    ${dim}a password of their own.${reset}"
+  say  "    ${dim}Anybody with the address can listen. The decks are behind a${reset}"
+  say  "    ${dim}code baked into the server; set ADMIN_PASSWORD in $ENV_FILE to${reset}"
+  say  "    ${dim}give them one you chose.${reset}"
   say
 }
 
-# Read one value out of .env without sourcing it — the file is untrusted input
+# Read one value out of .env without sourcing it: the file is untrusted input
 # as far as this script is concerned, and it is compose that owns parsing it.
 # A shell variable wins over the file, matching how compose resolves the same
 # name, so `WEB_PORT=8080 ./start.sh` reports the port it actually published.
@@ -101,7 +101,7 @@ check_ports() {
   for spec in "WEB_PORT:${1}:frontend" "SERVER_PORT:${2}:backend"; do
     IFS=: read -r key port label <<< "$spec"
     if port_in_use "$port"; then
-      warn "port $port (the $label) is already in use — set $key in $ENV_FILE, or run '$key=<free port> ./start.sh'"
+      warn "port $port (the $label) is already in use. Set $key in $ENV_FILE, or run '$key=<free port> ./start.sh'"
       conflict=yes
     fi
   done
@@ -111,14 +111,14 @@ check_ports() {
 check_password() {
   local password
   password=$(env_value ADMIN_PASSWORD)
-  # Empty is fine now, and is the default: the server falls back to its own
-  # baked-in code. What is worth saying out loud is that the decks are then
-  # behind the same code as the door, which is right for a room of friends and
-  # wrong for anything reachable from the internet.
+  # Empty is fine, and is the default: the server falls back to its own baked-in
+  # code. What is worth saying out loud is that the code is in this repository,
+  # which is right for a room of friends and wrong for anything reachable from
+  # the internet.
   if [[ -z $password ]]; then
-    info "No ADMIN_PASSWORD set — the door code opens the decks too. Fine locally."
+    info "No ADMIN_PASSWORD set. The decks are behind the built-in code. Fine locally."
   elif [[ $password == change-me ]]; then
-    warn "ADMIN_PASSWORD is still 'change-me' in $ENV_FILE — fine locally, never anywhere else"
+    warn "ADMIN_PASSWORD is still 'change-me' in $ENV_FILE: fine locally, never anywhere else"
   fi
 }
 
@@ -148,7 +148,7 @@ wait_for_health() {
       unhealthy|stopped|missing)
         printf '%s✗ %s%s\n' "$red" "$state" "$reset"
         say
-        warn "$service did not come up — last 40 lines:"
+        warn "$service did not come up. Last 40 lines:"
         compose logs --tail 40 "$service" || true
         return 1
         ;;
@@ -172,7 +172,7 @@ start() {
   check_password
 
   # Defaults match docker-compose.yml, and are deliberately not the 5173/3000
-  # that `npm run dev` binds — the two are meant to be able to run side by side.
+  # that `npm run dev` binds, because the two are meant to run side by side.
   local web_port server_port
   web_port=$(env_value WEB_PORT); web_port=${web_port:-18173}
   server_port=$(env_value SERVER_PORT); server_port=${server_port:-13000}
@@ -189,7 +189,7 @@ start() {
   # `--build` every time, deliberately.
   #
   # Compose's own idea of whether an image is needed is only whether the tag
-  # exists — `image:` in docker-compose.yml names one, so a plain `up` after an
+  # exists: `image:` in docker-compose.yml names one, so a plain `up` after an
   # edit starts the last image built and says nothing about it. That is a change
   # that appears to have had no effect, in the one place it is hardest to doubt:
   # the thing you started to look at the change. Whereas the cost of building
@@ -225,7 +225,7 @@ main() {
                   start yes ;;
     logs)         shift; compose logs -f --tail 100 "$@" ;;
     status|ps)    compose ps ;;
-    stop|down)    info "Stopping — the library volume is left alone"
+    stop|down)    info "Stopping. The library volume is left alone"
                   compose down ;;
     restart)      compose down
                   start no ;;

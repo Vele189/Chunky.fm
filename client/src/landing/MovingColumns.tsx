@@ -7,13 +7,13 @@ import { type CSSProperties, type ReactNode, useEffect, useState } from 'react'
  * down a column, then translate the column by exactly half its height. Half a
  * height later the second lap is sitting where the first one started, so there is
  * no seam. The keyframe also backs off half the gap, which the halving would
- * otherwise count twice — it reads that from `--wish-gap` rather than repeating
+ * otherwise count twice, and it reads that from `--wish-gap` rather than repeating
  * the number, because the two have to agree or the loop jumps once a lap.
  *
  * What is different is that there is more than one of them and they do not agree
  * on which way is forward: the first column falls, the second rises, and so on
  * alternately. Two things moving in opposite directions read as a wall in motion
- * rather than as a list being scrolled — which is the point here, because these
+ * rather than as a list being scrolled, which is the point here, because these
  * are wishes arriving from a room rather than an ordered set of anything.
  *
  * The items are dealt out round-robin rather than cut into blocks, and none is
@@ -21,7 +21,7 @@ import { type CSSProperties, type ReactNode, useEffect, useState } from 'react'
  * the other way: columns holding the same list pass each other, and every so
  * often the same sentence is on screen twice at the same height, which is the
  * loop showing itself. Dealing rather than slicing is so a column is not four
- * consecutive wishes — the first four are not a worse four than the last, but
+ * consecutive wishes: the first four are not a worse four than the last, but
  * they are a *run*, and a run reads as an order somebody chose.
  *
  * On a narrow screen it collapses to one column, and the deal collapses with it:
@@ -37,7 +37,7 @@ import { type CSSProperties, type ReactNode, useEffect, useState } from 'react'
 /** Seconds for one full lap of a column. Slower than the row: these are read. */
 const SPEEDS = { fast: '25s', normal: '45s', slow: '75s' } as const
 
-/** The width the wall gives up its second column at — matches landing.css. */
+/** The width the wall gives up its second column at; matches landing.css. */
 const NARROW = '(max-width: 720px)'
 
 export interface MovingColumnsProps {

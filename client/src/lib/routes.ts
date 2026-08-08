@@ -3,14 +3,14 @@
  *
  * The whole app is one document and the address bar's fragment decides what is
  * on screen. A fragment rather than a path because the station is served as a
- * static bundle behind nginx — a real path would need the server to know every
+ * static bundle behind nginx: a real path would need the server to know every
  * route, and `try_files … /index.html` already lies to it about that once. One
  * lie is enough.
  *
  * PLAN.md calls this "one page, two modes", and it still is: `admin` is the
  * other mode, and everything else is the listener page pointed at one of the
  * things on it. What the rail offers is a way to give any of them the whole
- * screen — the same data, with room to read it.
+ * screen, the same data, with room to read it.
  */
 
 export type Route =
@@ -37,7 +37,7 @@ export const DEFAULT_ROUTE: Route = 'on-air'
  *
  * `on-air` is the empty fragment: the station's address is the bare link you
  * paste to somebody, and it should not grow a `#on-air` the moment they arrive.
- * `admin` keeps the plain `#admin` it has always had — it is in the QA scripts,
+ * `admin` keeps the plain `#admin` it has always had: it is in the QA scripts,
  * in the README, and in whatever bookmark whoever runs the decks is using.
  */
 const HASHES: Record<Route, string> = {
@@ -53,7 +53,7 @@ const HASHES: Record<Route, string> = {
 /**
  * The route a fragment names, or null if it names nothing.
  *
- * Exported because the landing page asks it too — it stands at `/`, which is
+ * Exported because the landing page asks it too. It stands at `/`, which is
  * where every `/#chat` and `/#admin` link handed out before the doorway moved
  * still points, and forwarding those needs to know which fragments are the
  * station's and which (`#clockwork`) are its own.
@@ -72,7 +72,7 @@ export function hashFor(route: Route): string {
 /**
  * The station's own address.
  *
- * `/` is the page in front of it — see nginx.conf and the landing page — so the
+ * `/` is the page in front of it (see nginx.conf and the landing page) so the
  * app itself lives one name in. Nothing inside the app depends on this: every
  * link the rail and the topbar draw is a bare fragment, which works at whatever
  * path the document was served from. It is here for the things *outside* the
@@ -90,7 +90,7 @@ export function stationUrl(route: Route = DEFAULT_ROUTE): string {
  * Which route a location is on.
  *
  * `/admin` as a path is honoured as well as `#admin`, because it always has
- * been — see `isAdminRoute`, which this replaces at the call site and agrees
+ * been; see `isAdminRoute`, which this replaces at the call site and agrees
  * with everywhere it mattered.
  */
 export function routeFrom(location: { pathname: string; hash: string }): Route {
@@ -107,7 +107,7 @@ export function isConsole(route: Route): boolean {
  * Whether a route has anything on it for somebody who has not tuned in.
  *
  * Only two do. Everything else is a view of what the station has told this
- * listener, and before joining it has told them nothing — so the rail says so
+ * listener, and before joining it has told them nothing, so the rail says so
  * rather than offering six ways to reach an empty page.
  */
 export function needsJoin(route: Route): boolean {

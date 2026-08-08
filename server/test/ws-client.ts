@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws'
 import type {
   AirMessage,
+  ScheduleMessage,
   ChatMessagesMessage,
   ClientMessage,
   HistoryMessage,
@@ -20,7 +21,7 @@ interface Waiter {
 
 /**
  * A listener, for test purposes. Messages are queued rather than sampled, so a
- * frame that arrives before the assertion asks for it is still seen — the usual
+ * frame that arrives before the assertion asks for it is still seen, the usual
  * source of flake in socket tests.
  */
 export class TestClient {
@@ -37,7 +38,7 @@ export class TestClient {
     this.closed = new Promise((resolve) => socket.once('close', (code) => resolve(code)))
   }
 
-  /** `headers` stands in for what a browser sends on the upgrade — cookies. */
+  /** `headers` stands in for what a browser sends on the upgrade: cookies. */
   static connect(url: string, headers?: Record<string, string>): Promise<TestClient> {
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(url, { headers })
@@ -85,6 +86,10 @@ export class TestClient {
     return (await this.waitFor((m) => m.type === 'air', timeoutMs)) as AirMessage
   }
 
+  async nextSchedule(timeoutMs?: number): Promise<ScheduleMessage> {
+    return (await this.waitFor((m) => m.type === 'schedule', timeoutMs)) as ScheduleMessage
+  }
+
   async nextState(timeoutMs?: number): Promise<StateMessage> {
     return (await this.waitFor((m) => m.type === 'state', timeoutMs)) as StateMessage
   }
@@ -120,7 +125,7 @@ export class TestClient {
   /**
    * Names this listener and waits for the next roster. Messages are queued, so
    * the roster sent on connect has to have been consumed first or it is what
-   * this returns — see `arrive` in the presence tests.
+   * this returns; see `arrive` in the presence tests.
    */
   async join(nickname: string): Promise<PresenceMessage> {
     this.send({ type: 'join', nickname })

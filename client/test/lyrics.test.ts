@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeLineIndex, fetchLyrics, parseLrc } from '../src/lib/lyrics.js'
+import { activeLineIndex, fetchLyrics, parseLrc, parsePlain } from '../src/lib/lyrics.js'
 
 describe('parseLrc', () => {
   it('reads LRCLIB lines into time order', () => {
@@ -34,7 +34,7 @@ describe('parseLrc', () => {
     ])
   })
 
-  it('drops headers and stray prose — a line with no time has no moment', () => {
+  it('drops headers and stray prose: a line with no time has no moment', () => {
     const lines = parseLrc('[ar:Pink Floyd]\n[ti:Wish You Were Here]\nnot a lyric\n[00:05.00] one')
     expect(lines).toEqual([{ timeMs: 5000, text: 'one' }])
   })
@@ -45,10 +45,27 @@ describe('parseLrc', () => {
   })
 })
 
+describe('parsePlain', () => {
+  it('groups untimed words into the verses the blank lines mark', () => {
+    expect(parsePlain('so, so you think\nyou can tell\n\nheaven from hell')).toEqual([
+      ['so, so you think', 'you can tell'],
+      ['heaven from hell'],
+    ])
+  })
+
+  it('takes a run of blanks as one break, and the sheet edges as none', () => {
+    expect(parsePlain('\n\none\n\n\n\ntwo\n  \n')).toEqual([['one'], ['two']])
+  })
+
+  it('keeps a sheet with no blanks in it as a single verse', () => {
+    expect(parsePlain('one\ntwo')).toEqual([['one', 'two']])
+  })
+})
+
 describe('activeLineIndex', () => {
   const lines = parseLrc('[00:05.00] one\n[00:10.00] two\n[00:15.00] three')
 
-  it('is nobody before the first line — an intro has no lyric', () => {
+  it('is nobody before the first line: an intro has no lyric', () => {
     expect(activeLineIndex(lines, 0)).toBe(-1)
     expect(activeLineIndex(lines, 4999)).toBe(-1)
   })

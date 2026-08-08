@@ -7,6 +7,8 @@ export interface Config {
   storageDir: string
   audioDir: string
   artworkDir: string
+  /** Session posters. Public, unlike the audio and the artwork: see `Schedule`. */
+  posterDir: string
   /** Uploads land here first and are only moved once they parse as audio. */
   tmpDir: string
   dbPath: string
@@ -19,13 +21,13 @@ export interface Config {
    * things and are shared with different people: this one goes out in a link to
    * everybody invited, and rotating it locks all of them out at once.
    *
-   * On an unconfigured station they nevertheless hold the same value — both
-   * fall back to the house key — so out of the box one code opens both doors.
-   * That is a choice about defaults and not about the model: set either
+   * On an unconfigured station they nevertheless hold the same value, because
+   * both fall back to the house key, so out of the box one code opens both
+   * doors. That is a choice about defaults and not about the model: set either
    * variable and they part company, and nothing downstream has to change,
    * because nothing downstream ever assumed they were equal.
    *
-   * Null only when the station has been opened deliberately — see
+   * Null only when the station has been opened deliberately. See
    * `stationKeyFromEnv`. It is no longer what an unset `STATION_KEY` means.
    */
   stationKey: string | null
@@ -40,7 +42,7 @@ export interface Config {
    * The built client, when this process is also the thing serving it.
    *
    * Null under compose and in development, where something else owns the front
-   * door — nginx in the container, Vite's dev server locally — and this process
+   * door (nginx in the container, Vite's dev server locally) and this process
    * is only an API. Set to `client/dist` in the single-image deployment, where
    * there is no nginx and Fastify is the only thing listening.
    *
@@ -56,14 +58,14 @@ export interface Config {
    * This is never reached directly in either supported deployment: nginx sits
    * in front of it in compose, and Railway's edge does in production. So the
    * socket's peer address is the proxy's, and `request.ip` is that same address
-   * for every caller alive — which is fine for logging and *not* fine for
+   * for every caller alive, which is fine for logging and *not* fine for
    * anything keyed on it. The sign-in throttle is keyed on it, and one shared
    * bucket there is not brute-force protection, it is a way for a stranger to
    * lock the admin out of their own station.
    *
    * True by default for that reason, which means trusting `X-Forwarded-For`.
    * Anyone who can reach the origin directly can therefore claim to be any
-   * address they like — so don't publish the origin port. Set `TRUST_PROXY` to
+   * address they like, so don't publish the origin port. Set `TRUST_PROXY` to
    * `false` when nothing is in front, or to a hop count or a list of proxy
    * addresses to trust something narrower.
    */
@@ -72,7 +74,7 @@ export interface Config {
 
 /**
  * `false`/`true` as written, a bare integer as a hop count, anything else as a
- * comma-separated list of addresses or CIDR ranges — the shapes Fastify already
+ * comma-separated list of addresses or CIDR ranges: the shapes Fastify already
  * takes, chosen from the string an env var has to be.
  */
 function trustProxyFromEnv(value: string | undefined): Config['trustProxy'] {
@@ -98,15 +100,16 @@ function trustProxyFromEnv(value: string | undefined): Config['trustProxy'] {
  * and it is worth being straight about what it buys: nothing at all against
  * anyone holding this repository, and everything against the only threat that
  * actually exists here, which is the code sitting in plain sight in a file
- * somebody screen-shares. It never leaves the server — a listener presents a
- * guess and is told yes or no — so the browser never has it to give away.
+ * somebody screen-shares. It never leaves the server: a listener presents a
+ * guess and is told yes or no, so the browser never has it to give away.
  *
  * To read it back without printing it into a commit:
  *
  *     node -e "console.log([...Buffer.from('MTAxeWtudWhj','base64').toString()].reverse().join(''))"
  *
- * Set `STATION_KEY` to replace it with something you chose, which is what any
- * station with people in it should do. `STATION_OPEN=true` removes the door.
+ * Only the decks use it now. The door came off the listening side: see
+ * `stationKeyFromEnv`. Set `ADMIN_PASSWORD` to replace this with something you
+ * chose, which is what any station reachable from the internet should do.
  */
 function houseKey(): string {
   return [...Buffer.from('MTAxeWtudWhj', 'base64').toString('utf8')].reverse().join('')
@@ -115,25 +118,34 @@ function houseKey(): string {
 /**
  * What guards the station, from the environment.
  *
- * The default changed, and it changed in the direction that fails safe: an
- * unset `STATION_KEY` used to mean an open station, and now means the house key
- * above. A station that quietly became public because a variable went missing
- * during a deploy is a worse surprise than one that quietly asks for a password
- * somebody has to go and look up.
+ * **Nothing, unless you ask for it.** An unset `STATION_KEY` is an open
+ * station: anybody with the address can listen, and nobody is asked for
+ * anything on the way in.
  *
- * Opening it is therefore something you now have to *say*, rather than
- * something that happens when you forget to speak.
+ * This default has now been both ways round, so it is worth writing down why it
+ * is back here. The argument for a door by default was that a station which
+ * quietly became public because a variable went missing is a bad surprise. The
+ * argument against it, which won, is that the door was being paid for by every
+ * single listener on every single visit, to protect a room of friends listening
+ * to music together. A code somebody has to be told, remembered and typed is
+ * the most expensive thing on the way in, and it was being charged to everyone
+ * to guard something most stations do not need guarded at all.
+ *
+ * A door is still one variable away, and the whole mechanism behind it is
+ * untouched: invite links, the cookie, the typed code, rotation. `STATION_KEY`
+ * puts it back on.
+ *
+ * What is *not* affected is the decks. `ADMIN_PASSWORD` still guards every
+ * upload, the queue and going on air, and it still falls back to the house key
+ * above. Opening the station means anybody can listen; it has never meant
+ * anybody can play anything.
  */
 function stationKeyFromEnv(env: NodeJS.ProcessEnv): string | null {
-  // An explicit key beats an explicit opening, in the one case where somebody
-  // has set both. That is contradictory configuration and there is no reading
-  // of it that is obviously right — so it resolves towards the shut door, which
-  // is the mistake you find out about from a friend who cannot get in rather
-  // than from a stranger who could.
-  const chosen = env.STATION_KEY?.trim()
-  if (chosen) return chosen
-  if (env.STATION_OPEN?.trim() === 'true') return null
-  return houseKey()
+  // `STATION_OPEN` is what taking the door off used to need, and it is now the
+  // default. Still accepted, and still a no-op rather than an error, because a
+  // compose file or a Railway variable that has been carrying it for months
+  // should not start failing to mean what it always meant.
+  return env.STATION_KEY?.trim() || null
 }
 
 const DEFAULT_MAX_UPLOAD_BYTES = 150 * 1024 * 1024
@@ -164,6 +176,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     storageDir,
     audioDir: path.join(storageDir, 'audio'),
     artworkDir: path.join(storageDir, 'artwork'),
+    posterDir: path.join(storageDir, 'posters'),
     tmpDir: path.join(storageDir, 'tmp'),
     dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(storageDir, 'chunky.sqlite'),
     adminPassword,
@@ -172,7 +185,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     lrclibBaseUrl: env.LRCLIB_BASE_URL?.trim() || 'https://lrclib.net',
     // Unset means "something else is serving the client", which is true of both
     // the compose stack and `npm run dev`. Only the single-image deployment
-    // sets it — see the root Dockerfile.
+    // sets it. See the root Dockerfile.
     clientDir: env.CLIENT_DIR?.trim() ? path.resolve(env.CLIENT_DIR.trim()) : null,
     trustProxy: trustProxyFromEnv(env.TRUST_PROXY),
   }

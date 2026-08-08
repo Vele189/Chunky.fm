@@ -1,10 +1,10 @@
 import broadcastIcon from './assets/icons/broadcast.svg'
-import chatIcon from './assets/icons/chat.svg'
-import clockIcon from './assets/icons/clock.svg'
-import heartIcon from './assets/icons/heart.svg'
-import lyricsIcon from './assets/icons/lyrics.svg'
+import syncIcon from './assets/icons/chart-line-up.svg'
+import chatIcon from './assets/icons/chats-circle.svg'
+import historyIcon from './assets/icons/clock-counter-clockwise.svg'
+import lyricsIcon from './assets/icons/microphone-stage.svg'
 import settingsIcon from './assets/icons/settings.svg'
-import slidersIcon from './assets/icons/sliders.svg'
+import wishesIcon from './assets/icons/shooting-star.svg'
 import { hashFor, needsJoin, type Route } from './lib/routes.js'
 
 /**
@@ -26,28 +26,39 @@ import { hashFor, needsJoin, type Route } from './lib/routes.js'
 interface Destination {
   route: Route
   icon: string
-  /** What a screen reader and a tooltip both say — the icons carry no words. */
+  /** What a screen reader and a tooltip both say; the icons carry no words. */
   label: string
 }
 
+/**
+ * Every mark names the thing behind it rather than the shape of its panel: a
+ * microphone for the words, a line going up for the numbers, a wound-back clock
+ * for what has already been on. The exceptions are the two that are already
+ * something: the broadcast mark, which is the station itself, and the decks.
+ *
+ * They are drawn dark, which on a dark rail sounds wrong and is not: a lit mark
+ * sits on a white pill (`--fg`), so the ink has to be dark enough to read on
+ * white, and the rail turns it to grey for every mark that is not lit. See
+ * `.rail__icon` in styles.css, which is where both halves of that happen.
+ */
 const DESTINATIONS: Destination[] = [
   { route: 'on-air', icon: broadcastIcon, label: 'On air' },
   { route: 'lyrics', icon: lyricsIcon, label: 'Lyrics' },
-  { route: 'sync', icon: slidersIcon, label: 'Sync' },
+  { route: 'sync', icon: syncIcon, label: 'Sync' },
   { route: 'chat', icon: chatIcon, label: 'Chat' },
-  { route: 'wishes', icon: heartIcon, label: 'Wishes' },
-  { route: 'history', icon: clockIcon, label: 'History' },
+  { route: 'wishes', icon: wishesIcon, label: 'Wishes' },
+  { route: 'history', icon: historyIcon, label: 'History' },
 ]
 
 export interface SidebarProps {
   /** Where the page is now. */
   active: Route
-  /** False until this listener has tuned in — see the note above. */
+  /** False until this listener has tuned in. See the note above. */
   joined: boolean
   /**
    * Whether this browser is already signed in to the console. The mark at the
    * foot is the other door into it, so it is hidden on the same terms as the
-   * chip in the top bar — otherwise hiding one of the two would achieve
+   * chip in the top bar; otherwise hiding one of the two would achieve
    * nothing at all.
    */
   showConsole: boolean
@@ -83,8 +94,8 @@ export function Sidebar({ active, joined, showConsole }: SidebarProps) {
                   type="button"
                   className="rail__mark rail__mark--shut"
                   disabled
-                  title={`${destination.label} — join the room first`}
-                  aria-label={`${destination.label} — join the room first`}
+                  title={`${destination.label}: join the room first`}
+                  aria-label={`${destination.label}: join the room first`}
                 >
                   {icon}
                 </button>

@@ -1,6 +1,6 @@
 import type { TrackRow } from '../db.js'
 
-/** A track as it goes over the wire — camelCase, no storage internals implied. */
+/** A track as it goes over the wire: camelCase, no storage internals implied. */
 export interface Track {
   id: number
   title: string

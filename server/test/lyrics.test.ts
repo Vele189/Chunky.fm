@@ -37,7 +37,7 @@ function json(body: unknown, status = 200): Response {
 
 /**
  * An archive that answers from a script and writes down what it was asked.
- * `answers` maps a path prefix — '/api/get' or '/api/search' — to a response.
+ * `answers` maps a path prefix ('/api/get' or '/api/search') to a response.
  */
 function fakeArchive(answers: Record<string, () => Response>) {
   const asked: string[] = []
@@ -91,7 +91,7 @@ describe('LyricsService', () => {
           archiveRecord({ duration: 471, syncedLyrics: '[00:01.00] wrong recording' }),
           // Plain-only but the right length.
           archiveRecord({ duration: 238, syncedLyrics: null, plainLyrics: 'just words' }),
-          // Synced and near enough — this is the one.
+          // Synced and near enough: this is the one.
           archiveRecord({ duration: 243, syncedLyrics: '[00:02.00] the right one' }),
         ]),
     })
@@ -102,6 +102,101 @@ describe('LyricsService', () => {
     db.close()
   })
 
+  it('keeps looking when the precise lookup only knows the words, not the timings', async () => {
+    const db = openDb(':memory:')
+    const archive = fakeArchive({
+      // Filed under our exact tags, but somebody typed it out by hand.
+      '/api/get': () => json(archiveRecord({ syncedLyrics: null, plainLyrics: 'just words' })),
+      '/api/search': () =>
+        json([archiveRecord({ duration: 241, syncedLyrics: '[00:02.00] with timings' })]),
+    })
+    const lyrics = new LyricsService({ db, baseUrl: 'http://archive', fetchFn: archive.fetchFn })
+
+    const found = await lyrics.fetchFor(SUBJECT)
+    expect(found?.synced).toBe('[00:02.00] with timings')
+    expect(archive.asked).toHaveLength(2)
+    db.close()
+  })
+
+  it('borrows the plain sheet when the synced winner arrived without one', async () => {
+    const db = openDb(':memory:')
+    const archive = fakeArchive({
+      '/api/get': () => json(archiveRecord({ syncedLyrics: null, plainLyrics: 'just words' })),
+      '/api/search': () =>
+        json([
+          archiveRecord({ duration: 241, syncedLyrics: '[00:02.00] timed', plainLyrics: null }),
+        ]),
+    })
+    const lyrics = new LyricsService({ db, baseUrl: 'http://archive', fetchFn: archive.fetchFn })
+
+    expect(await lyrics.fetchFor(SUBJECT)).toEqual({
+      synced: '[00:02.00] timed',
+      plain: 'just words',
+    })
+    db.close()
+  })
+
+  it('tries the free-text search when the fielded one turns up nothing timed', async () => {
+    const db = openDb(':memory:')
+    let searches = 0
+    const archive = fakeArchive({
+      '/api/get': () => new Response(null, { status: 404 }),
+      '/api/search': () => {
+        searches += 1
+        return searches === 1
+          ? json([archiveRecord({ syncedLyrics: null, plainLyrics: 'just words' })])
+          : json([archiveRecord({ duration: 240, syncedLyrics: '[00:03.00] found at last' })])
+      },
+    })
+    const lyrics = new LyricsService({ db, baseUrl: 'http://archive', fetchFn: archive.fetchFn })
+
+    const found = await lyrics.fetchFor(SUBJECT)
+    expect(found?.synced).toBe('[00:03.00] found at last')
+    expect(archive.asked[2]).toContain('q=Test+Track+Test+Artist')
+    db.close()
+  })
+
+  it('asks once more for timings the stored sheet lacks, and upgrades in place', async () => {
+    const db = openDb(':memory:')
+    let synced: string | null = null
+    const archive = fakeArchive({
+      '/api/get': () => json(archiveRecord({ syncedLyrics: synced, plainLyrics: 'just words' })),
+      '/api/search': () => json([]),
+    })
+    const lyrics = new LyricsService({ db, baseUrl: 'http://archive', fetchFn: archive.fetchFn })
+
+    expect(await lyrics.fetchFor(SUBJECT)).toEqual({ synced: null, plain: 'just words' })
+
+    // Somebody contributes a timestamped sheet; the next ask this run finds it.
+    synced = '[00:04.00] timed at last'
+    expect(await lyrics.fetchFor(SUBJECT)).toEqual({ synced, plain: 'just words' })
+    expect(lyrics.get(1)?.synced).toBe(synced)
+
+    // And now that it has timings it is settled: no further asks.
+    const before = archive.asked.length
+    await lyrics.fetchFor(SUBJECT)
+    expect(archive.asked).toHaveLength(before)
+    db.close()
+  })
+
+  it('asks a plain-only track no more than twice a run', async () => {
+    const db = openDb(':memory:')
+    const archive = fakeArchive({
+      '/api/get': () => json(archiveRecord({ syncedLyrics: null, plainLyrics: 'just words' })),
+      '/api/search': () => json([]),
+    })
+    const lyrics = new LyricsService({ db, baseUrl: 'http://archive', fetchFn: archive.fetchFn })
+
+    await lyrics.fetchFor(SUBJECT)
+    await lyrics.fetchFor(SUBJECT)
+    const settled = archive.asked.length
+    await lyrics.fetchFor(SUBJECT)
+    await lyrics.fetchFor(SUBJECT)
+    expect(archive.asked).toHaveLength(settled)
+    expect(lyrics.get(1)).toEqual({ synced: null, plain: 'just words' })
+    db.close()
+  })
+
   it('remembers a miss for the run instead of hammering the archive', async () => {
     const db = openDb(':memory:')
     const archive = fakeArchive({})
@@ -109,8 +204,8 @@ describe('LyricsService', () => {
 
     expect(await lyrics.fetchFor(SUBJECT)).toBeNull()
     expect(await lyrics.fetchFor(SUBJECT)).toBeNull()
-    // One get and one search — the second ask never left the process.
-    expect(archive.asked).toHaveLength(2)
+    // One get and both searches: the second ask never left the process.
+    expect(archive.asked).toHaveLength(3)
     expect(lyrics.get(1)).toBeNull()
     db.close()
   })
@@ -202,7 +297,7 @@ describe('ending a session empties the library', () => {
 
   afterEach(() => harness.cleanup())
 
-  it('deletes every track row, its files and its lyrics — and spares later uploads', async () => {
+  it('deletes every track row, its files and its lyrics, and spares later uploads', async () => {
     harness = await startHarness(undefined, {
       lyricsFetch: async (input) =>
         String(input).includes('/api/get')
@@ -233,7 +328,7 @@ describe('ending a session empties the library', () => {
 
     harness.air.end()
 
-    // The wipe rides behind the air change, not on it — poll it settled.
+    // The wipe rides behind the air change, not on it, so poll it settled.
     await expect
       .poll(() => harness.db.prepare('SELECT COUNT(*) AS n FROM tracks').get(), { timeout: 2000 })
       .toEqual({ n: 0 })
@@ -241,8 +336,8 @@ describe('ending a session empties the library', () => {
     expect(await listDir(harness.config.artworkDir)).toEqual([])
     expect(harness.db.prepare('SELECT COUNT(*) AS n FROM lyrics').get()).toEqual({ n: 0 })
 
-    // The wipe is a moment, not a state: a track uploaded after it — the next
-    // set being prepped — lands in the emptied library and stays there.
+    // The wipe is a moment, not a state: a track uploaded after it (the next
+    // set being prepped) lands in the emptied library and stays there.
     const nextId = await upload('tagged.mp3', 'audio/mpeg')
     expect(nextId).toBeGreaterThan(trackId)
     expect(harness.db.prepare('SELECT COUNT(*) AS n FROM tracks').get()).toEqual({ n: 1 })

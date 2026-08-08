@@ -5,7 +5,7 @@
  * The numbers were exact and nobody could read them: whether an offset is
  * *settling or wandering* is a shape, not a value, and a shape needs the last
  * few minutes on screen at once. So the page keeps a short trail of each
- * metric — a few minutes, sampled every couple of seconds — and draws it as a
+ * metric (a few minutes, sampled every couple of seconds) and draws it as a
  * line. This file is the remembering and the geometry; the drawing is a
  * handful of SVG elements in the component.
  *
@@ -15,7 +15,7 @@
  */
 
 export interface TrailPoint {
-  /** Wall-clock ms — only ever compared against other wall-clock ms. */
+  /** Wall-clock ms, only ever compared against other wall-clock ms. */
   at: number
   value: number
 }
@@ -72,19 +72,19 @@ export interface ChartGeometry {
   series: ChartSeries[]
   /** Where zero crosses, or null when zero is out of frame. */
   zeroY: number | null
-  /** The y-range actually shown — one scale shared by every line. */
+  /** The y-range actually shown: one scale shared by every line. */
   min: number
   max: number
-  /** Where a given sample lands, in the shared frame — for the hover marks. */
+  /** Where a given sample lands, in the shared frame, for the hover marks. */
   project: (point: TrailPoint) => { x: number; y: number }
-  /** Where a moment sits horizontally — for the crosshair. */
+  /** Where a moment sits horizontally, for the crosshair. */
   xAt: (at: number) => number
 }
 
 const NOTHING_SHOWN: ChartSeries = { points: null, endX: null, endY: null }
 
 /**
- * Where the lines go — all of them in one frame, on one scale.
+ * Where the lines go: all of them in one frame, on one scale.
  *
  * One scale on purpose: every metric here is milliseconds, and the whole
  * reason to draw them together is that their sizes can be compared. A second
@@ -92,7 +92,7 @@ const NOTHING_SHOWN: ChartSeries = { points: null, endX: null, endY: null }
  * told with geometry.
  *
  * Time runs left to right and ends at `now` on the right edge, so the lines
- * visibly slide left as the page sits there — the movement is the point.
+ * visibly slide left as the page sits there; the movement is the point.
  * The y-range is the data's own, padded to the floor, *not* clamped to zero:
  * an offset of −120ms is a fine place for a flat line to sit.
  */
@@ -146,7 +146,7 @@ export function chart(trails: TrailPoint[][], options: ChartOptions): ChartGeome
   }
 }
 
-/** The sample nearest a moment — what a finger on the graph is pointing at. */
+/** The sample nearest a moment: what a finger on the graph is pointing at. */
 export function nearest(trail: TrailPoint[], at: number): TrailPoint | null {
   let best: TrailPoint | null = null
   for (const point of trail) {

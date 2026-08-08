@@ -6,7 +6,7 @@ const SERVER = process.env.CHUNKY_SERVER ?? 'http://localhost:3000'
 /**
  * The doorway, in development and in `vite preview`.
  *
- * nginx decides what `/` is in the container — see nginx.conf — and the two
+ * nginx decides what `/` is in the container (see nginx.conf) and the two
  * have to agree for the same reason the /api and /ws proxies do: the app ships
  * unchanged, so what happens at the front door in front of a dev server has to
  * be what happens in production, or the first place anyone notices a difference
@@ -22,13 +22,13 @@ const SERVER = process.env.CHUNKY_SERVER ?? 'http://localhost:3000'
  * station, which is exactly what it is.
  */
 function doorway(): Plugin {
-  // Kept in step with INVITE_PARAM in src/lib/invite.ts by hand — this file is
+  // Kept in step with INVITE_PARAM in src/lib/invite.ts by hand, because this file is
   // bundled by esbuild before the app's module graph exists, and nginx.conf
   // spells the same letter out too.
   const INVITE = 'k'
 
   const route: Connect.NextHandleFunction = (req, res, next) => {
-    // Only the path — `/welcome?utm=…` is still /welcome, and `/welcomely`
+    // Only the path: `/welcome?utm=…` is still /welcome, and `/welcomely`
     // is not.
     const [path, query] = (req.url ?? '').split('?')
 
@@ -69,7 +69,7 @@ export default defineConfig({
     // Two documents, not one app with two routes: the landing page has to be
     // able to describe the station on the days the station's own bundle would
     // have nothing to say. `/` is the landing entry and `/listen` the station.
-    // Naming index.html here is not optional — the moment `input` is given, it
+    // Naming index.html here is not optional: the moment `input` is given, it
     // stops being the default.
     rollupOptions: {
       input: {

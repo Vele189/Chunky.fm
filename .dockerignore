@@ -1,4 +1,4 @@
-# Context for the root Dockerfile — the single image, which needs both
+# Context for the root Dockerfile: the single image, which needs both
 # workspaces. The per-workspace Dockerfiles that compose builds have their own
 # .dockerignore files; this one does not replace them.
 
@@ -27,7 +27,7 @@ uploads
 .env.*
 !.env.example
 
-# The hero model as it came off Sketchfab — 30 MB of PNG textures. What ships is
+# The hero model as it came off Sketchfab: 30 MB of PNG textures. What ships is
 # the 1 MB glb already committed under client/src/assets/models.
 client/assets-src
 

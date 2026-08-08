@@ -8,7 +8,7 @@ export interface StationOptions {
   queue?: TrackQueue
   /**
    * How often the backstop sweep checks whether the current track has run out.
-   * This is the safety net, not the mechanism — the setTimeout below is what
+   * This is the safety net, not the mechanism: the setTimeout below is what
    * normally advances the station.
    */
   backstopIntervalMs?: number
@@ -27,7 +27,7 @@ const DEFAULT_BACKSTOP_MS = 2_000
  *
  * Scheduling hangs off PlaybackState's `change` event rather than off the
  * Station's own methods, so a caller that reaches for `station.playback`
- * directly — pause, seek, a track swapped from the admin routes — still gets a
+ * directly (pause, seek, a track swapped from the admin routes) still gets a
  * correctly rescheduled advance.
  */
 export class Station {
@@ -49,8 +49,8 @@ export class Station {
 
     this.playback.on('change', this.#onPlaybackChange)
 
-    // A setTimeout can fire late — or, if the event loop is blocked long
-    // enough, effectively not at all — and the failure mode is silence until
+    // A setTimeout can fire late (or, if the event loop is blocked long
+    // enough, effectively not at all), and the failure mode is silence until
     // someone notices. The sweep costs a comparison every couple of seconds.
     this.#backstop = setInterval(() => this.#advanceIfFinished(), this.#backstopIntervalMs)
     this.#backstop.unref()
@@ -66,7 +66,7 @@ export class Station {
   /**
    * Put a track at the back of the queue.
    *
-   * An idle station starts playing it immediately — with nothing on the decks
+   * An idle station starts playing it immediately: with nothing on the decks
    * there is nothing to wait for, and a queue that needs a separate `play` to
    * get going isn't a station. A *paused* station stays paused: that's the
    * admin's decision, not an empty deck.
@@ -128,7 +128,7 @@ export class Station {
     if (remaining === null) return
     if (remaining > 0) {
       // The station clock is the authority, not whatever woke us. A timer that
-      // fired early, or a sweep that found no timer at all, both end up here —
+      // fired early, or a sweep that found no timer at all, both end up here,
       // and the fix for both is to sleep for what is actually left.
       if (this.#advanceTimer === null) this.#reschedule()
       return

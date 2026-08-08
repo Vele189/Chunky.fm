@@ -9,7 +9,7 @@ const RETRY_MS = 3_000
  *
  * `401` is the gate speaking, and the only status that means refused. Anything
  * else in the 4xx/5xx range is not the gate at all: with the station down, the
- * thing in front of it answers — Vite's dev proxy with a 500, nginx with a 502 —
+ * thing in front of it answers (Vite's dev proxy with a 500, nginx with a 502),
  * and reading either as "you are not invited" would tell a listener their link
  * was bad every time the station restarted under them.
  */
@@ -39,7 +39,7 @@ export type Access =
   | 'admitted'
   /** Private station, and this browser has no invite for it. */
   | 'refused'
-  /** The station did not answer at all — which is not the same as being shut out. */
+  /** The station did not answer at all, which is not the same as being shut out. */
   | 'unreachable'
 
 /** The doorway's whole state: where this browser stands, and how to knock. */
@@ -49,7 +49,7 @@ export interface StationAccess {
    * Try a code somebody typed at the door.
    *
    * The same key the `?k=` on a link carries and the same endpoint that
-   * redeems it — a code said over the phone and a code pasted into an address
+   * redeems it: a code said over the phone and a code pasted into an address
    * bar are the same secret, and giving them two paths through the gate would
    * be two chances to get one of them wrong.
    */
@@ -67,7 +67,7 @@ export interface StationAccess {
  * spend its life reconnecting into a refusal, and the listener would be told
  * the station had gone away when in fact it is there and simply not theirs.
  *
- * On an open station — one opened deliberately with `STATION_OPEN` — every
+ * On an open station (one opened deliberately with `STATION_OPEN`) every
  * answer here is `admitted`, so this costs one request and changes nothing
  * else. Otherwise a browser with no cookie and no invite is `refused`, and the
  * doorway offers it somewhere to type the code.
@@ -83,7 +83,7 @@ export function useStationAccess(): StationAccess {
    * It cannot be read inside the effect: the effect is what takes it back out
    * of the address bar, and React runs effects twice in development. The second
    * pass would find a bar that the first had already cleaned, conclude there
-   * was never an invite, and ask as a stranger — which is a browser holding a
+   * was never an invite, and ask as a stranger, which is a browser holding a
    * perfectly good cookie being told the station is private. Reading it before
    * anything can strip it makes both passes see the same link.
    */
@@ -100,7 +100,7 @@ export function useStationAccess(): StationAccess {
     }
 
     /**
-     * Out of the address bar — but only once the station has answered. A secret
+     * Out of the address bar, but only once the station has answered. A secret
      * left in the URL ends up in the history, in a screenshot, in `Referer` and
      * in whatever "share this tab" does; a secret removed before the request
      * that spends it is a listener who cannot retry by reloading.
@@ -143,7 +143,7 @@ export function useStationAccess(): StationAccess {
         // Nothing answered. Being unable to reach the station is not being shut
         // out of it, and telling somebody their link is bad when the server is
         // simply down would send them asking for a new one that works exactly
-        // as badly. So this does not decide anything — it asks again, and the
+        // as badly. So this does not decide anything: it asks again, and the
         // page carries on to the station's own offline screen in the meantime.
         settle('unreachable')
         if (!cancelled) retry = window.setTimeout(() => void ask(), RETRY_MS)
@@ -171,7 +171,7 @@ export function useStationAccess(): StationAccess {
       })
       if (response.ok) {
         // The cookie is set; this browser is in. Nothing to strip from the
-        // address bar — the code was typed, so it was never in the URL, which
+        // address bar: the code was typed, so it was never in the URL, which
         // is the one thing a typed code has over a link.
         setAccess('admitted')
         return

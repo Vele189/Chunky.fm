@@ -9,6 +9,7 @@ import type {
   Play,
   PlaybackSnapshot,
   QueueEntry,
+  ScheduledSession,
   ServerMessage,
   SocketRefusal,
   StateMessage,
@@ -26,7 +27,7 @@ export interface Station {
   /** The socket itself. What decides whether a send would land. */
   status: StationStatus
   /**
-   * What this page can honestly say about the station — the same story with
+   * What this page can honestly say about the station: the same story with
    * its history folded in, which is what a screen needs and a single status
    * cannot give: whether an outage is one this page has ever seen the other
    * side of. See `lib/availability.ts`.
@@ -35,7 +36,7 @@ export interface Station {
   state: StateMessage | null
   /**
    * Whether the station is broadcasting, and since when. Null until the first
-   * `air` frame arrives — which is the first frame of all, so the gap is a few
+   * `air` frame arrives, which is the first frame of all, so the gap is a few
    * milliseconds and reads as "not yet known" rather than as "off".
    *
    * Deliberately not folded into `reach`: that is about whether this page can
@@ -43,6 +44,13 @@ export interface Station {
    * `standing()` in lib/availability.ts is where the two become one answer.
    */
   air: AirSnapshot | null
+  /**
+   * When the station is next on, or null when nothing is announced.
+   *
+   * The other half of the sentence `air` starts, and the one thing here that
+   * is not about tonight. See `ScheduleMessage`.
+   */
+  schedule: ScheduledSession | null
   /** What's coming up. Null until the first queue frame arrives. */
   queue: QueueEntry[] | null
   /** Who else is here. Null until the first roster arrives. */
@@ -54,8 +62,8 @@ export interface Station {
    *
    * Only their own: a wish goes to whoever runs the decks, and the station
    * answers the socket that made it rather than the room. Nothing replays it,
-   * so this survives a reconnect — the connection is remade under the same
-   * hook — and starts empty on a reload, while the wishes themselves are still
+   * so this survives a reconnect (the connection is remade under the same
+   * hook) and starts empty on a reload, while the wishes themselves are still
    * in the book the admin reads.
    */
   myWishes: Wish[]
@@ -72,8 +80,8 @@ export interface Station {
    * The last thing the socket refused, and a sequence number that goes up on
    * every refusal.
    *
-   * The counter is what makes two identical refusals in a row — "slow down",
-   * then "slow down" again — distinguishable, so whatever is showing them can
+   * The counter is what makes two identical refusals in a row ("slow down",
+   * then "slow down" again) distinguishable, so whatever is showing them can
    * react to the second one. Without it a repeat is the same value and nothing
    * downstream ever hears about it. Null until something is refused.
    */
@@ -84,15 +92,17 @@ export interface Station {
    * Fold in state the server just handed back over HTTP.
    *
    * An admin command answers with the state it produced, which is the same
-   * thing the broadcast is about to carry — so applying it here costs nothing
+   * thing the broadcast is about to carry, so applying it here costs nothing
    * and means the panel doesn't sit unchanged for a round trip, or, if the
    * socket happens to be reconnecting, until it comes back. The broadcast still
    * arrives and overwrites it with the identical value.
    */
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
-  /** Fold in what `POST /api/session` just answered — see `applyState`. */
+  /** Fold in what `POST /api/session` just answered. See `applyState`. */
   applyAir(snapshot: AirSnapshot): void
+  /** Fold in what `PUT /api/schedule` just answered. See `applyState`. */
+  applySchedule(next: ScheduledSession | null): void
 }
 
 /** Holds the websocket open and tracks the station's broadcast state. */
@@ -104,6 +114,7 @@ export function useStation(
   const [reach, setReach] = useState<Availability>(INITIALLY)
   const [state, setState] = useState<StateMessage | null>(null)
   const [air, setAir] = useState<AirSnapshot | null>(null)
+  const [schedule, setSchedule] = useState<ScheduledSession | null>(null)
   const [queue, setQueue] = useState<QueueEntry[] | null>(null)
   const [listeners, setListeners] = useState<Listener[] | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -123,6 +134,8 @@ export function useStation(
     // A different station has its own answer to whether it is on air, and this
     // page has not heard it yet.
     setAir(null)
+    // And its own next evening.
+    setSchedule(null)
     const station = new StationConnection({
       url,
       onStatus: (next) => {
@@ -132,6 +145,7 @@ export function useStation(
       onMessage: (message) => {
         if (message.type === 'state') setState(message)
         if (message.type === 'air') setAir({ live: message.live, since: message.since })
+        if (message.type === 'schedule') setSchedule(message.schedule)
         if (message.type === 'queue') setQueue(message.entries)
         if (message.type === 'presence') setListeners(message.listeners)
         // Merged rather than replaced: a batch is either the history or one new
@@ -150,7 +164,7 @@ export function useStation(
           setHistory((current) => mergePlays(current, message.plays))
         }
         // Kept rather than dropped. A refusal is the *only* thing the server
-        // says about a frame that went nowhere — a rate-limited message would
+        // says about a frame that went nowhere: a rate-limited message would
         // otherwise leave the composer cleared and nothing on screen, which
         // reads exactly like having said something.
         if (message.type === 'error') {
@@ -173,6 +187,12 @@ export function useStation(
   )
   const applyQueue = useCallback((entries: QueueEntry[]) => setQueue(entries), [])
   const applyAir = useCallback((snapshot: AirSnapshot) => setAir(snapshot), [])
+  /**
+   * Fold in what `PUT /api/schedule` just answered, the way `applyAir` folds in
+   * a session change: the socket is about to carry the same thing, and the
+   * console should not sit unchanged for a round trip.
+   */
+  const applySchedule = useCallback((next: ScheduledSession | null) => setSchedule(next), [])
   const clearSocketError = useCallback(() => setSocketError(null), [])
 
   return {
@@ -180,6 +200,7 @@ export function useStation(
     reach,
     state,
     air,
+    schedule,
     queue,
     listeners,
     messages,
@@ -191,5 +212,6 @@ export function useStation(
     applyState,
     applyQueue,
     applyAir,
+    applySchedule,
   }
 }

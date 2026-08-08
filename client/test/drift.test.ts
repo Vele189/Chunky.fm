@@ -33,8 +33,8 @@ describe('correctionFor', () => {
     // binds. The smallest error that escapes the dead zone is just over
     // 0.05s, and 0.05 * RATE_GAIN = 0.025, already past the 0.02 cap. So the
     // proportional term is currently inert and correction is effectively
-    // bang-bang: ±2% until back inside 50ms. That is fine — it converges from
-    // the worst non-seeking case in well under a minute, inaudibly — but the
+    // bang-bang: ±2% until back inside 50ms. That is fine: it converges from
+    // the worst non-seeking case in well under a minute, inaudibly, but the
     // gain would only start mattering if the dead zone shrank below 0.04s.
     for (const diff of [0.051, 0.2, 0.6, 0.99]) {
       const correction = correctionFor(100 + diff, 100)

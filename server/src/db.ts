@@ -36,6 +36,14 @@ export interface SessionRow {
   ended_at: number | null
 }
 
+/** The next session, as announced. One row at most. See the schema note. */
+export interface ScheduleRow {
+  id: 1
+  starts_at: number
+  poster: string | null
+  set_at: number
+}
+
 export interface MessageRow {
   id: number
   session_id: number
@@ -61,7 +69,7 @@ export interface WishRow {
 
 /**
  * A track going on air. PLAN.md's now-playing history, one row per time a track
- * started — so a track played twice in an evening is two rows, not one.
+ * started, so a track played twice in an evening is two rows, not one.
  */
 export interface PlayRow {
   id: number
@@ -108,6 +116,22 @@ CREATE TABLE IF NOT EXISTS sessions (
   ended_at    INTEGER
 );
 
+-- The next session, announced before it happens. One row, ever: the id = 1
+-- check is what makes that a rule the database keeps rather than a convention
+-- the code remembers. A station is an evening rather than a calendar, so what
+-- is being scheduled is the next one, and setting another replaces it.
+--
+-- Nothing here starts anything. The time is a promise to whoever is reading it;
+-- going on air is still a person pressing a button. See the Schedule class.
+CREATE TABLE IF NOT EXISTS schedule (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  starts_at   INTEGER NOT NULL,
+  -- The poster's filename under the config's posterDir, or null for a time
+  -- with no picture behind it.
+  poster      TEXT,
+  set_at      INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS messages (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id  INTEGER NOT NULL REFERENCES sessions(id),
@@ -145,7 +169,7 @@ CREATE TABLE IF NOT EXISTS plays (
   -- Deliberately *not* a foreign key, though, which is the one place this table
   -- differs from the others. A play is written from inside playback's change
   -- event, so a constraint that could refuse the insert would throw into
-  -- whatever put the track on — an admin command answering 500 after the track
+  -- whatever put the track on: an admin command answering 500 after the track
   -- already changed, or the end-of-track timer dying mid-set. A note about what
   -- happened must never be able to break the thing it is a note about, and the
   -- read below drops a row it cannot name rather than failing.
@@ -153,7 +177,7 @@ CREATE TABLE IF NOT EXISTS plays (
   played_at   INTEGER NOT NULL
 );
 
--- Read as "the last N of this session", newest first — the same shape the chat
+-- Read as "the last N of this session", newest first, the same shape the chat
 -- is read in, and for the same reason.
 CREATE INDEX IF NOT EXISTS plays_session_id ON plays (session_id, id);
 `
@@ -169,7 +193,7 @@ CREATE INDEX IF NOT EXISTS plays_session_id ON plays (session_id, id);
  * run of the process.
  *
  * Null while the station is off air. There is no session then, so there is
- * nothing to write to and nothing to read — see the three logs, which all treat
+ * nothing to write to and nothing to read. See the three logs, which all treat
  * it as an empty room rather than reaching for the last one.
  */
 export interface SessionRef {
@@ -179,7 +203,7 @@ export interface SessionRef {
 /**
  * Starts a session, and returns its id.
  *
- * PLAN.md's availability story is session-based — you go live, you end it — and
+ * PLAN.md's availability story is session-based (you go live, you end it), and
  * the admin controls for that are a later task. What exists now is the part
  * chat needs: something for a message to belong to, so "the chat" means this
  * time on air rather than everything ever said. A run of the process is a

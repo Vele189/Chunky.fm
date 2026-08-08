@@ -166,7 +166,7 @@ describe('Station backstop', () => {
     station.enqueue(second)
 
     // The wall clock jumps past the end of the track without the timer wheel
-    // reaching it — an event loop blocked under load, as far as the station is
+    // reaching it: an event loop blocked under load, as far as the station is
     // concerned. Only the backstop sweep runs.
     clock.advance(first.durationMs + 30_000)
     await vi.advanceTimersByTimeAsync(BACKSTOP_MS)

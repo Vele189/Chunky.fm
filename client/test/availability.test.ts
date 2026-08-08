@@ -36,7 +36,7 @@ describe('reading whether there is a station there', () => {
     // The whole reason this is a fold. A page loaded against a dead server
     // cycles connecting → offline → connecting forever as the backoff runs, and
     // reading each status on its own would alternate between "no signal" and
-    // "tuning in…" once per retry while the truth — nothing has ever answered —
+    // "tuning in…" once per retry while the truth (nothing has ever answered)
     // never changed.
     expect(after('connecting', 'offline', 'connecting')).toBe('unreachable')
     expect(after('connecting', 'offline', 'connecting', 'offline', 'connecting')).toBe(
@@ -118,7 +118,7 @@ describe('when tuning in is worth offering', () => {
 })
 
 /* The same thing again, against the connection that actually produces these
- * statuses — so a change to the backoff cannot quietly stop matching what the
+ * statuses, so a change to the backoff cannot quietly stop matching what the
  * screen assumes about it. */
 describe('against a real connection', () => {
   let reach: Availability
@@ -208,7 +208,7 @@ describe('standing', () => {
 
   it('lets connectivity win when the two disagree', () => {
     // A page that cannot reach the station does not know whether anyone is on
-    // air — the last thing it heard has stopped being evidence of anything.
+    // air: the last thing it heard has stopped being evidence of anything.
     for (const reach of ['reaching', 'unreachable', 'dropped'] as const) {
       expect(standing(reach, true), reach).toBe(reach)
       expect(standing(reach, false), reach).toBe(reach)

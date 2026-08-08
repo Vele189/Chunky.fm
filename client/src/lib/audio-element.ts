@@ -1,7 +1,7 @@
 /**
  * Small helpers over HTMLAudioElement. Seeking before metadata has loaded is
  * silently dropped by browsers, which shows up as a listener sitting at 0:00
- * while everyone else is at 2:14 — so every seek goes through here.
+ * while everyone else is at 2:14, so every seek goes through here.
  */
 
 /**

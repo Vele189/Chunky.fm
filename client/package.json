@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "//assets:models": "The hero gramophone, as it came off Sketchfab (30.8 MB, 25 PNG textures) down to the ~1 MB in src/. The geometry was never the problem — 31k triangles — so this is textures to WebP at 1024 and the vertex data quantized. Quantization rather than Draco deliberately: Draco needs a decoder fetched at runtime, and nothing in this app reaches off its own origin.",
+    "//assets:models": "The hero gramophone, as it came off Sketchfab (30.8 MB, 25 PNG textures) down to the ~1 MB in src/. The geometry was never the problem (31k triangles) so this is textures to WebP at 1024 and the vertex data quantized. Quantization rather than Draco deliberately: Draco needs a decoder fetched at runtime, and nothing in this app reaches off its own origin.",
     "assets:models": "gltf-transform optimize assets-src/gramophone.glb src/assets/models/gramophone.glb --compress quantize --texture-compress webp --texture-size 1024",
     "//assets:albums": "The four sleeves in the pile, squared and taken to WebP at 640. Square because a record sleeve is, and the scans are not: the Pink Floyd one is 461x600, so it is cropped to the interesting part rather than squashed.",
     "assets:albums": "node scripts/albums.mjs",
-    "//assets:countries": "The country outlines the globe draws. Natural Earth 110m with every property stripped and coordinates cut to three decimals — and, less obviously, with degenerate rings removed: three-globe runs each one through h3-js, which throws E_FAILED on a zero-length edge and drops the countries after it.",
+    "//assets:countries": "The country outlines the globe draws. Natural Earth 110m with every property stripped and coordinates cut to three decimals and, less obviously, with degenerate rings removed: three-globe runs each one through h3-js, which throws E_FAILED on a zero-length edge and drops the countries after it.",
     "assets:countries": "node scripts/countries.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",

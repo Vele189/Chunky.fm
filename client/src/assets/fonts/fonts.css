@@ -1,11 +1,11 @@
 /* Space Grotesk and Cousine, latin subset, vendored from Google Fonts.
  *
- * Served from the app's own origin so a container behind a firewall — or a
- * listener on a network that cannot reach fonts.gstatic.com — gets the design
+ * Served from the app's own origin so a container behind a firewall (or a
+ * listener on a network that cannot reach fonts.gstatic.com) gets the design
  * rather than the fallback stack in styles.css.
  *
  * Space Grotesk ships as one variable file covering the whole weight range, so
- * there is a single face for it rather than one per weight — Google's own CSS
+ * there is a single face for it rather than one per weight; Google's own CSS
  * serves the same bytes four times over.
  *
  * Both families are under the SIL Open Font License 1.1; see LICENSE.txt.

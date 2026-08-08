@@ -4,7 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # `npm run build` typechecks before it bundles, and tsconfig.json takes in test/
-# and scripts/ as well as src/ — so they all have to be here or tsc fails on
+# and scripts/ as well as src/, so they all have to be here or tsc fails on
 # files it was told to include but cannot find.
 COPY tsconfig.json vite.config.ts index.html landing.html ./
 COPY src ./src

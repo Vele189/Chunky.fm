@@ -8,8 +8,8 @@ import { useOnScreen } from './useOnScreen.js'
  * Same shape as `Gramophone`, for the same reasons: three.js, three-globe,
  * react-three-fiber and a hundred and sixty kilobytes of country polygons are
  * a lot to make a visitor download before they can read a sentence. So WebGL is
- * probed first — a machine that cannot draw this should not fetch a renderer to
- * find that out — and then the whole thing arrives on a dynamic import, after
+ * probed first (a machine that cannot draw this should not fetch a renderer to
+ * find that out) and then the whole thing arrives on a dynamic import, after
  * the page is readable. Until it does, and forever on a machine that cannot
  * draw it, the space is simply empty and the sentence beside it stands alone.
  *
@@ -19,7 +19,7 @@ import { useOnScreen } from './useOnScreen.js'
 
 const World = lazy(() => import('./World.js'))
 
-/** Johannesburg. One station, one link — everything below arrives here. */
+/** Johannesburg. One station, one link: everything below arrives here. */
 const STATION = { lat: -26.2041, lng: 28.0473 }
 
 /**
@@ -27,7 +27,7 @@ const STATION = { lat: -26.2041, lng: 28.0473 }
  *
  * Twelve, scattered, and every one of them arcs to the same place, because the
  * thing this section is about is that there is one of it. A mesh of city-to-city
- * routes — which is what the original demo draws — would be a picture of a
+ * routes, which is what the original demo draws, would be a picture of a
  * network, and this is not a network.
  *
  * `order` staggers the dashes so they do not all set off at once; `arcAlt` is

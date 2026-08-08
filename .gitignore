@@ -6,7 +6,7 @@ dist/
 build/
 .vite/
 
-# secrets — admin password lives here
+# secrets: admin password lives here
 .env
 .env.*
 !.env.example
@@ -15,7 +15,7 @@ build/
 # Never commit the music library.
 #
 # `data/` is anchored to the root on purpose: unanchored it matches a directory
-# called data anywhere in the tree, and the landing page keeps one — its country
+# called data anywhere in the tree, and the landing page keeps one: its country
 # outlines live at client/src/landing/data/, and the bare rule silently kept
 # them out of every checkout but this one. Green here, red in CI. The other two
 # stay unanchored: an audio library is the library wherever it lands, and the
@@ -49,5 +49,5 @@ client/dist/
 # The hero model as it came off Sketchfab: 30 MB, 25 PNG textures. What ships is
 # the 1 MB `client/src/assets/models/gramophone.glb` built from it, which is
 # committed. Only `npm run assets:models` needs this file, and only when the
-# model itself changes — see the README.
+# model itself changes. See the README.
 client/assets-src/gramophone.glb

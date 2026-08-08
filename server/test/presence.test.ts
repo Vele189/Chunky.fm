@@ -93,7 +93,7 @@ describe('Presence', () => {
     expect(presence.list()).toEqual([])
   })
 
-  it('hands out a copy — a caller cannot edit the roster by editing the list', () => {
+  it('hands out a copy: a caller cannot edit the roster by editing the list', () => {
     const presence = new Presence()
     presence.join(1, 'sam')
 
@@ -128,7 +128,7 @@ describe('the join frame', () => {
   it('buys no control: a join is still not a command', () => {
     const parsed = parseClientMessage(JSON.stringify({ type: 'join', nickname: 'sam', play: 1 }))
 
-    // The extra field is dropped, not honoured — what comes out is the frame
+    // The extra field is dropped, not honoured: what comes out is the frame
     // this parser knows and nothing else.
     expect(parsed).toEqual({ ok: true, message: { type: 'join', nickname: 'sam' } })
   })

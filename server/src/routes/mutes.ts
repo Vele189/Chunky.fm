@@ -19,7 +19,7 @@ const BODY_SCHEMA = {
   required: ['nickname', 'muted'],
   properties: {
     nickname: { type: 'string', minLength: 1, maxLength: NICKNAME_MAX_LENGTH },
-    // Where the listener now stands, rather than "toggle" — the same shape a
+    // Where the listener now stands, rather than "toggle", the same shape a
     // skip vote takes, and for the same reason: two of them in a row leave one
     // mute, so a retry after a dropped response is safe.
     muted: { type: 'boolean' },
@@ -27,7 +27,7 @@ const BODY_SCHEMA = {
 } as const
 
 /**
- * Muting a nickname — PLAN.md's last unbuilt admin control.
+ * Muting a nickname: PLAN.md's last unbuilt admin control.
  *
  * Admin-only in both directions, including the read. Unlike `/api/session`,
  * which is open because whether there is a station tonight is the first thing a

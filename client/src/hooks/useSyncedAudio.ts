@@ -24,7 +24,7 @@ export interface SyncedAudioOptions {
 /**
  * Keeps the audio element on the station's clock.
  *
- * Two loops. The first realigns whenever the server broadcasts a change — new
+ * Two loops. The first realigns whenever the server broadcasts a change: new
  * track, pause, seek. The second runs continuously, because being aligned once
  * is not the same as staying aligned: audio clocks drift from system clocks.
  */
@@ -38,7 +38,7 @@ export function useSyncedAudio({
   onCorrection,
 }: SyncedAudioOptions): void {
   // Read through refs in the loops below so neither is torn down and restarted
-  // on every render — the drift interval should be genuinely continuous, and
+  // on every render. The drift interval should be genuinely continuous, and
   // realignment should happen only when the station actually says something.
   const stateRef = useRef(state)
   const serverNowRef = useRef(serverNow)
@@ -59,7 +59,7 @@ export function useSyncedAudio({
 
     // The clock is read through the ref on purpose. serverNow's identity
     // changes every time the offset estimate improves, and keying this effect
-    // on it would hard-seek the element mid-song — exactly the audible glitch
+    // on it would hard-seek the element mid-song, exactly the audible glitch
     // the rate nudge exists to avoid. Offset refinements are the drift loop's
     // job, and it corrects them gently.
     seekTo(audio, expectedPositionSeconds(state, serverNowRef.current()))

@@ -3,8 +3,8 @@ import { parseFile, type IAudioMetadata, type IPicture } from 'music-metadata'
 
 /**
  * Containers we are willing to serve, mapped to the extension we store them
- * under. The container reported by music-metadata is the authority — the
- * client's filename and Content-Type are both trivially forged.
+ * under. The container reported by music-metadata is the authority, because
+ * the client's filename and Content-Type are both trivially forged.
  */
 const CONTAINER_EXTENSIONS: Record<string, string> = {
   MPEG: 'mp3',
@@ -84,7 +84,7 @@ function fromMetadata(metadata: IAudioMetadata, originalFilename: string): Extra
       `unsupported audio container: ${format.container ?? 'unknown'}`,
     )
   }
-  // Ogg is a container, not a codec — keep Opus distinguishable for the client.
+  // Ogg is a container, not a codec: keep Opus distinguishable for the client.
   const storageExtension =
     extension === 'ogg' && format.codec?.toLowerCase().includes('opus') ? 'opus' : extension
 
@@ -106,7 +106,7 @@ function fromMetadata(metadata: IAudioMetadata, originalFilename: string): Extra
 
 /**
  * Reads tags and embedded artwork off a file already on disk.
- * Throws {@link UnsupportedAudioError} for anything we can't serve — including
+ * Throws {@link UnsupportedAudioError} for anything we can't serve, including
  * files that aren't audio at all, which is what makes this the real gatekeeper.
  */
 export async function extractMetadata(
@@ -117,7 +117,7 @@ export async function extractMetadata(
   try {
     metadata = await parseFile(filePath, { duration: true })
   } catch (err) {
-    // The underlying message embeds the server-side temp path — keep it in the
+    // The underlying message embeds the server-side temp path, so keep it in the
     // cause for the log, not in what we hand back to the client.
     throw new UnsupportedAudioError('file could not be read as audio', { cause: err })
   }

@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 import broadcastIcon from '../assets/icons/broadcast.svg'
-import chatIcon from '../assets/icons/chat.svg'
-import clockIcon from '../assets/icons/clock.svg'
-import heartIcon from '../assets/icons/heart.svg'
-import lyricsIcon from '../assets/icons/lyrics.svg'
-import slidersIcon from '../assets/icons/sliders.svg'
+import syncIcon from '../assets/icons/chart-line-up.svg'
+import chatIcon from '../assets/icons/chats-circle.svg'
+import historyIcon from '../assets/icons/clock-counter-clockwise.svg'
+import lyricsIcon from '../assets/icons/microphone-stage.svg'
+import wishesIcon from '../assets/icons/shooting-star.svg'
 import usersIcon from '../assets/icons/users.svg'
 import volumeIcon from '../assets/icons/volume.svg'
 import { Deck, OnAir, Waveform } from '../Turntable.js'
@@ -13,14 +13,14 @@ import { BEEN_ON, SESSION } from './session.js'
 /**
  * The listener's page, drawn small.
  *
- * What is on the laptop in the "what has been on" section — see `MacbookScroll`.
+ * What is on the laptop in the "what has been on" section. See `MacbookScroll`.
  * Everything above this on the page describes the station a piece at a time: the
  * deck, the room talking, the wishes, the evening. This is all of it at once, in
  * the arrangement a listener actually gets it in, which is the one thing a column
  * of prose cannot show and the reason the section is a screen rather than a list.
  *
  * The arrangement is the station's current one: the deck and who is in the room
- * on the left, and the whole right-hand column given to the words — no panels,
+ * on the left, and the whole right-hand column given to the words: no panels,
  * no cards, the current line bright and the rest dimmed, the way the real page
  * reads a song. The queue, the evening and the chat are not on this screen any
  * more because they are not on that one: each lives at a mark on the rail, and
@@ -29,8 +29,8 @@ import { BEEN_ON, SESSION } from './session.js'
  * The parts that exist are the station's own: `Deck`, `OnAir` and `Waveform` are
  * imported from Turntable.tsx unchanged, and the record on the platter is the
  * record the rest of the page has been playing. What is drawn here rather than
- * imported is the furniture around them — the rail, the bar across the top, the
- * lyric sheet — because that lives in styles.css, which belongs to the
+ * imported is the furniture around them (the rail, the bar across the top, the
+ * lyric sheet) because that lives in styles.css, which belongs to the
  * station's bundle and is not loaded by this document. Drawn from the same
  * tokens and the same measurements, so it is a copy rather than an impression,
  * and the sizes are the only thing scaled: this is a screen inside a screen.
@@ -39,24 +39,29 @@ import { BEEN_ON, SESSION } from './session.js'
  * announces nothing.)
  *
  * `aria-hidden`, whole. It is a picture of a page, and every word in it is said
- * properly somewhere on the real one — a screen reader given this would get the
+ * properly somewhere on the real one, and a screen reader given this would get the
  * page twice and a keyboard's worth of nothing in between.
  */
 
-/** The rail's destinations — Sidebar.tsx's six marks, in the station's order. */
+/**
+ * The rail's destinations: Sidebar.tsx's six marks, in the station's order and
+ * with the same glyphs on them. A picture of the station that had gone a
+ * redesign out of date would be worse than no picture, so these are the ones to
+ * change when the rail changes.
+ */
 const RAIL = [
   { icon: broadcastIcon, name: 'On air' },
   { icon: lyricsIcon, name: 'Lyrics' },
-  { icon: slidersIcon, name: 'Sync' },
+  { icon: syncIcon, name: 'Sync' },
   { icon: chatIcon, name: 'Chat' },
-  { icon: heartIcon, name: 'Wishes' },
-  { icon: clockIcon, name: 'History' },
+  { icon: wishesIcon, name: 'Wishes' },
+  { icon: historyIcon, name: 'History' },
 ]
 
 /**
  * The sheet on the screen, mid-verse.
  *
- * Invented, like everything else in the sample session — these are not the
+ * Invented, like everything else in the sample session. These are not the
  * words to the record on the platter, because the record is a real one and its
  * words are somebody's property. What the drawing needs is the *shape* of a
  * lyric sheet: short lines, a bright one past the middle, a timestamped
@@ -113,7 +118,7 @@ export function ListenerView() {
         <div className="listener__columns">
           <section className="listener__stage">
             {/* The station's turntable, at its own size and scaled down as an
-                object — see the note in landing.css. */}
+                object. See the note in landing.css. */}
             <div className="listener__platter">
               <Deck artwork={cover?.src ?? null} spinning />
             </div>
@@ -125,12 +130,12 @@ export function ListenerView() {
               <Waveform live />
             </div>
 
-            {/* The mute under the meter, drawn — see the note above. */}
+            {/* The mute under the meter, drawn. See the note above. */}
             <div className="listener__mute">
               <span className="listener__mute-button">
                 <img src={volumeIcon} alt="" width={11} height={11} />
               </span>
-              <span className="listener__mute-hint">Streaming live — tap to mute</span>
+              <span className="listener__mute-hint">Streaming live, tap to mute</span>
             </div>
 
             {/* Under the deck, where the station puts it: who else is in the
@@ -149,7 +154,7 @@ export function ListenerView() {
             </ScreenPanel>
           </section>
 
-          {/* The whole column, and nothing else on it — the words, floating
+          {/* The whole column, and nothing else on it: the words, floating
               beside the deck the way the station floats them: no panel, no
               heading, the current line bright and the sheet fading out at both
               ends of the screen. */}

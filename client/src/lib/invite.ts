@@ -3,7 +3,7 @@
  *
  * A private station hands out `https://…/listen?k=<key>`. The browser presents that
  * key once, gets a signed cookie back, and the key comes straight out of the
- * address bar — because a secret that stays in the URL is a secret in every
+ * address bar, because a secret that stays in the URL is a secret in every
  * screenshot, every "share this tab", every `Referer` header and every entry in
  * the browser's own history.
  *
@@ -26,8 +26,8 @@ export function inviteFrom(search: string): string | null {
 /**
  * The same address with the invite taken out of it.
  *
- * Everything else is left exactly as it was — other query parameters, the
- * fragment, the path — because this runs on whatever address the listener
+ * Everything else is left exactly as it was (other query parameters, the
+ * fragment, the path) because this runs on whatever address the listener
  * actually arrived on, and quietly dropping the rest of it would break a
  * `#chat` link or anything else somebody was sent.
  *
@@ -50,11 +50,11 @@ export function withoutInvite(href: string): string | null {
  * The link to hand out.
  *
  * Built in the browser rather than by the station, because the station does not
- * reliably know what address it is being reached on — behind nginx, behind
- * Railway, on a LAN IP — and the console's own address bar does.
+ * reliably know what address it is being reached on (behind nginx, behind
+ * Railway, on a LAN IP) and the console's own address bar does.
  *
  * It points at the station rather than at the origin, because the origin is the
- * page in front of the station now — see `STATION_PATH`. Links already handed
+ * page in front of the station now; see `STATION_PATH`. Links already handed
  * out that say `/?k=<key>` are not broken by that: nginx sends a request for `/`
  * carrying a key on to the station, key and all. But what is handed out from
  * here on should be the address it will end up at anyway.

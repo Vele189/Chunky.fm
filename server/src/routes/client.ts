@@ -15,8 +15,8 @@ import { doorway } from '../lib/doorway.js'
  * The two documents Vite builds, held in memory.
  *
  * Read once at boot rather than off disk per request: they are a couple of
- * kilobytes each, they cannot change under a running process — the image is
- * built with them in it — and having them in hand before the error handlers are
+ * kilobytes each, they cannot change under a running process (the image is
+ * built with them in it), and having them in hand before the error handlers are
  * registered is what lets the app shell be the fallback for an unknown path.
  *
  * Read failure is fatal on purpose. A server told where the client is and
@@ -37,7 +37,7 @@ export async function loadClientBundle(clientDir: string): Promise<ClientBundle>
       return await fs.readFile(path.join(clientDir, name))
     } catch (cause) {
       throw new Error(
-        `CLIENT_DIR is ${clientDir} but ${name} is not in it — the client was not built into this image`,
+        `CLIENT_DIR is ${clientDir} but ${name} is not in it: the client was not built into this image`,
         { cause },
       )
     }
@@ -71,7 +71,7 @@ export function doorwayHook(bundle: ClientBundle) {
     done: HookHandlerDoneFunction,
   ): void {
     // GET and HEAD only. The doorway is about documents, and a POST to `/` is a
-    // client holding the API wrong — better a 404 from the router than a
+    // client holding the API wrong; better a 404 from the router than a
     // landing page with a 200 on it.
     if (request.method !== 'GET' && request.method !== 'HEAD') return done()
 
@@ -96,15 +96,15 @@ interface ClientDeps {
 /**
  * Serving the client's assets from the same process that serves the API.
  *
- * Only registered in the single-image deployment — `config.clientDir` is null
+ * Only registered in the single-image deployment: `config.clientDir` is null
  * under compose, where nginx does this job, and in development, where Vite
  * does. What this is, together with `doorwayHook` and the app-shell fallback in
  * `lib/errors.ts`, is nginx.conf's static half rewritten in Fastify; the rules
  * they enforce are `lib/doorway.ts`, which explains why there are three copies.
  *
  * Deliberately outside the listener gate, exactly as nginx is. A private
- * station refuses the socket, the library and the media — the things that *are*
- * the station — and not the documents: the page has to load in order to redeem
+ * station refuses the socket, the library and the media, the things that *are*
+ * the station, and not the documents: the page has to load in order to redeem
  * the key in its own address bar, and a gate in front of it would refuse every
  * invite before it could be presented.
  */

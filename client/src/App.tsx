@@ -17,6 +17,7 @@ import { Deck, Mute, OnAir, Waveform } from './Turntable.js'
 import { type AdminSession, useAdminSession } from './hooks/useAdminSession.js'
 import { useNarrow } from './hooks/useNarrow.js'
 import { type Access, useStationAccess } from './hooks/useStationAccess.js'
+import { useMediaSession } from './hooks/useMediaSession.js'
 import { usePresence } from './hooks/usePresence.js'
 import { useServerClock } from './hooks/useServerClock.js'
 import { type SyncTrails, useSyncTrails } from './hooks/useSyncTrails.js'
@@ -48,11 +49,15 @@ import {
   saveNickname,
 } from './lib/nickname.js'
 import { expectedPositionSeconds } from './lib/position.js'
+import { isUpcoming, nextSessionLabel, nextSessionShort } from './lib/schedule.js'
 import {
   artworkUrl,
+  posterUrl,
   type ChatMessage,
   type Listener,
   type Play,
+  type ScheduledSession,
+  type Track,
   type ServerMessage,
   type SocketRefusal,
   type Wish,
@@ -69,15 +74,12 @@ import {
   wishStatusLabel,
 } from './lib/wishes.js'
 
-/** How much of the evening the history shows before "View all" is pressed. */
-const EARLIER_SHOWN = 4
-
 /**
  * The door, and then the station.
  *
  * Split in two so that nothing below opens a socket, starts a clock or asks for
  * a roster until the station has said this browser may hear it. On an open
- * station — the default, and what PLAN.md describes — that answer is yes and
+ * station (the default, and what PLAN.md describes) that answer is yes and
  * this costs one request; on a private one it is the difference between a page
  * that explains itself and a page that reconnects forever.
  */
@@ -89,12 +91,12 @@ export function App() {
   const admitted =
     // The console is never behind the invite gate. It is how whoever runs the
     // station gets in, and needing an invite to reach the sign-in form would
-    // lock the owner out of their own station — there being no way to issue
+    // lock the owner out of their own station, there being no way to issue
     // themselves one. Nothing is given away by rendering it: every route it
     // calls is gated on the server, and the gate is the password.
     isConsole(route) ||
     // And once signed in, admitted everywhere else too. The station already
-    // agrees — admin credentials satisfy the listener gate — but this browser
+    // agrees, since admin credentials satisfy the listener gate, but this browser
     // asked before it had any, and the answer it got is now out of date.
     session.status === 'signed-in' ||
     access === 'admitted' ||
@@ -117,7 +119,7 @@ export function App() {
  *
  * Deliberately not the outage screen: an outage is the station being gone and
  * fixing itself, and neither is true here. Somebody without an invite needs to
- * know there is nothing wrong and nothing to wait for — the only thing that
+ * know there is nothing wrong and nothing to wait for: the only thing that
  * helps is a link from whoever runs it.
  */
 function Doorway({
@@ -144,7 +146,7 @@ function Doorway({
             <p className="outage__headline">This station is private.</p>
             <p className="outage__detail">
               If somebody gave you the door code, put it in. Otherwise you need a link from whoever
-              runs it — and if you had one that worked before, it has been replaced.
+              runs it, and if you had one that worked before, it has been replaced.
             </p>
           </div>
 
@@ -154,7 +156,7 @@ function Doorway({
               it is the same secret: a code said over the phone and a code pasted
               into an address bar differ only in how they arrived. Typing it has
               one advantage over the link, which is that it never enters the
-              address bar — so there is nothing to strip out of the history
+              address bar, so there is nothing to strip out of the history
               afterwards. */}
           <form
             className="gate__form"
@@ -189,7 +191,7 @@ function Doorway({
               that the door is shut, and a link is not part of that report.
 
               Only here. Somebody on the unreachable screen has an invite that
-              works and a station that is away — they know what this is, and
+              works and a station that is away. They know what this is, and
               they are waiting rather than asking. */}
           <a className="button button--quiet" href="/">
             What chunky.fm is
@@ -212,13 +214,13 @@ function Doorway({
 
 function Station({ route: requested, session }: { route: Route; session: AdminSession }) {
   const audioRef = useRef<HTMLAudioElement>(null)
-  // A phone, where the landing view is the deck alone — see useNarrow.
+  // A phone, where the landing view is the deck alone. See useNarrow.
   const narrow = useNarrow()
   const [joined, setJoined] = useState(false)
   // Read once, at mount: what a previous visit left behind is the starting
   // point for the field, not a decision to join. The gesture still has to
-  // happen — a browser will not start audio because localStorage had a name in
-  // it — so a returning listener finds the field filled and presses the button.
+  // happen (a browser will not start audio because localStorage had a name in
+  // it), so a returning listener finds the field filled and presses the button.
   const [nickname, setNickname] = useState(() => loadNickname() ?? '')
 
   // The clock needs to see pongs but the station owns the socket, so the
@@ -240,6 +242,8 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     applyState,
     applyQueue,
     applyAir,
+    schedule,
+    applySchedule,
   } = useStation(undefined, (message) => routeToClock.current(message))
   const admin = isConsole(requested)
   const clock = useServerClock(connection, { connected: status === 'connected' })
@@ -249,7 +253,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     connected: status === 'connected',
     nickname: joined ? nickname : null,
   })
-  // Assigned after commit, not during render — a render React throws away
+  // Assigned after commit, not during render: a render React throws away
   // must not leave a handler wired up behind it.
   useEffect(() => {
     routeToClock.current = clock.handleMessage
@@ -278,14 +282,45 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     onCorrection,
   })
 
-  // Only this listener's own ears — muting is not leaving, so the socket, the
+  // Only this listener's own ears. Muting is not leaving, so the socket, the
   // roster and the clock all carry on exactly as they were.
   const [muted, setMuted] = useState(false)
-  function toggleMute() {
+
+  /**
+   * Sound back on, and back in the room if it stopped rather than went quiet.
+   *
+   * Muting from the page never pauses the element, so on the way back there is
+   * normally nothing to do but unmute. A lock screen, a headset button or an
+   * incoming call can pause it though, and a paused element resumes exactly
+   * where it stopped: a listener minutes behind everybody else, with nothing on
+   * screen saying so. So the live edge is sought again, and only when the
+   * element actually stopped, because a seek nobody needed is an audible hitch
+   * for nothing.
+   */
+  function listen() {
     const audio = audioRef.current
     if (!audio) return
-    audio.muted = !audio.muted
-    setMuted(audio.muted)
+    audio.muted = false
+    setMuted(false)
+    if (audio.paused && state?.track && state.pausedAt === null) {
+      seekTo(audio, expectedPositionSeconds(state, clock.serverNow()))
+      void audio.play().catch(() => undefined)
+    }
+  }
+
+  function silence() {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.muted = true
+    setMuted(true)
+  }
+
+  // The element is the source of truth for which way this goes, not `muted`,
+  // because the lock screen can press either of these without the page having
+  // rendered in between.
+  function toggleMute() {
+    if (audioRef.current?.muted) listen()
+    else silence()
   }
 
   function joinStation(event: FormEvent<HTMLFormElement>) {
@@ -301,12 +336,12 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     // Autoplay policy: play() has to be called synchronously inside the submit
     // handler, not after an await, or the browser refuses it. That is why the
     // nickname is a field on the form the button submits rather than a step
-    // before it — naming yourself and tuning in are one gesture, and splitting
+    // before it: naming yourself and tuning in are one gesture, and splitting
     // them would leave the audio starting outside any gesture at all.
     const audio = audioRef.current
     if (audio && state?.track && state.pausedAt === null) {
       // Through seekTo, not currentTime: the click can land before the element
-      // has metadata, and a bare assignment is silently dropped there — which
+      // has metadata, and a bare assignment is silently dropped there, which
       // is a listener starting at 0:00 while everyone else is at 2:14.
       seekTo(audio, expectedPositionSeconds(state, clock.serverNow()))
       void audio.play().catch(() => undefined)
@@ -324,19 +359,29 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
   const stranded = reach !== 'live' && (!clock.synced || state === null)
   /**
    * The one thing the page says about the station, connectivity and broadcast
-   * folded together — see `standing`. Everything below reads this rather than
+   * folded together. See `standing`. Everything below reads this rather than
    * `reach`, so "we cannot find it" and "nobody is on the decks tonight" stay
    * different sentences instead of both coming out as silence.
    */
   const here: Standing = standing(reach, air?.live ?? null)
-  // Off air is not an outage — nothing is broken — but it is the same screen:
+  // Off air is not an outage, and nothing is broken, but it is the same screen:
   // no music, and nothing on the page worth presenting as current.
   const closed = here === 'off-air'
   // The record turns for exactly one reason: audio is coming out of it.
   const onAir = Boolean(joined && !stranded && !tuning && track && !paused)
 
+  // What the phone says while the page is in a pocket. The same two facts the
+  // deck shows, handed to the OS: what is on, and that it is live rather than
+  // some number of minutes into something.
+  useMediaSession({
+    track,
+    playing: onAir && !muted,
+    onResume: listen,
+    onPause: silence,
+  })
+
   // Somebody can type `#chat` into the address bar before tuning in, and there
-  // is nothing behind it when they do — the station has not told this browser
+  // is nothing behind it when they do: the station has not told this browser
   // who is in the room or what has been on. So the address is honoured only
   // once it leads somewhere, and until then every view is the one you land on.
   const route: Route = needsJoin(requested) && !joined ? 'on-air' : requested
@@ -382,11 +427,18 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
           reach={here}
           listeners={listeners?.length ?? null}
           admin={admin}
+          nextSession={
+            // Off air only, and only for an announcement that has not gone
+            // stale. On air the station is the thing to say.
+            closed && isUpcoming(schedule, Date.now())
+              ? nextSessionShort(schedule.startsAt, Date.now())
+              : null
+          }
           showConsole={session.status === 'signed-in'}
         />
 
         {/* Above everything it is about. What is below stopped being live at the
-            drop — the roster, the tally and the clock all did — and a page that
+            drop (the roster, the tally and the clock all did), and a page that
             kept presenting it as current would be the broken UI this replaces.
             The console says the same thing in its own words, so this is only
             for the listener page. */}
@@ -407,6 +459,8 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
             applyState={applyState}
             applyQueue={applyQueue}
             applyAir={applyAir}
+            schedule={schedule}
+            applySchedule={applySchedule}
           />
         ) : !joined ? (
           canTuneIn(here) ? (
@@ -445,18 +499,18 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
               </section>
             </div>
           ) : (
-            <Outage state={here} />
+            <Outage state={here} schedule={schedule} />
           )
         ) : stranded || closed ? (
-          <Outage state={here} />
+          <Outage state={here} schedule={schedule} />
         ) : route === 'on-air' ? (
           // The listener page, whole: the deck and what it is playing on the
           // left, the words to it on the right. Every other view below is one
           // of the rail's destinations given the screen.
           //
           // On a phone it is only the first half. Stacked into one column the
-          // whole thing ran to about six screens of scrolling, and the record —
-          // the one thing on the page you came for — spent five of them off the
+          // whole thing ran to about six screens of scrolling, and the record,
+          // the one thing on the page you came for, spent five of them off the
           // top. So everything else lives at the rail's own destinations:
           // `#lyrics`, `#history`, `#chat`, `#wishes`, `#sync`. Nothing is
           // hidden, and nothing is duplicated; the deck simply stops being a
@@ -467,7 +521,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
           // printed it would spend its space answering a question the room
           // did not ask. What was on is still at `#history`.
           //
-          // The wishes and the clock are gone from here at every width — see
+          // The wishes and the clock are gone from here at every width. See
           // the note further down.
           <div className="station__columns">
             <section className="column column--stage">
@@ -483,7 +537,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
 
                   {/* No clock under the title. A listener is not seeking and
                       cannot, so "1:46 / 4:00" was answering a question nobody
-                      on this side of the station gets to ask — and the badge
+                      on this side of the station gets to ask, and the badge
                       above already says the thing that matters, which is that
                       this is live. The numbers are still exact and still read:
                       they are what the audio is aligned against, and what the
@@ -505,7 +559,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                 <div className="off-air" data-testid="off-air">
                   <p className="off-air__headline">Nothing on the decks right now.</p>
                   <p className="off-air__detail">
-                    You're tuned in — whatever goes on next starts here on its own.
+                    You're tuned in. Whatever goes on next starts here on its own.
                   </p>
                 </div>
               )}
@@ -518,7 +572,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                   width with what you have already asked for listed under it,
                   not a footnote below the record. The clock numbers want the
                   glossary beside them that says what each one means, which is
-                  the only time anybody reads them — a strip of four figures
+                  the only time anybody reads them. A strip of four figures
                   under the mute button is a readout you glance at, worry
                   about, and cannot act on. Both are at `#wishes` and `#sync`.
 
@@ -534,13 +588,13 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                     exist, one rail mark away, where each gets a full screen
                     instead of a third of a column. What sits beside the deck
                     now is the one thing that belongs to *this* moment of the
-                    song and no other — the words. */}
+                    song and no other: the words. */}
                 <Lyrics state={state} serverNow={clock.serverNow} />
               </section>
             )}
           </div>
         ) : (
-          // One thing, with the whole screen. Nothing here is new data — it is
+          // One thing, with the whole screen. Nothing here is new data; it is
           // the same panel the landing view carries in a column, without the
           // column, which is the only thing a rail full of destinations can
           // honestly offer on a station this size.
@@ -548,7 +602,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
             {route === 'sync' && <SyncView readout={readout} synced={clock.synced} reach={reach} />}
             {/* Who is in the room, above what the room is saying. The roster is
                 the one panel on the landing view with no mark of its own, so
-                on a phone — where the landing view no longer carries it — this
+                on a phone, where the landing view no longer carries it, this
                 is where it goes. It belongs here at every width: "the room" is
                 the people as much as the conversation. */}
             {route === 'chat' && (
@@ -566,7 +620,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
         )}
       </div>
 
-      {/* Owned imperatively — React never sets currentTime or calls play(). */}
+      {/* Owned imperatively: React never sets currentTime or calls play(). */}
       <audio ref={audioRef} preload="auto" />
     </div>
   )
@@ -585,14 +639,55 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
  * button could do is exactly what is happening anyway, while implying the page
  * had given up and was waiting to be told to try again.
  */
-function Outage({ state }: { state: Standing }) {
+function Outage({ state, schedule }: { state: Standing; schedule?: ScheduledSession | null }) {
   const notice = outage(state)
   if (!notice) return null
 
+  // Only over "nobody is on the decks tonight", and never over an outage. A
+  // station that cannot be reached has not told this page anything, and the
+  // announcement it is holding may be hours out of date; promising a Saturday
+  // on top of "no signal" would be the page inventing good news.
+  const next = state === 'off-air' && isUpcoming(schedule ?? null, Date.now()) ? schedule : null
+
   return (
     <div className="outage" data-testid="outage" data-reach={state} role="status">
+      {next && <NextSession next={next} />}
       <p className="outage__headline">{notice.headline}</p>
       <p className="outage__detail">{notice.detail}</p>
+    </div>
+  )
+}
+
+/**
+ * The poster, and when the station is next on.
+ *
+ * "Off the air" is a fact about right now and nothing anybody can do with it.
+ * This is the half that is worth reading: a picture somebody made for the night
+ * and the evening it is on, which between them turn a closed room into an
+ * appointment.
+ *
+ * The poster is above the headline rather than under it because it is the thing
+ * being said. The sentence under it is a caption.
+ */
+function NextSession({ next }: { next: ScheduledSession }) {
+  const art = posterUrl(next)
+  return (
+    <div className="next" data-testid="next-session">
+      {art && (
+        <img
+          className="next__poster"
+          src={art}
+          alt=""
+          /* The date under it says the same thing in words, so the image is
+             decoration to a screen reader rather than a second announcement. */
+        />
+      )}
+      <p className="next__label">Next session</p>
+      <p className="next__when">
+        <time dateTime={new Date(next.startsAt).toISOString()}>
+          {nextSessionLabel(next.startsAt, Date.now())}
+        </time>
+      </p>
     </div>
   )
 }
@@ -601,7 +696,7 @@ function Outage({ state }: { state: Standing }) {
  * The station is not there, but the page still has what it last said.
  *
  * A drop of a second or two is the common one, and the audio usually plays
- * straight through it out of the buffer — so blanking a track the listener can
+ * straight through it out of the buffer, so blanking a track the listener can
  * still hear would be worse than the outage. What the page must not do is go on
  * presenting a frozen roster and a dead tally as live, and this line is the
  * difference between the two.
@@ -618,12 +713,12 @@ function StaleNotice({ state }: { state: Standing }) {
 }
 
 /**
- * What has already been on — the design's "Recently Played".
+ * What has already been on: the design's "Recently Played".
  *
  * PLAN.md's now-playing history, from the listener's side: the evening so far,
  * newest first, so somebody who walked in on the end of something can see what
  * it was. The station writes a play down when the track starts, which makes the
- * newest row whatever is on right now — already shown in full beside this list —
+ * newest row whatever is on right now (already shown in full beside this list),
  * so `playedEarlier` drops it and this list is only what was missed.
  *
  * Written down rather than held on the socket, so unlike the roster it survives
@@ -639,59 +734,71 @@ function Earlier({
   currentTrackId: number | null
   /**
    * True when this panel is the whole page. An empty history is worth no space
-   * beside the deck, but on its own view a blank screen is a dead end — so
+   * beside the deck, but on its own view a blank screen is a dead end, so
    * there it says the evening has not started rather than nothing.
    */
   standalone?: boolean
 }) {
-  // Four rows, as the design draws it, and the rest a press away. On its own
-  // view there is room for the evening, so the cap does not apply.
-  const [all, setAll] = useState(false)
-
   const earlier = playedEarlier(plays, currentTrackId)
   if (earlier.length === 0 && !standalone) return null
-
-  const capped = !standalone && !all
-  const shown = capped ? earlier.slice(0, EARLIER_SHOWN) : earlier
 
   return (
     <section className="panel" id="earlier" data-testid="earlier">
       <div className="panel__head">
         <h2 className="panel__title">Recently Played</h2>
-        {standalone ? (
-          <p className="panel__aside">{earlier.length} played</p>
-        ) : (
-          earlier.length > EARLIER_SHOWN && (
-            <button type="button" className="panel__more" onClick={() => setAll(!all)}>
-              {all ? 'Show less' : 'View all'}
-            </button>
-          )
-        )}
+        <p className="panel__aside">{earlier.length} played</p>
       </div>
       {earlier.length === 0 ? (
         <p className="panel__empty">
           Nothing has been on yet this session. What plays from here shows up in this list.
         </p>
       ) : (
-        <ol className="rows">
-          {shown.map((play, index) => (
-            <li className="row" key={play.id} data-play={play.id} data-track={play.track.id}>
-              <span className="row__index">{trackNumber(index)}</span>
-              {/* Two lines here, because the row has two lines to give — but the
-                  one-line reading is what a tooltip and a screen reader want,
-                  and it is the same string either way. */}
-              <span className="row__body" title={playedLabel(play)}>
-                <span className="row__title earlier__title">{play.track.title}</span>
-                <span className="row__sub">{play.track.artist ?? 'Unknown artist'}</span>
+        // A shelf rather than a list, and it scrolls rather than capping at
+        // four with a button under it. What was on is a row of sleeves, which
+        // is how records are kept and how you find one again: you recognise the
+        // cover before you have read anything. Sideways because the panel is a
+        // column of other panels, and an evening's worth of covers stacked
+        // downwards would be the whole page.
+        <ol className="shelf" data-testid="shelf">
+          {earlier.map((play) => (
+            <li className="shelf__slot" key={play.id} data-play={play.id} data-track={play.track.id}>
+              {/* One string for the tooltip and the screen reader, the same one
+                  the rows used, because the sleeve carries no words of its own
+                  and the two lines under it are cut to fit. */}
+              <span className="shelf__card" title={playedLabel(play)}>
+                <Sleeve track={play.track} />
+                <span className="shelf__title">{play.track.title}</span>
+                <span className="shelf__artist">{play.track.artist ?? 'Unknown artist'}</span>
+                <time className="shelf__at" dateTime={new Date(play.at).toISOString()}>
+                  {formatTime(play.at)}
+                </time>
               </span>
-              <time className="row__at" dateTime={new Date(play.at).toISOString()}>
-                {formatTime(play.at)}
-              </time>
             </li>
           ))}
         </ol>
       )}
     </section>
+  )
+}
+
+/**
+ * The cover, or the most honest stand-in for one.
+ *
+ * Plenty of uploads carry no artwork, and a shelf with holes in it reads as a
+ * page that failed to load rather than as a record nobody scanned. The stand-in
+ * is the initial of the title on a plain tile: it is not pretending to be a
+ * sleeve, it is the same trick the roster plays with a nickname, and it keeps
+ * the shelf a shelf.
+ */
+function Sleeve({ track }: { track: Track }) {
+  const art = artworkUrl(track)
+  if (art) {
+    return <img className="shelf__art" src={art} alt="" loading="lazy" width={96} height={96} />
+  }
+  return (
+    <span className="shelf__art shelf__art--none" aria-hidden="true">
+      {track.title.trim().charAt(0).toUpperCase() || '·'}
+    </span>
   )
 }
 
@@ -704,7 +811,7 @@ function Earlier({
  * to pick the same name and both of them should show up.
  *
  * Null before the first roster arrives, and empty for the moment between tuning
- * in and this listener's own join landing — neither is worth a heading.
+ * in and this listener's own join landing; neither is worth a heading.
  */
 function Listeners({ listeners }: { listeners: Listener[] | null }) {
   if (!listeners || listeners.length === 0) return null
@@ -727,7 +834,7 @@ function Listeners({ listeners }: { listeners: Listener[] | null }) {
 }
 
 interface WishesProps {
-  /** This listener's own — the only ones the station tells them about. */
+  /** This listener's own: the only ones the station tells them about. */
   wishes: Wish[]
   connection: StationConnection | null
   live: boolean
@@ -740,12 +847,12 @@ interface WishesProps {
  * Asking for something.
  *
  * PLAN.md's requests decision, in full: free text, and no library to browse.
- * There is nothing to pick from here on purpose — a listener asks in their own
+ * There is nothing to pick from here on purpose: a listener asks in their own
  * words for something the station may not even have, and whoever runs the decks
  * reads it and decides. So this composer promises nothing, and says so.
  *
  * What comes back is the wish as the station wrote it down, and that is the
- * whole confirmation — nothing is rendered optimistically, for the reason the
+ * whole confirmation. Nothing is rendered optimistically, for the reason the
  * chat renders nothing optimistically: a line that says "asked" for something
  * that was refused is worse than no line at all.
  */
@@ -791,7 +898,7 @@ function Wishes({
       </div>
       {wishes.length === 0 ? (
         <p className="panel__empty">
-          Ask for anything. Whoever's on the decks reads these — no promises.
+          Ask for anything. Whoever's on the decks reads these. No promises.
         </p>
       ) : (
         <ol className="wishes__list" data-testid="wishes-list">
@@ -837,7 +944,7 @@ function Wishes({
 interface ChatProps {
   messages: ChatMessage[]
   connection: StationConnection | null
-  /** False while reconnecting — a send would go on the floor unannounced. */
+  /** False while reconnecting: a send would go on the floor unannounced. */
   live: boolean
   /** The last refusal that was about a message, if any. */
   refusal: SocketRefusal | null
@@ -850,7 +957,7 @@ interface ChatProps {
  * Nothing is rendered optimistically: what was typed goes out, and appears when
  * it comes back with the id and timestamp the server gave it. That costs a
  * round trip on a station where everyone is already listening to the same
- * server, and it buys a list that is the same list for everyone in the room —
+ * server, and it buys a list that is the same list for everyone in the room:
  * no local-only line that a refused message would leave sitting there looking
  * sent.
  */
@@ -886,7 +993,7 @@ function Chat({ messages, connection, live, refusal, clearRefusal }: ChatProps) 
     event.preventDefault()
     const text = normalizeMessageText(draft)
     if (text.length === 0 || !connection || !live) return
-    // Only this composer's own — see the same line under the wishes.
+    // Only this composer's own. See the same line under the wishes.
     if (refusal) clearRefusal()
     unanswered.current = text
     connection.send({ type: 'say', text })
@@ -964,7 +1071,7 @@ function Chat({ messages, connection, live, refusal, clearRefusal }: ChatProps) 
  * The circle beside a message.
  *
  * The design puts a photograph here; the station has no photographs and never
- * asks for one, so this is the most the page honestly knows about a listener —
+ * asks for one, so this is the most the page honestly knows about a listener:
  * their name, drawn as an initial over a colour derived from the same name. The
  * derivation is pure, so the same nickname is the same colour on every screen
  * in the room without a byte crossing the wire to arrange it.
@@ -987,11 +1094,6 @@ function hueFor(nickname: string): number {
   let total = 0
   for (const character of nickname) total = (total * 31 + character.codePointAt(0)!) % 360
   return total
-}
-
-/** "01", "02" — the design's numbering, which is a position and not an id. */
-function trackNumber(index: number): string {
-  return String(index + 1).padStart(2, '0')
 }
 
 /**
@@ -1079,7 +1181,7 @@ const CHART_HEIGHT = 280
  * The three lines, in the order they are drawn and listed. The colors are the
  * one place this page steps outside the monochrome design: three lines in one
  * frame need identities, and identity is what categorical color is for. The
- * trio was validated (CVD ΔE ≥ 8, ≥3:1 on this background) — see styles.css.
+ * trio was validated (CVD ΔE ≥ 8, ≥3:1 on this background); see styles.css.
  */
 const SYNC_SERIES = [
   { key: 'offset', label: 'clock offset', testId: 'sync-offset' },
@@ -1091,13 +1193,13 @@ const SYNC_SERIES = [
 const TAG_GAP = 15
 
 /**
- * Visible sync diagnostics — the whole project lives or dies on these numbers.
+ * Visible sync diagnostics: the whole project lives or dies on these numbers.
  *
  * One graph, three lines, one scale. Everything here is milliseconds, and the
  * point of drawing the three together is that their sizes compare: the drift
  * should be small against the offset, the rtt should be small against both,
  * and a line that suddenly stands taller than its neighbours is the story.
- * Each line is named twice — at its right-hand end, and in the legend under
+ * Each line is named twice: at its right-hand end, and in the legend under
  * the frame, where the live numbers are. No cards and no captions: the graph
  * is the reading.
  *
@@ -1109,7 +1211,7 @@ function ClockReadout({ offsetMs, rttMs, diff, correction, trails }: ClockReadou
   const [width, setWidth] = useState(0)
   const [heldAt, setHeldAt] = useState<number | null>(null)
 
-  // Real pixels, measured — so a 2px line is 2px and the hover dots are round.
+  // Real pixels, measured, so a 2px line is 2px and the hover dots are round.
   useEffect(() => {
     const frame = frameRef.current
     if (!frame) return
@@ -1138,7 +1240,7 @@ function ClockReadout({ offsetMs, rttMs, diff, correction, trails }: ClockReadou
   const drawn = geometry.series.some((line) => line.points !== null)
 
   // Each line's name at its right-hand end, nudged apart when two lines end
-  // at the same height — a label readable only by tracing the line back is
+  // at the same height: a label readable only by tracing the line back is
   // not a label.
   const tags = SYNC_SERIES.map((series, index) => ({
     series,

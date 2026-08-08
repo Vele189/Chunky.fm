@@ -23,7 +23,7 @@ const OPEN = 1
 
 /**
  * A websocket that reconnects. Socket.IO does this for you, but at this scale
- * it is weight we don't need — PLAN.md budgets about thirty lines for it, and
+ * it is weight we don't need: PLAN.md budgets about thirty lines for it, and
  * this is those thirty lines.
  *
  * Timers are called as plain globals rather than stored on the instance:

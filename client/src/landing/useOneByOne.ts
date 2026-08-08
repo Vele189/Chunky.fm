@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react'
 /**
  * A count that catches up to another one, a step at a time.
  *
- * The conversation knows how many of its lines are due — the playhead has gone
- * past them — but due is not the same as said. Arriving at the room section with
+ * The conversation knows how many of its lines are due, since the playhead has gone
+ * past them, but due is not the same as said. Arriving at the room section with
  * the record already at 2:13 means five lines are due at once, and five bubbles
  * appearing in the same frame is not a conversation, it is a transcript. So the
  * panel is shown this number instead, which walks up to the real one and lets

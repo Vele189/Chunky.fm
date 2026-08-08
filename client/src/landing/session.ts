@@ -2,15 +2,15 @@
  * The sample session the page plays back as you scroll.
  *
  * Every visible number and line on the landing page comes from here, and all of
- * it is invented — one evening's worth of a station that is not running. It has
+ * it is invented: one evening's worth of a station that is not running. It has
  * to be: the page in front of the station cannot ask the station anything, and
  * that is the whole reason the page exists. What it must not do is *look* like a
  * report. Everything this drives sits behind `aria-hidden`, and the page says
  * so in words at the one place somebody would otherwise wonder.
  *
  * Kept as data and pure functions, apart from the components that draw it, so
- * the arithmetic underneath the trick — where in the song the scroll has got to,
- * and which lines have been said by then — is testable without a window.
+ * the arithmetic underneath the trick (where in the song the scroll has got to,
+ * and which lines have been said by then) is testable without a window.
  */
 
 import childishGambino from '../assets/albums/childish-gambino.webp'
@@ -38,7 +38,7 @@ export function clock(seconds: number): string {
  * the thing is that a reader arrives at the room section already somewhere in
  * particular, without having been asked to do anything.
  *
- * A page too short to scroll — a very tall window, a phone in landscape — has
+ * A page too short to scroll (a very tall window, a phone in landscape) has
  * nothing to divide by. That reads as 0:00 rather than as a division by zero,
  * and the bar simply sits at the start.
  */
@@ -66,8 +66,8 @@ export interface Line {
 /**
  * The letter in somebody's avatar.
  *
- * The station has no pictures of anybody — a nickname in localStorage is the
- * whole of what it knows — so the avatar is the one thing it can honestly draw:
+ * The station has no pictures of anybody (a nickname in localStorage is the
+ * whole of what it knows) so the avatar is the one thing it can honestly draw:
  * the first letter of what they asked to be called.
  */
 export function initial(who: string): string {
@@ -92,7 +92,7 @@ export const SESSION = {
   /** 5:34, in seconds. */
   duration: 334,
   /**
-   * A head count in the range the station is actually built for — around thirty,
+   * A head count in the range the station is actually built for: around thirty,
    * because playback state lives in one process on purpose. A landing page
    * boasting five figures would be advertising a different product, and the
    * limits section further down says so in as many words.
@@ -104,7 +104,7 @@ export const SESSION = {
  * The room, over the course of one song.
  *
  * Ordinary, and short. What is being demonstrated is not that the chat is
- * lively — it is that all of this is happening at the same instant for
+ * lively. It is that all of this is happening at the same instant for
  * everybody, which is a thing you feel rather than read.
  */
 export const ROOM: readonly Line[] = [
@@ -134,8 +134,8 @@ export interface Wish {
  * of: they go past in columns, and a loop short enough to recognise on its second
  * lap is a loop you stop believing.
  *
- * A sentence and nothing else. Each of these used to carry what became of it —
- * played, or still waiting — and the card said so underneath. The cards are one
+ * A sentence and nothing else. Each of these used to carry what became of it
+ * (played, or still waiting) and the card said so underneath. The cards are one
  * quotation now, so there is nothing here for a state to be shown by, and a field
  * kept against the day something might read it is a field that will disagree with
  * the page. That not every wish gets played is still said further down, in words
@@ -168,7 +168,7 @@ export interface Played {
 /**
  * The evening so far.
  *
- * Not an archive — the station keeps this for as long as it is up, so a person
+ * Not an archive: the station keeps this for as long as it is up, so a person
  * arriving at nine can see what they missed. The section that draws it says so,
  * because a grid of past sessions is a thing this station does not have.
  *
@@ -237,7 +237,7 @@ export const BEEN_ON: readonly Played[] = [
 ]
 
 /**
- * The records with a sleeve, newest first — what the pile is made of.
+ * The records with a sleeve, newest first: what the pile is made of.
  *
  * Derived rather than listed, so the pile cannot come to disagree with the
  * evening it is the top of.

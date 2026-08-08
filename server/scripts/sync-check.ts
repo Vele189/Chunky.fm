@@ -47,7 +47,7 @@ async function join(name: string): Promise<Listener> {
   const socket = new WebSocket(url)
   const listener: Listener = { name, offset: 0, startedAt: 0, pausedAt: null, title: null }
 
-  // Attached before 'open' — a state frame can land the instant we connect.
+  // Attached before 'open': a state frame can land the instant we connect.
   const pending: ((t1: number) => void)[] = []
   let gotState: (() => void) | null = null
   const firstState = new Promise<void>((resolve) => {
@@ -105,16 +105,16 @@ console.log(`drift: ${Math.abs(posA - posB)}ms`)
 
 app.playback.pause()
 await new Promise((r) => setTimeout(r, 200))
-console.log(`\nafter pause  — A ${position(a)}ms, B ${position(b)}ms`)
+console.log(`\nafter pause:  A ${position(a)}ms, B ${position(b)}ms`)
 
 app.playback.seek(90_000)
 app.playback.resume()
 await new Promise((r) => setTimeout(r, 200))
-console.log(`after seek   — A ${position(a)}ms, B ${position(b)}ms`)
+console.log(`after seek:   A ${position(a)}ms, B ${position(b)}ms`)
 
 const drift = Math.abs(posA - posB)
 const ok = drift < 50 && a.startedAt === b.startedAt
-console.log(ok ? '\nPASS — listeners are locked together' : `\nFAIL — drift ${drift}ms`)
+console.log(ok ? '\nPASS: listeners are locked together' : `\nFAIL: drift ${drift}ms`)
 
 await app.close()
 process.exit(ok ? 0 : 1)

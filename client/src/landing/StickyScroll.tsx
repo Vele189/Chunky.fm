@@ -8,7 +8,7 @@ import { CardStack } from './CardStack.js'
  * (<https://ui.aceternity.com/components/sticky-scroll-reveal>). The mechanism
  * is the original's: the whole thing is its own scroll container, the items are
  * laid out down the left of it, and the one nearest a breakpoint at
- * `index / count` is the active one — brought to full opacity while the others
+ * `index / count` is the active one, brought to full opacity while the others
  * sit at 0.3, with its panel shown in the sticky box on the right.
  *
  * Being its own scroller rather than reading the page is the good part of the
@@ -25,7 +25,7 @@ import { CardStack } from './CardStack.js'
  * fraction those breakpoints are expressed in, so this reads that instead.
  *
  * Two departures. The original animates the container between three slate-to-
- * black backgrounds and the panel between three saturated gradients — cyan to
+ * black backgrounds and the panel between three saturated gradients: cyan to
  * emerald, pink to indigo, orange to yellow. `tokens.css` gives this design one
  * accent (white) and one signal (red, meaning on the air right now), and unlike
  * the glare card's foil these are not a hover: they would be on screen the whole
@@ -34,7 +34,7 @@ import { CardStack } from './CardStack.js'
  * becoming the only part of the site with a palette.
  *
  * And the sticky side is a `CardStack` rather than one panel swapped under a
- * crossfade — the three are a deck with the one you are reading face up, and
+ * crossfade. The three are a deck with the one you are reading face up, and
  * scrolling deals the next.
  */
 
@@ -84,7 +84,7 @@ export function StickyScroll({ items, className = '' }: { items: readonly Sticky
       window.removeEventListener('resize', onScroll)
     }
     // `count`, not `items`. The array is built inline by the caller, so it is a
-    // new one on every render — and the section it lives in re-renders on every
+    // new one on every render, and the section it lives in re-renders on every
     // scroll frame, because the conversation panel follows the page's playhead.
     // Depending on the array tore this listener down and put it back constantly,
     // and a scroll event landing in the gap was simply lost: the active item
@@ -102,18 +102,18 @@ export function StickyScroll({ items, className = '' }: { items: readonly Sticky
           </div>
         ))}
         {/* The original's trailing spacer. Without it the last item can never
-            reach its own breakpoint — there is nothing left to scroll. */}
+            reach its own breakpoint; there is nothing left to scroll. */}
         <div className="sticky-reveal__tail" />
       </div>
 
       {/* A deck rather than a crossfade: the panels are stacked, the one you
           are reading about is face up, and scrolling deals the next. Every card
-          stays mounted — see the note in CardStack.
+          stays mounted. See the note in CardStack.
           
           The deck sits inside the sticky box rather than being it. Sharing one
           element meant `.stack` and `.sticky-reveal__panel` both setting
-          `position` and `width`, and whichever came later in the stylesheet won
-          — which collapsed the column of text once and killed the stickiness
+          `position` and `width`, and whichever came later in the stylesheet
+          won, which collapsed the column of text once and killed the stickiness
           once. Two elements, two jobs. */}
       <div className="sticky-reveal__panel">
         <CardStack active={active} items={items.map((item) => ({ key: item.title, node: item.panel }))} />

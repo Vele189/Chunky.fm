@@ -57,7 +57,7 @@ describe('AdminApi sign-in', () => {
     expect(calls[0]!.init.method).toBe('POST')
     expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ password: PASSWORD })
 
-    // After that the cookie is the credential — the password is not repeated,
+    // After that the cookie is the credential: the password is not repeated,
     // and nothing here could resend it if it wanted to.
     for (const call of calls.slice(1)) {
       expect(headerOf(call, 'authorization')).toBeNull()
@@ -127,7 +127,7 @@ describe('AdminApi sign-in', () => {
 
     expect(err).toBeInstanceOf(AdminError)
     expect((err as AdminError).unauthorized).toBe(true)
-    expect((err as AdminError).message).toBe('session ended — sign in again')
+    expect((err as AdminError).message).toBe('session ended, sign in again')
   })
 })
 
@@ -229,7 +229,7 @@ describe('AdminApi wishes', () => {
     respond = () => json({ error: 'unauthorized', message: 'nope' }, 401)
 
     // The panel polls this on a timer, so it is the first request likely to
-    // meet a lapsed session — and it has to be the same error every other
+    // meet a lapsed session, and it has to be the same error every other
     // control reacts to by signing out.
     await expect(api().wishes()).rejects.toMatchObject({ name: 'AdminError', status: 401 })
   })
@@ -252,7 +252,7 @@ describe('AdminApi upload', () => {
     expect(result.duplicate).toBe(false)
   })
 
-  it('treats a duplicate as a success — the track is in the library either way', async () => {
+  it('treats a duplicate as a success: the track is in the library either way', async () => {
     respond = () =>
       json({ error: 'duplicate', message: 'already', track: { id: 3, title: 'Track' } }, 409)
 
@@ -275,7 +275,7 @@ describe('AdminApi upload', () => {
 /**
  * Which refusals are the station's words, and which are ours.
  *
- * Every 4xx message in this API is written to be shown — that is the contract
+ * Every 4xx message in this API is written to be shown; that is the contract
  * `server/src/lib/errors.ts` keeps, and why it replaces 5xx messages rather than
  * repeating them. Sign-in is throttled, so "wait a moment and try again" is now
  * a thing the station says, and reporting it as "could not reach the station"

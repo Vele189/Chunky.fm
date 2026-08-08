@@ -6,7 +6,7 @@ import type { Track } from './lib/track.js'
  *
  * The entry id exists because the same track may sit in the queue more than
  * once, and because the queue shifts under the admin's feet every time a track
- * ends — an index-addressed "remove the third one" races with auto-advance and
+ * ends: an index-addressed "remove the third one" races with auto-advance and
  * removes the wrong track. Entry ids don't move.
  */
 export interface QueueEntry {
@@ -24,7 +24,7 @@ export declare interface TrackQueue {
  * What's coming up next, in memory only.
  *
  * The queue is session-scoped and dies with the process along with the rest of
- * playback state — see PLAN.md. Nothing here knows about timers or the decks;
+ * playback state; see PLAN.md. Nothing here knows about timers or the decks;
  * advancing is the Station's job.
  */
 export class TrackQueue extends EventEmitter {
@@ -35,7 +35,7 @@ export class TrackQueue extends EventEmitter {
     return this.#entries.length
   }
 
-  /** A copy — callers must not be able to reorder the queue by mutating it. */
+  /** A copy: callers must not be able to reorder the queue by mutating it. */
   list(): QueueEntry[] {
     return [...this.#entries]
   }

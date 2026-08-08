@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLyrics } from './hooks/useLyrics.js'
-import { activeLineIndex } from './lib/lyrics.js'
+import { activeLineIndex, parsePlain } from './lib/lyrics.js'
 import { expectedPositionSeconds } from './lib/position.js'
 import type { StateMessage } from './lib/protocol.js'
 
@@ -10,7 +10,7 @@ import type { StateMessage } from './lib/protocol.js'
  * Deliberately not a panel. Everything else on the aside is a list in a card;
  * the words are the one thing on the page that should read like the song
  * rather than like the interface, so there is no border, no heading and no
- * card — lines of text, the current one bright, the rest dimmed, drifting up
+ * card: lines of text, the current one bright, the rest dimmed, drifting up
  * as the song moves through them.
  *
  * The bright line runs on the same clock the audio does. Nothing here listens
@@ -25,7 +25,7 @@ const TICK_MS = 250
 export interface LyricsProps {
   /** The playback tuple. The words follow whatever track is on it. */
   state: StateMessage | null
-  /** The synced clock's idea of now — see useServerClock. */
+  /** The synced clock's idea of now. See useServerClock. */
   serverNow: () => number
 }
 
@@ -83,7 +83,7 @@ export function Lyrics({ state, serverNow }: LyricsProps) {
               line.text === '' ? ' lyrics__line--hum' : ''
             }`}
           >
-            {/* A timestamped silence — an intro, a solo. The song is still
+            {/* A timestamped silence: an intro, a solo. The song is still
                 going, so the sheet says so quietly rather than going blank. */}
             {line.text === '' ? '· · ·' : line.text}
           </p>
@@ -94,27 +94,31 @@ export function Lyrics({ state, serverNow }: LyricsProps) {
   }
 
   if (sheet.plain !== null) {
-    // Words with no clock on them: the whole sheet, evenly lit, read at the
-    // listener's own pace. No bright line, because guessing one would put it
-    // in the wrong place for most of every song.
+    // Words with no clock on them. Not a sheet to follow but a sheet to read, so
+    // it is laid out as one: verses kept apart, every line evenly lit, and a
+    // note at the top saying why nothing is lighting up, because a listener
+    // watching an unmoving sheet should be told it isn't broken. No bright
+    // line, because guessing one would put it in the wrong place for most of
+    // every song.
     return (
       <div className="lyrics lyrics--plain" ref={sheetRef} data-testid="lyrics" aria-label="Lyrics">
-        {sheet.plain.split('\n').map((text, index) =>
-          text.trim() === '' ? (
-            <div key={index} className="lyrics__break" aria-hidden="true" />
-          ) : (
-            <p key={index} className="lyrics__line lyrics__line--even">
-              {text}
-            </p>
-          ),
-        )}
+        <p className="lyrics__untimed">Untimed sheet, read along</p>
+        {parsePlain(sheet.plain).map((stanza, index) => (
+          <section key={index} className="lyrics__stanza">
+            {stanza.map((text, line) => (
+              <p key={line} className="lyrics__line lyrics__line--even">
+                {text}
+              </p>
+            ))}
+          </section>
+        ))}
       </div>
     )
   }
 
   return (
     <div className="lyrics lyrics--quiet" data-testid="lyrics">
-      <p className="lyrics__none">No words for this one — just listen.</p>
+      <p className="lyrics__none">No words for this one. Just listen.</p>
     </div>
   )
 }

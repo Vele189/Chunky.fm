@@ -3,7 +3,7 @@
  * station at different times and must end up at the same instant of the song.
  *
  * Needs the server and the Vite dev server running, and a track uploaded.
- * See README — or just run `npm run verify:sync` from the repo root.
+ * See README, or just run `npm run verify:sync` from the repo root.
  */
 import { chromium, type Page } from 'playwright-core'
 
@@ -57,7 +57,7 @@ interface SyncReadout {
 async function tuneIn(page: Page, label: string): Promise<void> {
   await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' })
   // A nickname is required before joining, and the button stays disabled
-  // without one — so the label doubles as this listener's name.
+  // without one, so the label doubles as this listener's name.
   await page.getByLabel('What should everyone call you?').fill(label)
   await page.getByRole('button', { name: 'Tune in' }).click()
   await page.waitForFunction(PLAYING, null, { timeout: 15_000 })
@@ -74,7 +74,7 @@ const browser = await chromium.launch({
 
 let failures = 0
 const check = (label: string, ok: boolean, detail: string) => {
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label} — ${detail}`)
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}: ${detail}`)
   if (!ok) failures++
 }
 
