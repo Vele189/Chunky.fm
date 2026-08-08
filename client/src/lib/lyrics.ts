@@ -2,18 +2,18 @@
  * The words, and when to say them.
  *
  * The server hands over lyrics exactly as LRCLIB stores them: `synced` is LRC
- * text — `[mm:ss.xx] line` per line — and `plain` is the same words with no
+ * text (`[mm:ss.xx] line` per line) and `plain` is the same words with no
  * clock on them. This file turns the LRC text into something a component can
  * hold, and answers the one question the page asks thirty times a minute:
  * which line is the song on *now*?
  *
- * "Now" is the same now the audio runs on — `expectedPositionSeconds` off the
- * server clock — which is what makes the bright line land on the ear's line
+ * "Now" is the same now the audio runs on: `expectedPositionSeconds` off the
+ * server clock, which is what makes the bright line land on the ear's line
  * without any machinery of its own. The lyrics don't sync to anything; they
  * read the position everything else already agrees on.
  */
 
-/** The words over the wire — the body of `GET /api/lyrics/:trackId`. */
+/** The words over the wire: the body of `GET /api/lyrics/:trackId`. */
 export interface Lyrics {
   synced: string | null
   plain: string | null
@@ -28,16 +28,16 @@ export interface LyricLine {
 /**
  * `[mm:ss.xx]`, with room for what the wild actually contains: minutes beyond
  * one digit, a fraction in centiseconds or milliseconds, or no fraction at
- * all. A line may open with several of these — a chorus tagged with every time
- * it comes around — and each one is its own entry.
+ * all. A line may open with several of these (a chorus tagged with every time
+ * it comes around) and each one is its own entry.
  */
 const TIMESTAMP = /^\[(\d+):(\d{1,2}(?:\.\d{1,3})?)\]/
 
 /**
  * LRC text into lines in time order.
  *
- * Anything that doesn't open with a timestamp — `[ar:…]` headers, blank lines,
- * stray prose — is dropped rather than guessed at: a line with no time is a
+ * Anything that doesn't open with a timestamp (`[ar:…]` headers, blank lines,
+ * stray prose) is dropped rather than guessed at: a line with no time is a
  * line the page could only ever show at the wrong moment.
  */
 export function parseLrc(text: string): LyricLine[] {
@@ -61,8 +61,33 @@ export function parseLrc(text: string): LyricLine[] {
 }
 
 /**
+ * Untimed words, grouped the way the song breathes: a blank line in the
+ * archive's plain text is a verse ending, so each run of lines between blanks
+ * comes back as its own stanza.
+ *
+ * Any number of blank lines makes one break, and leading or trailing ones make
+ * none: the archive's plain sheets are contributed by hand, and a stray blank
+ * at the top should not open the sheet with an empty verse.
+ */
+export function parsePlain(text: string): string[][] {
+  const stanzas: string[][] = []
+  let current: string[] = []
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (line === '') {
+      if (current.length > 0) stanzas.push(current)
+      current = []
+      continue
+    }
+    current.push(line)
+  }
+  if (current.length > 0) stanzas.push(current)
+  return stanzas
+}
+
+/**
  * Which line the song is on: the last one whose moment has arrived, or -1
- * before the first — an intro is nobody's line, and highlighting the opening
+ * before the first, since an intro is nobody's line, and highlighting the opening
  * lyric through eight bars of guitar would be the page singing early.
  */
 export function activeLineIndex(lines: LyricLine[], positionMs: number): number {
@@ -76,7 +101,7 @@ export function activeLineIndex(lines: LyricLine[], positionMs: number): number 
 
 /**
  * The words for one track, or null when the station has none. A 404 is the
- * server's considered answer, not an error — see the route — so it comes back
+ * server's considered answer, not an error (see the route) so it comes back
  * as null rather than a throw. Network trouble is also null: the page shows
  * no words rather than a broken panel, and the hook asks again shortly.
  */
