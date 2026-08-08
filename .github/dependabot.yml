@@ -1,7 +1,7 @@
 version: 2
 
 updates:
-  # Two lockfiles, so two ecosystems entries — there is no root workspace to
+  # Two lockfiles, so two ecosystems entries: there is no root workspace to
   # cover both. Minor and patch bumps arrive grouped, because twelve separate
   # PRs a week for @types packages is how people stop reading the PRs. Majors
   # stay on their own: those are the ones worth looking at individually.

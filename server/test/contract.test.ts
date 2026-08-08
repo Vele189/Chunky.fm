@@ -2,7 +2,7 @@
  * The API's promises, tested as promises rather than per route.
  *
  * The per-module suites check that each endpoint does its job. This one checks
- * the things that are only true across endpoints — that the admin gate is the
+ * the things that are only true across endpoints: that the admin gate is the
  * same gate everywhere, that a refusal looks the same wherever it came from,
  * and that what goes over the wire is what `client/src/lib/protocol.ts`
  * compiles against. Those are exactly the properties that rot silently when a
@@ -84,7 +84,7 @@ describe('the admin gate is the same gate everywhere', () => {
     })
   }
 
-  it('reads stay open — listeners get the same queue over the socket anyway', async () => {
+  it('reads stay open: listeners get the same queue over the socket anyway', async () => {
     for (const url of ['/api/tracks', '/api/queue', '/api/playback', '/health']) {
       expect((await harness.app.inject({ method: 'GET', url })).statusCode, url).toBe(200)
     }
@@ -103,7 +103,7 @@ describe('the admin gate is the same gate everywhere', () => {
 })
 
 /**
- * `error` is a code the client switches on — see `AdminError.code`. Fastify's
+ * `error` is a code the client switches on; see `AdminError.code`. Fastify's
  * own refusals used to answer `error: "Bad Request"`, which is prose about the
  * status, so half the API's errors could not be told apart programmatically.
  */
@@ -115,7 +115,7 @@ describe('every refusal is machine-readable, whoever wrote it', () => {
       method: 'POST',
       url: '/api/playback',
       headers: admin(),
-      payload: { action: 'play' }, // no trackId — the handler refuses
+      payload: { action: 'play' }, // no trackId: the handler refuses
     })
     expect(byHandler.statusCode).toBe(400)
     expect(byHandler.json()).toMatchObject({ error: 'missing_track' })
@@ -124,7 +124,7 @@ describe('every refusal is machine-readable, whoever wrote it', () => {
       method: 'POST',
       url: '/api/playback',
       headers: admin(),
-      payload: { action: 'fly' }, // not in the enum — the schema refuses
+      payload: { action: 'fly' }, // not in the enum: the schema refuses
     })
     expect(bySchema.statusCode).toBe(400)
     isCode(bySchema.json().error)

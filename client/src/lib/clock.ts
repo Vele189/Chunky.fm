@@ -2,7 +2,7 @@
  * Clock offset estimation.
  *
  * Browser clocks are wrong by seconds, and every sync decision is made against
- * `startedAt` — a server timestamp. So the client has to know how far its own
+ * `startedAt`, a server timestamp. So the client has to know how far its own
  * clock sits from the server's before it can align to anything.
  */
 

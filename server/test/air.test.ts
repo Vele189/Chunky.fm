@@ -5,7 +5,7 @@ import { ADMIN_PASSWORD, type Harness, makeTrack, signIn, startHarness } from '.
 import { TestClient } from './ws-client.js'
 
 /**
- * Going live, and ending it — PLAN.md's "you go live, you end it".
+ * Going live, and ending it: PLAN.md's "you go live, you end it".
  *
  * The thing under test is not really the flag. It is that a session is a
  * stretch of time with an end, that what belongs to one goes away with it, and
@@ -113,16 +113,60 @@ describe('what a session takes with it', () => {
     expect(harness.chat.recent()).toHaveLength(1)
     expect(harness.wishes.list()).toHaveLength(1)
     // `count`, not `recent`: the history joins against the library, and this
-    // track was never uploaded — see the inner join in PlayLog.recent.
+    // track was never uploaded; see the inner join in PlayLog.recent.
     expect(harness.plays.count()).toBe(1)
 
     harness.air.end()
 
-    // Not deleted — the rows are still there, and belong to a session that is
-    // over. There is simply nothing to read while nothing is open.
     expect(harness.chat.recent()).toEqual([])
     expect(harness.wishes.list()).toEqual([])
     expect(harness.plays.count()).toBe(0)
+  })
+
+  it('deletes the rows outright, rather than only making them unreadable', () => {
+    harness.chat.post('sam', 'hello')
+    harness.wishes.make('sam', 'something off Rumours')
+    harness.plays.record(makeTrack())
+
+    harness.air.end()
+
+    // Scoping already made all three unreadable. This is the rows: two of them
+    // free text somebody typed and signed, the third stranded by the library
+    // wipe and so not a record at all. See `ChatLog.forgetAll`.
+    const rows = (table: string) =>
+      harness.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()
+    expect(rows('messages')).toEqual({ n: 0 })
+    expect(rows('wishes')).toEqual({ n: 0 })
+    expect(rows('plays')).toEqual({ n: 0 })
+  })
+
+  it('takes every session with it, not only the one just ended', () => {
+    // By the time anything hears about an ending there is no session left to
+    // scope a delete to, so the delete is not scoped. This pins that: an
+    // evening from before the one being ended goes too.
+    const rows = (table: string) =>
+      harness.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()
+
+    harness.chat.post('sam', 'monday')
+    harness.wishes.make('sam', 'monday')
+    harness.plays.record(makeTrack())
+    harness.air.end()
+    harness.air.goLive()
+    harness.chat.post('ana', 'tuesday')
+    harness.wishes.make('ana', 'tuesday')
+    harness.plays.record(makeTrack())
+    expect([rows('messages'), rows('wishes'), rows('plays')]).toEqual([
+      { n: 1 },
+      { n: 1 },
+      { n: 1 },
+    ])
+
+    harness.air.end()
+    expect([rows('messages'), rows('wishes'), rows('plays')]).toEqual([
+      { n: 0 },
+      { n: 0 },
+      { n: 0 },
+    ])
   })
 
   it('opens a fresh room rather than resuming the last one', () => {
@@ -140,7 +184,7 @@ describe('what a session takes with it', () => {
     expect(() => harness.chat.post('sam', 'anyone there')).toThrow(/off air/)
     expect(() => harness.wishes.make('sam', 'anything')).toThrow(/off air/)
     // The play log is reached from inside playback's change event, so it
-    // declines rather than throwing — see the schema note on `plays`.
+    // declines rather than throwing; see the schema note on `plays`.
     expect(harness.plays.record(makeTrack())).toBeNull()
   })
 
@@ -295,7 +339,7 @@ describe('what a listener is told', () => {
     const client = await TestClient.connect(harness.wsUrl)
     await client.nextAir()
     // The empty chat sent on connect, consumed before anything waits on a
-    // `chat` frame — messages are queued, so leaving it there means `say`
+    // `chat` frame: messages are queued, so leaving it there means `say`
     // returns the frame from before it said anything.
     await client.nextChat()
     await client.join('sam')

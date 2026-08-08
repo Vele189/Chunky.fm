@@ -35,7 +35,7 @@ describe('expectedPositionSeconds', () => {
   })
 
   it('treats a mid-song join exactly like a join at the start', () => {
-    // Same call, same maths — the only difference is how far in the past
+    // Same call, same maths: the only difference is how far in the past
     // startedAt sits.
     const atStart = expectedPositionSeconds(state({ startedAt: 1_000_000 }), 1_000_000)
     const midSong = expectedPositionSeconds(state({ startedAt: 866_000 }), 1_000_000)

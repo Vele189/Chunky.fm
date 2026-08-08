@@ -46,12 +46,12 @@ try {
   // --- seeks the page performs unprompted ------------------------------------
   // One seek at join is expected: it is the first alignment once the clock
   // handshake lands. What must never happen is a seek later, when nothing
-  // changed — the 30s clock resync must not yank the element mid-song.
+  // changed: the 30s clock resync must not yank the element mid-song.
   console.log('letting startup settle…')
   await wait(3_000)
 
   // The handshake must land promptly. When it silently failed, the client sat
-  // unsynced — no alignment, no drift correction — until the 30s resync, and
+  // unsynced (no alignment, no drift correction) until the 30s resync, and
   // every other check here still passed.
   const rtt = await page.evaluate<string>(
     `(document.querySelector('[data-testid=sync-rtt]') || {}).textContent || 'absent'`,

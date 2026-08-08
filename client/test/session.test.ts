@@ -44,7 +44,7 @@ describe('scrubbed', () => {
   })
 
   /**
-   * A page too short to scroll — a very tall window, a phone on its side — has
+   * A page too short to scroll (a very tall window, a phone on its side) has
    * nothing to divide by. That has to read as the start of the song rather than
    * as a NaN in the address of every message on the page.
    */
@@ -102,7 +102,7 @@ describe('saidBy', () => {
 
   /**
    * Somebody scrolling back up should find the room still saying what it said,
-   * rather than watching it be un-said — so this only ever grows.
+   * rather than watching it be un-said, so this only ever grows.
    */
   it('never un-says a line as the playhead moves on', () => {
     let seen = 0
@@ -123,7 +123,7 @@ describe('saidBy', () => {
 })
 
 /**
- * The sample session is invented, and it is allowed to be — the page cannot ask
+ * The sample session is invented, and it is allowed to be: the page cannot ask
  * a station anything. What it is not allowed to do is advertise a station other
  * than the one this is.
  */
@@ -136,7 +136,7 @@ describe('the sample session', () => {
   })
 
   /**
-   * PLAN.md: around thirty listeners, not thirty thousand — playback state
+   * PLAN.md: around thirty listeners, not thirty thousand; playback state
    * lives in one process on purpose. The limits board used to carry the number
    * as well and now says `Deliberately small` instead, so this is the only place
    * the ceiling is written down where anything checks it.
@@ -152,8 +152,8 @@ describe('the sample session', () => {
   })
 
   /**
-   * The wall deals these out one to each of its two columns in turn — see
-   * MovingColumns.tsx — so an odd number leaves one column a card short, which on
+   * The wall deals these out one to each of its two columns in turn (see
+   * MovingColumns.tsx) so an odd number leaves one column a card short, which on
    * a loop is one column visibly emptier than the other for as long as anybody
    * watches it. It is a property of the list's length rather than of any wish, so
    * nothing about a single entry catches it going wrong.
@@ -177,7 +177,7 @@ describe('the sample session', () => {
 
 /**
  * The pile at the top of the page is the evening, filtered to the records the
- * page has a sleeve for — not a second list. These are the checks that keep it
+ * page has a sleeve for, not a second list. These are the checks that keep it
  * that way, because the failure is silent: a pile that drifted would show a
  * record in the hand that the evening two screens down says was never on.
  */
@@ -197,7 +197,7 @@ describe('the pile', () => {
   })
 
   /**
-   * Nothing on a sleeve says which one is playing — they are all the same card.
+   * Nothing on a sleeve says which one is playing; they are all the same card.
    * Being at the front of the pile is the only thing that says it, so the front
    * of the pile has to be the record that is on.
    */
@@ -213,9 +213,9 @@ describe('the pile', () => {
 })
 
 /**
- * Due is not the same as said. The playhead can reach five lines in one frame —
- * arriving at the section with the record already at 2:13 does exactly that —
- * and five bubbles appearing together is a transcript rather than a
+ * Due is not the same as said. The playhead can reach five lines in one frame, and
+ * arriving at the section with the record already at 2:13 does exactly that,
+ * so five bubbles appearing together is a transcript rather than a
  * conversation. This is the pacing that stops it.
  */
 describe('nextStep', () => {

@@ -17,7 +17,7 @@ import { type TestClient, connectAll } from './ws-client.js'
  * The admin surface and the broadcast, end to end: a command arrives over HTTP,
  * and every listener already connected hears about it.
  *
- * The pieces are unit-tested elsewhere — what this covers is the seam, and the
+ * The pieces are unit-tested elsewhere; what this covers is the seam, and the
  * thing the seam is for: several clients agreeing on the same station.
  */
 let harness: Harness
@@ -79,7 +79,7 @@ describe('an admin command over HTTP', () => {
       expect(state.startedAt).toBe(clock.now())
       expect(state.pausedAt).toBeNull()
     }
-    // Not merely "each got something" — each got the identical instant.
+    // Not merely "each got something": each got the identical instant.
     expect(new Set(states.map((state) => JSON.stringify(state))).size).toBe(1)
   })
 
@@ -97,7 +97,7 @@ describe('an admin command over HTTP', () => {
 
   it('tells every listener what is queued', async () => {
     // Something on the decks first. Queueing onto an *idle* station sends two
-    // queue frames — added, then taken for the decks — and this is about the
+    // queue frames (added, then taken for the decks), and this is about the
     // broadcast, not that.
     await playback({ action: 'play', trackId: trackIds[0] })
     await everyState()
@@ -109,7 +109,7 @@ describe('an admin command over HTTP', () => {
     expect(new Set(queues.map((queue) => JSON.stringify(queue.entries))).size).toBe(1)
   })
 
-  it('sends both halves of a skip — the new track and the shorter queue', async () => {
+  it('sends both halves of a skip: the new track and the shorter queue', async () => {
     await playback({ action: 'play', trackId: trackIds[0] })
     await everyState()
     await enqueue(trackIds[1]!)

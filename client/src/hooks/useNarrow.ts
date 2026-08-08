@@ -3,8 +3,8 @@ import { useSyncExternalStore } from 'react'
 /**
  * Whether this is a phone.
  *
- * The stylesheet already draws a line here — it is the width at which the rail
- * lies down across the top and the two columns become one — and this is the
+ * The stylesheet already draws a line here, the width at which the rail
+ * lies down across the top and the two columns become one, and this is the
  * same line asked in JavaScript, because on the other side of it the listener
  * page stops being one page. Below it the landing view is the deck and what is
  * on it and nothing else; the queue, the evening, the wishes and the room go to
@@ -40,8 +40,8 @@ function read(): boolean {
 /**
  * Read through `useSyncExternalStore` rather than state set from an effect, and
  * it matters on the first paint: an effect runs after the browser has already
- * drawn once, so a phone would render the wide page — deck, wishes, roster,
- * queue, history, the whole room — and then throw all of it away. This gets the
+ * drawn once, so a phone would render the wide page (deck, wishes, roster,
+ * queue, history, the whole room) and then throw all of it away. This gets the
  * answer during the render that needs it.
  */
 export function useNarrow(): boolean {

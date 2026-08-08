@@ -9,7 +9,7 @@ export function clamp(value: number, min: number, max: number): number {
  * current server time.
  *
  * `startedAt` is a point in the past, so this is the same calculation whether
- * you joined at 0:00 or 2:14 — there is no mid-song special case.
+ * you joined at 0:00 or 2:14; there is no mid-song special case.
  */
 export function expectedPositionSeconds(state: StateMessage, serverNow: number): number {
   if (!state.track) return 0

@@ -14,14 +14,14 @@ import { useOnScreen } from './useOnScreen.js'
  * Three departures, and all three are what the cards are:
  *
  *  - **They are records.** The original's cards are tall app screenshots, 9:16,
- *    and it swaps a dimmed idle image for a bright active one on hover — two
+ *    and it swaps a dimmed idle image for a bright active one on hover: two
  *    files per card. Ours are the evening's sleeves, square, and there is one
  *    picture of a record: the idle state is the same image with the light off it.
  *    A second file would be a photograph of the same sleeve, which is not a thing
  *    that exists.
  *  - **The step is a fraction of the card, not 32 pixels.** A row of nine has to
  *    fit a phone as well as a desk, so the card is a fraction of the window and
- *    everything else is a fraction of the card — see the `--sleeve` chain in
+ *    everything else is a fraction of the card. See the `--sleeve` chain in
  *    landing.css. That also means the shift cannot be a number handed to a
  *    spring, so it is a CSS transition on a curve that overshoots slightly,
  *    which is what the original's `bounce: 0.2` looks like from the outside.

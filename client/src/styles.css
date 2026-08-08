@@ -1,11 +1,11 @@
 @import './tokens.css';
 @import './shared.css';
 
-/* chunky.fm — the listener page.
+/* chunky.fm: the listener page.
  *
  * The colours, radii and faces this is drawn in live in tokens.css, and the
- * handful of objects the landing page draws too — the turntable, the LIVE
- * badge, the level meter, the wordmark, the white pill — in shared.css.
+ * handful of objects the landing page draws too (the turntable, the LIVE
+ * badge, the level meter, the wordmark, the white pill) in shared.css.
  * Everything below is the station itself: the shell, the panels, and the
  * console behind #admin.
  */
@@ -104,7 +104,7 @@ h2 {
 /* The door itself: somewhere to put a code you were told rather than sent.
  *
  * It borrows the console's gate input, which is the same control doing the same
- * job one rung down — but not its spacing. `.gate__form` carries a top margin
+ * job one rung down, but not its spacing. `.gate__form` carries a top margin
  * for a form sitting under a heading inside a panel; here the column's own gap
  * already does that, and keeping both would push the door away from the
  * sentence explaining it. The width is set because this is a flex item in a
@@ -132,7 +132,7 @@ h2 {
   min-width: 0;
 }
 
-/* The chat is the one view that wants the height rather than the width — a
+/* The chat is the one view that wants the height rather than the width, since a
    conversation is read down. */
 .view--chat .chat__list {
   max-height: calc(100vh - 260px);
@@ -178,7 +178,7 @@ h2 {
   list-style: none;
 }
 
-/* Both an anchor and a button wear this — the unreachable marks are disabled
+/* Both an anchor and a button wear this: the unreachable marks are disabled
    buttons, so the element's own chrome has to be reset either way. */
 .rail__mark {
   display: grid;
@@ -228,7 +228,7 @@ h2 {
 }
 
 /* Everything except the lit mark carries a grey glyph, and the exported active
-   icon is near-black — invert it back to grey when it is not lit. */
+   icon is near-black, so invert it back to grey when it is not lit. */
 .rail__mark:not(.rail__mark--on) .rail__icon {
   filter: invert(48%) sepia(0%) saturate(0%) brightness(95%);
 }
@@ -370,7 +370,7 @@ h2 {
 }
 
 /* Named for what the page can see of the station, not for the socket's own
-   state — see lib/availability.ts. `reaching` keeps a quiet dot: a first
+   state; see lib/availability.ts. `reaching` keeps a quiet dot: a first
    attempt in flight is not yet anything to report. */
 .status--reaching .signal__dot {
   background: var(--faint);
@@ -546,7 +546,7 @@ h2 {
   box-shadow: var(--ring);
 }
 
-/* The number tile: 01, 02, 03 — the index in the list, not the track's id. */
+/* The number tile: 01, 02, 03, the index in the list, not the track's id. */
 .row__index {
   display: grid;
   flex: none;
@@ -594,17 +594,118 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Titles come from whatever was in the file's tags; a long one is cut rather
-   than allowed to stretch the column the numbers line up in. */
-.earlier__title {
-  min-width: 0;
+/* --- what has been on ------------------------------------------------------
+ *
+ * A shelf of sleeves rather than a list of lines. What was on is a row of
+ * records, which is how records are kept and how you find one again: the cover
+ * is recognised before anything under it has been read. It runs sideways
+ * because the panel sits in a column of other panels, and an evening's worth of
+ * covers going down would be the whole page.
+ *
+ * Scrolled rather than capped. The rows it replaces showed four and hid the
+ * rest behind a button, which is a reasonable thing to do to a list and a
+ * strange thing to do to a shelf.
+ */
+
+.shelf {
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  padding: 0 0 4px;
+  overflow-x: auto;
+  list-style: none;
+  /* The sleeves are the scrollbar: a horizontal bar under a row of covers is
+     chrome drawn over the one thing this panel is. */
+  scrollbar-width: none;
+  /* A finger flicking sideways should land on a sleeve rather than between
+     two, and the last one should not sit half off the edge. */
+  scroll-snap-type: x proximity;
+}
+
+.shelf::-webkit-scrollbar {
+  display: none;
+}
+
+.shelf__slot {
+  flex: none;
+  scroll-snap-align: start;
+}
+
+.shelf__card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 96px;
+}
+
+/* Square, because a record is. `object-fit` rather than a stretch: sleeves are
+   scanned at whatever the scanner felt like, and a squashed cover is worse
+   than a cropped one. */
+.shelf__art {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  box-shadow: var(--ring);
+  background: var(--card);
+  object-fit: cover;
+}
+
+/* No cover in the tags. Not a broken-image hole and not a fake sleeve: the
+   initial on a plain tile, which is the same thing the roster does with a
+   nickname and for the same reason. */
+.shelf__art--none {
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 28px;
+  font-weight: 600;
+}
+
+/* Two lines of tags and a clock, all cut to the sleeve's width: what is
+   underneath a cover is a caption, and a caption that grew the shelf's
+   column would stop the covers lining up. */
+.shelf__title,
+.shelf__artist {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.shelf__title {
+  color: var(--fg-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.shelf__artist {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.shelf__at {
+  margin-top: 2px;
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* On its own view there is a screen to fill, so the shelf wraps into one
+   instead of scrolling: nothing is off the edge, and the evening reads as the
+   shelf it is rather than as a thing to drag. */
+.view #earlier .shelf {
+  flex-wrap: wrap;
+  gap: 18px 14px;
+  overflow-x: visible;
 }
 
 /* --- the words -------------------------------------------------------------
  *
  * Deliberately not a panel. Everything else in the aside was a list in a card;
  * the words are the song's, not the interface's, so they get no border, no
- * heading and no background — text floating next to the deck, the current line
+ * heading and no background: text floating next to the deck, the current line
  * bright, the rest dimmed, the way a lyric sheet reads rather than the way a
  * queue does. The mask is what makes it float: lines fade in and out of
  * nothing instead of being cut off by an edge nobody drew.
@@ -662,22 +763,60 @@ h2 {
   transform: scale(1.02);
 }
 
-/* A timestamped silence — an intro, a solo — shown as a quiet beat mark. */
+/* A timestamped silence (an intro, a solo) shown as a quiet beat mark. */
 .lyrics__line--hum {
   letter-spacing: 3px;
 }
 
-/* Plain words with no clock on them: the whole sheet, evenly lit, smaller —
-   this is reading, not following along. */
-.lyrics--plain .lyrics__line--even {
-  opacity: 0.75;
-  font-size: 17px;
-  font-weight: 500;
-  margin-bottom: 8px;
+/* Plain words with no clock on them: reading, not following along. Nothing
+   moves on this sheet, so it is laid out for the eye instead of for the song:
+   a measure narrow enough to read down, verses set apart, and no top fade,
+   which exists to hand lines to a bright line that isn't coming. The scroll is
+   the listener's; the sheet starts at its first word and stays put. */
+.lyrics--plain {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 88%, transparent 100%);
+  padding-bottom: 32px;
 }
 
-.lyrics__break {
-  height: 20px;
+/* Says what the sheet is before the first verse does, and stays said while the
+   page scrolls, since an unmoving sheet with no explanation reads as a stuck one. */
+.lyrics__untimed {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 20px;
+  padding: 2px 0 10px;
+  background: linear-gradient(to bottom, var(--bg) 70%, transparent);
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* A verse. The gap between them is the sheet's only punctuation. */
+.lyrics__stanza {
+  margin: 0 0 24px;
+}
+
+.lyrics__stanza:last-of-type {
+  margin-bottom: 0;
+}
+
+.lyrics--plain .lyrics__line--even {
+  max-width: 46ch;
+  margin-bottom: 4px;
+  opacity: 0.72;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .lyrics--plain .lyrics__line--even {
+    font-size: 16px;
+  }
 }
 
 .lyrics--quiet {
@@ -724,7 +863,7 @@ h2 {
 
 /* --- the chat --------------------------------------------------------------
  *
- * Avatar, name, bubble — the design's shape, with the avatar drawn from the
+ * Avatar, name, bubble: the design's shape, with the avatar drawn from the
  * nickname because the station knows no more about a listener than that.
  */
 
@@ -739,7 +878,7 @@ h2 {
 }
 
 /* Tall enough to be a conversation, capped so it never pushes the decks off
-   the screen — the station is what the page is for. */
+   the screen, because the station is what the page is for. */
 .chat__list {
   display: flex;
   flex-direction: column;
@@ -925,7 +1064,7 @@ h2 {
   font-size: 13px;
 }
 
-/* Somebody else's words in the admin's list, and this listener's own here —
+/* Somebody else's words in the admin's list, and this listener's own here:
    break them rather than letting a wall of characters stretch the layout. */
 .wishes__text {
   min-width: 0;
@@ -1011,7 +1150,7 @@ h2 {
   background: var(--fg-dim);
 }
 
-/* Nothing to join with yet — the control says so rather than failing on click. */
+/* Nothing to join with yet: the control says so rather than failing on click. */
 .join__button:disabled {
   background: var(--raised);
   color: var(--faint);
@@ -1029,6 +1168,195 @@ h2 {
   width: 380px;
   max-width: 100%;
   text-align: center;
+}
+
+/* --- the next session ------------------------------------------------------
+ *
+ * What a closed room says instead of only saying it is closed. The poster is
+ * above the headline rather than under it because it is the thing being said:
+ * somebody made a picture for the night, and the line about the station being
+ * off the air is the caption to it.
+ *
+ * 4:5, because that is the shape whoever runs the decks already has one in:
+ * 1080x1350, Instagram's portrait post. `object-fit` rather than a stretch, so
+ * a poster that arrived at some other ratio is cropped instead of distorted.
+ * The type on a squashed poster is the first thing to go.
+ */
+
+.next {
+  margin-bottom: 20px;
+}
+
+.next__poster {
+  display: block;
+  width: 100%;
+  /* Narrower than the outage column, because 4:5 is tall: at the column's full
+     380px this would stand 475px high and push the sentence under it off a
+     phone. */
+  max-width: 260px;
+  margin: 0 auto 16px;
+  aspect-ratio: 4 / 5;
+  border-radius: 16px;
+  box-shadow: var(--ring);
+  background: var(--card);
+  object-fit: cover;
+}
+
+.next__label {
+  margin: 0 0 2px;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The one bright line on a screen whose whole point is that nothing is on. */
+.next__when {
+  margin: 0 0 18px;
+  color: var(--fg);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* The same fact, carried from every other view. Quiet on purpose: the off-air
+   screen is where this is said properly, and a second announcement shouting
+   across the top bar would be the page saying it twice. */
+.nextline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.nextline__label {
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nextline__when {
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- announcing one, on the console ---------------------------------------- */
+
+.schedule__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The poster is both the preview and the way to change it.
+ *
+ * Shown at the size it will be seen at rather than as a filename, because a
+ * poster is the one thing on this console whose whole job is how it looks, and
+ * finding out the wrong one is up should not mean opening the listener page.
+ * And the whole rectangle is the drop target, the same way the upload zone is:
+ * a picture you can drop on reads as replaceable, where a picture with a file
+ * input under it reads as a picture and a file input.
+ *
+ * The dashes are only there while it is empty. Over a poster they would be a
+ * border drawn across somebody's artwork. */
+.poster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  border: 1.6px dashed rgb(255 255 255 / 15%);
+  border-radius: 16px;
+  background: rgb(23 23 23 / 40%);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.poster--set {
+  border-color: transparent;
+  background: none;
+  padding: 0 0 10px;
+}
+
+/* Dragging over it, whether or not there is already one up: the target has to
+   answer a finger that is holding a file, and a set poster answering nothing
+   would read as a zone that had stopped taking them. */
+.poster--over {
+  border-color: rgb(255 255 255 / 35%);
+  background: rgb(23 23 23 / 70%);
+}
+
+.poster--over.poster--set {
+  border-color: rgb(255 255 255 / 35%);
+  background: rgb(23 23 23 / 40%);
+  padding: 10px;
+}
+
+.poster__art {
+  display: block;
+  width: 100%;
+  max-width: 180px;
+  aspect-ratio: 4 / 5;
+  border-radius: 12px;
+  box-shadow: var(--ring);
+  background: var(--card);
+  object-fit: cover;
+}
+
+.poster__badge {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--pill);
+  background: var(--raised);
+}
+
+.poster__hint {
+  color: var(--muted);
+  font-size: 11px;
+  /* A filename can be anything, and one long enough to widen the card would
+     take the whole console's column with it. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poster__spec {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.schedule__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.schedule__label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* The sentence a listener will read, checked against the field rather than
+   against what was saved: the point is to catch a date typed as next year
+   before it is announced rather than after. */
+.schedule__preview {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.schedule__preview strong {
+  color: var(--fg-dim);
+  font-weight: 600;
 }
 
 .off-air__headline,
@@ -1077,7 +1405,7 @@ h2 {
 }
 
 /* One frame, no card: like the lyrics, the graph floats on the sheet rather
-   than sitting in a panel. Three lines share it, so each gets an identity —
+   than sitting in a panel. Three lines share it, so each gets an identity,
    the one place this page steps outside monochrome. The trio is categorical
    color doing its one job, and it was picked with the dataviz validator:
    against this #0a0a0a background the three pass the colorblind separation
@@ -1125,7 +1453,7 @@ h2 {
   fill: #199e70;
 }
 
-/* Zero, when it is in frame — what the drift is being pulled back to. */
+/* Zero, when it is in frame: what the drift is being pulled back to. */
 .sync__zero {
   stroke: rgb(255 255 255 / 10%);
   stroke-width: 1;
@@ -1137,7 +1465,7 @@ h2 {
   stroke-width: 1;
 }
 
-/* Each line's name at its right-hand end. Ink, not the series color — the
+/* Each line's name at its right-hand end. Ink, not the series color; the
    line beside it carries the identity. */
 .sync__tag {
   fill: var(--fg-dim);
@@ -1224,7 +1552,7 @@ h2 {
  */
 
 @media (max-width: 1000px) {
-  /* One column — and one measure inside it. The two sides of the design are
+  /* One column, and one measure inside it. The two sides of the design are
      not the same width (the deck's is 380px, the aside's is whatever column it
      is given), which is right when they sit beside each other and wrong the
      moment they stack: a tablet got a centred deck over full-bleed panels,
@@ -1283,7 +1611,7 @@ h2 {
   }
 
   /* Lying down across the top, and staying there. The listener page is a long
-     scroll on a phone — deck, wishes, roster, queue, history, the room — and a
+     scroll on a phone (deck, wishes, roster, queue, history, the room) and a
      rail that scrolled away with it left somebody at the foot of the history
      with no way anywhere but back up. Spread across the full width rather than
      bunched at one end, which is the shape a row of destinations has on a
@@ -1333,7 +1661,7 @@ h2 {
     gap: 20px;
   }
 
-  /* Anchors land under the sticky rail otherwise — the rail's height plus the
+  /* Anchors land under the sticky rail otherwise: the rail's height plus the
      gap under it, so a heading arrives clear of the marks. */
   .panel {
     scroll-margin-top: 76px;
@@ -1341,7 +1669,7 @@ h2 {
 
   /* The bar wraps by half rather than by item. It used to let anything that
      did not fit take a line of its own, which on a phone left the signal bell
-     sitting alone under everything with nothing beside it — a lone dot that
+     sitting alone under everything with nothing beside it, a lone dot that
      read as something having gone wrong.
 
      Now it is a wordmark and two or three chips, and they share the one line:
@@ -1376,7 +1704,7 @@ h2 {
 @media (max-width: 400px) {
   /* Only when the console's chip is on the row as well. A listener has the
      count and the bell and nothing else, and those two fit at 320px with the
-     word intact — it is the third chip that costs it. */
+     word intact; it is the third chip that costs it. */
   .segmented ~ .headcount .headcount__word {
     display: none;
   }
@@ -1402,9 +1730,9 @@ h2 {
  * sitting under the listener view: whoever is running the decks is working, and
  * the top bar's chip is the way back to listening.
  *
- * Same materials as the listener page — translucent cards on the near-black
+ * Same materials as the listener page (translucent cards on the near-black
  * sheet, white for anything you press, red only ever for "this is going out
- * right now" — but flatter and denser, because this is a desk rather than a
+ * right now") but flatter and denser, because this is a desk rather than a
  * thing to look at.
  */
 
@@ -1520,7 +1848,7 @@ h2 {
   font-size: 12px;
 }
 
-/* The queue and the library on the left, the room on the right — the same
+/* The queue and the library on the left, the room on the right: the same
    split the design draws, and the same one the work has: what goes out, and
    who it is going out to. */
 .console__columns {
@@ -1590,7 +1918,7 @@ h2 {
  */
 
 /* The three moves on a queue row. Small, quiet, and never the first thing the
-   eye lands on — dragging is the gesture the design is built around. */
+   eye lands on; dragging is the gesture the design is built around. */
 .icon-button {
   width: 26px;
   height: 26px;
@@ -1620,7 +1948,7 @@ h2 {
 /* --- the drop zone ---------------------------------------------------------
  *
  * A label around a real file input, so the whole rectangle is the target for a
- * mouse, a keyboard and a screen reader alike — and a drop lands on it too.
+ * mouse, a keyboard and a screen reader alike, and a drop lands on it too.
  */
 
 .dropzone {
@@ -1732,7 +2060,7 @@ h2 {
   display: block;
 }
 
-/* The number in the heading is a count, not part of the name — it goes quiet. */
+/* The number in the heading is a count, not part of the name, so it goes quiet. */
 .card__count {
   color: var(--faint);
   font-weight: 400;
@@ -2019,7 +2347,7 @@ h2 {
   white-space: nowrap;
 }
 
-/* Out of the way until the row is under the pointer — but always reachable by
+/* Out of the way until the row is under the pointer, but always reachable by
    keyboard, which is the whole reason they are here beside the drag. */
 .queue__moves {
   display: flex;
@@ -2102,13 +2430,13 @@ h2 {
 /* --- the room, from the other side -----------------------------------------
  *
  * Read-only. The console never tunes in, so it is not in the room and the
- * station would refuse a message from it — see AdminPanel.
+ * station would refuse a message from it. See AdminPanel.
  */
 
 .card--comments {
   /* Tall enough to be a conversation, capped so the console stays one screen
      of work rather than a page you scroll to reach the library. Sticky, so the
-     room stays in view while the queue and the library scroll past it — which
+     room stays in view while the queue and the library scroll past it, which
      is the point of having it open at all. */
   position: sticky;
   top: 24px;
@@ -2133,7 +2461,7 @@ h2 {
 }
 
 /* The design puts a photograph here; the station has none and never asks for
-   one, so this is the initial over a hue derived from the name — the same
+   one, so this is the initial over a hue derived from the name: the same
    derivation the listener page uses, so a listener is the same colour on both
    sides of the station. */
 .comments__avatar {
@@ -2192,7 +2520,7 @@ h2 {
  * Held back until the row is hovered or the button itself is focused: a console
  * showing a Mute button beside every line of a friendly conversation reads as a
  * page expecting trouble. Focus is what keeps it reachable from the keyboard,
- * where there is no hover to reveal it — without that clause the control would
+ * where there is no hover to reveal it, and without that clause the control would
  * exist for a mouse and for nobody else. Already-muted stays visible whatever
  * the pointer is doing, because that one is a state and not an offer. */
 .comments__mute {
@@ -2265,7 +2593,7 @@ h2 {
 
 /* --- touch -------------------------------------------------------------------
  *
- * Not "narrow" — a phone held in a hand, which a wide tablet also is and a
+ * Not "narrow", but a phone held in a hand, which a wide tablet also is and a
  * small window on a laptop is not. Nothing here moves the layout; it is all
  * about the finger and the browser's own habits.
  *
@@ -2276,7 +2604,7 @@ h2 {
 
 @media (pointer: coarse) {
   /* 16px is the threshold under which Safari zooms the page in on a focused
-     field — and it does not zoom back out afterwards. Typing a nickname, a
+     field, and it does not zoom back out afterwards. Typing a nickname, a
      line of chat or a door code would leave the station scaled up and scrolled
      off to one side for the rest of the evening. */
   .compose__input,

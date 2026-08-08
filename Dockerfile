@@ -2,7 +2,7 @@
 # uploaded library *and* the built client.
 #
 # This is the deployment shape for a platform that runs one container and puts
-# its own edge in front — Railway, which PLAN.md picks. It is deliberately not
+# its own edge in front: Railway, which PLAN.md picks. It is deliberately not
 # what `docker compose` builds: that stack is two containers, nginx and this
 # server, because on your own machine there is nothing in front and nginx is the
 # thing that serves static well. Both are supported and both are tested; see the
@@ -10,7 +10,7 @@
 #
 # What makes one container work is CLIENT_DIR. Unset, the server is only an API
 # and leaves `/` alone for whatever is in front of it. Set, it also owns the
-# front door — see server/src/lib/doorway.ts, which is nginx.conf's rules in
+# front door. See server/src/lib/doorway.ts, which is nginx.conf's rules in
 # TypeScript, and says why there are three copies of them.
 
 # ---- the client bundle -------------------------------------------------------
@@ -19,7 +19,7 @@ WORKDIR /client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci
 # `npm run build` typechecks before it bundles, and client/tsconfig.json takes in
-# test/ and scripts/ as well as src/ — so they all have to be here or tsc fails
+# test/ and scripts/ as well as src/, so they all have to be here or tsc fails
 # on files it was told to include but cannot find.
 COPY client/tsconfig.json client/vite.config.ts client/index.html client/landing.html ./
 COPY client/src ./src

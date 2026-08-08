@@ -29,13 +29,13 @@ describe('routeFrom', () => {
   })
 
   it('lands an old #queue bookmark on the deck rather than nowhere', () => {
-    // The listener queue view is gone — the queue is the admin's worksheet.
+    // The listener queue view is gone; the queue is the admin's worksheet.
     expect(routeFrom(at('#queue'))).toBe(DEFAULT_ROUTE)
   })
 
   it('honours /admin as a path, as it always has', () => {
     expect(routeFrom(at('', '/admin'))).toBe('admin')
-    // The path wins outright — an admin bookmarked with a stale fragment on it
+    // The path wins outright: an admin bookmarked with a stale fragment on it
     // is still the admin.
     expect(routeFrom(at('#chat', '/admin'))).toBe('admin')
   })
@@ -46,7 +46,7 @@ describe('routeFrom', () => {
   })
 
   /**
-   * The console's address is load-bearing outside this file — the QA scripts,
+   * The console's address is load-bearing outside this file: the QA scripts,
    * the README and whatever bookmark is in use all say `#admin`. This is the
    * check that stops a rename from quietly breaking all three.
    */

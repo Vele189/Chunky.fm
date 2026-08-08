@@ -4,7 +4,7 @@ import volumeIcon from './assets/icons/volume.svg'
 /**
  * The deck.
  *
- * A record that turns while the station is playing and stops when it is not —
+ * A record that turns while the station is playing and stops when it is not,
  * which is the whole point of drawing one. Everything on it is the station's:
  * the label in the middle is the track's own artwork, the clock under the title
  * is where this listener actually is in the song, and the platter stops the
@@ -15,7 +15,7 @@ import volumeIcon from './assets/icons/volume.svg'
  * The bars, at the heights the design draws them. Fixed rather than sampled:
  * there is no analyser on this audio element, and a waveform invented from a
  * random number would be a lie about the sound. What it does say truthfully is
- * whether anything is coming out at all — it moves while the station plays and
+ * whether anything is coming out at all: it moves while the station plays and
  * lies flat when it doesn't.
  */
 const BARS = [
@@ -26,7 +26,7 @@ const BARS = [
 export interface DeckProps {
   /** The record's label, or null for a deck with nothing on it. */
   artwork: string | null
-  /** True while the audio is actually running — the platter turns on this. */
+  /** True while the audio is actually running; the platter turns on this. */
   spinning: boolean
 }
 
@@ -48,7 +48,7 @@ export function Deck({ artwork, spinning }: DeckProps) {
             A highlight painted onto the disc would rotate with the grooves and
             read as a mark *on* the vinyl; a real one stays where the lamp is
             while the record goes round underneath. So it is a sibling of the
-            platter rather than a child of the record — the whole reason the two
+            platter rather than a child of the record, which is the whole reason the two
             are separate elements.
           */}
           <div className="deck__sheen" aria-hidden="true" />
@@ -69,7 +69,7 @@ export function Deck({ artwork, spinning }: DeckProps) {
  * off the tube's line the way a real one is. Those angles are what make it read
  * as a tonearm instead of a stick lying across a circle.
  *
- * It lifts when the decks stop. The rotation is about the pivot — `transform-box:
+ * It lifts when the decks stop. The rotation is about the pivot, set by `transform-box:
  * view-box` in the stylesheet, so the origin is in the same coordinates these
  * points are written in and survives the whole thing being scaled down on a
  * phone.
@@ -87,7 +87,7 @@ function Tonearm() {
         {/*
           The counterweight: a cylinder on the axis of the tube, behind the
           pivot. Drawn as a rounded rect turned to the arm's angle rather than a
-          circle — a circle beside the round pivot read as two identical donuts
+          circle, because a circle beside the round pivot read as two identical donuts
           stacked in the corner, which is what the first attempt looked like.
         */}
         <g transform="rotate(110 284 52)">
@@ -100,9 +100,9 @@ function Tonearm() {
           stylus is geometrically honest and looks like a stick; the curve is the
           single thing that makes the shape read as a tonearm.
 
-          It runs from the counterweight's centre at (284,52) — through the
+          It runs from the counterweight's centre at (284,52), through the
           pivot, so the weight is carried by the tube rather than floating beside
-          it — down to a stylus at (210,202). That end is 79px from the record's
+          it, down to a stylus at (210,202). That end is 79px from the record's
           centre: out on the grooves, between the label at 44 and the rim at 123.
 
           Three strokes: a dark casing, the metal, and a highlight down one side,
@@ -187,7 +187,7 @@ export function Waveform({ live }: WaveformProps) {
 export interface MuteProps {
   muted: boolean
   onToggle(): void
-  /** False while there is nothing to mute — no track, or not tuned in. */
+  /** False while there is nothing to mute: no track, or not tuned in. */
   enabled: boolean
 }
 
@@ -210,8 +210,8 @@ export function Mute({ muted, onToggle, enabled }: MuteProps) {
         {!enabled
           ? 'Nothing to hear yet'
           : muted
-            ? 'Muted here — the station plays on'
-            : 'Streaming live — tap to mute'}
+            ? 'Muted here, the station plays on'
+            : 'Streaming live, tap to mute'}
       </span>
     </div>
   )

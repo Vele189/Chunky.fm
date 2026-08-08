@@ -1,13 +1,13 @@
 import type { Db, SessionRef, WishRow } from './db.js'
 
 /**
- * The wish book — PLAN.md's requests story.
+ * The wish book: PLAN.md's requests story.
  *
  * "Free-text wishes, no library browsing for listeners" is the decision this
  * implements, and the free-text part is the whole of it: a listener asks for
  * something in their own words, and nothing here tries to match what they typed
  * against the library. A wish is a note to whoever runs the decks, not a queue
- * operation — the queue is still the admin's alone, and a wish that gets played
+ * operation. The queue is still the admin's alone, and a wish that gets played
  * gets played because a person read it and chose to.
  *
  * Written down, and scoped to a session like the chat is, so the book is what
@@ -25,7 +25,7 @@ export function isWishStatus(value: unknown): value is WishStatus {
 
 /**
  * Shorter than a chat message on purpose. A wish is "something off Rumours,
- * anything" — a line the admin reads at a glance in a list of them — and the
+ * anything", a line the admin reads at a glance in a list of them, and the
  * room already has a place for saying more than that.
  */
 export const WISH_MAX_LENGTH = 200
@@ -47,7 +47,7 @@ export function toWish(row: WishRow): Wish {
 }
 
 /**
- * One line of printable text, trimmed and capped — the same treatment a message
+ * One line of printable text, trimmed and capped: the same treatment a message
  * and a nickname get, and for the same reason: the composer is a single line,
  * and a pasted newline should not become a wish that breaks the list it renders
  * in. Sliced by code point rather than UTF-16 unit, so a wish that ends on an
@@ -90,17 +90,17 @@ export class WishBook {
   /**
    * Writes a wish down and hands back the row as stored.
    *
-   * The nickname is passed in by the caller — the socket layer reading it off
-   * the presence roster — never taken off the frame, for the reason `ChatLog`
+   * The nickname is passed in by the caller (the socket layer reading it off
+   * the presence roster), never taken off the frame, for the reason `ChatLog`
    * does the same: a client that could name the author of its own wishes could
    * put someone else's name to a request the admin is about to read out.
    */
   make(nickname: string, text: string): Wish {
     const sessionId = this.#session.current
     if (sessionId === null) {
-      // Refused at the socket before it gets here — see `realtime.ts`. A wish
+      // Refused at the socket before it gets here. See `realtime.ts`. A wish
       // written to no session would never appear in the book the admin reads.
-      throw new Error('nothing can be wished for off air — there is no session to ask in')
+      throw new Error('nothing can be wished for off air: there is no session to ask in')
     }
     const row = {
       session_id: sessionId,
@@ -124,14 +124,14 @@ export class WishBook {
   }
 
   /**
-   * This session's wishes, oldest first — the order they were asked in, which
+   * This session's wishes, oldest first: the order they were asked in, which
    * is the order they are worked through.
    *
    * Read newest-first so the limit takes the *last* N of a long session rather
    * than the first, then reversed for display.
    */
   list(limit = this.#limit): Wish[] {
-    // Off air the book is empty rather than last night's — the same rule the
+    // Off air the book is empty rather than last night's, by the same rule the
     // chat and the history follow, for the same reason.
     const sessionId = this.#session.current
     if (sessionId === null) return []
@@ -166,6 +166,24 @@ export class WishBook {
       .prepare('UPDATE wishes SET status = ? WHERE id = ? AND session_id = ?')
       .run(status, id, sessionId)
     return changed.changes === 0 ? null : this.find(id)
+  }
+
+  /**
+   * Forget every wish there has ever been. For the end of a session.
+   *
+   * The same treatment the chat gets, and for the same reason. Scoping already
+   * means an ended session's book is unreadable, so this is about the rows: a
+   * wish is free text somebody typed, signed with the name they were using, and
+   * it was asked of a room that no longer exists. Nobody who asked for
+   * something off Rumours at midnight expects the sentence to still be on a
+   * disk next Tuesday.
+   *
+   * Everything rather than the session that just closed, because by the time
+   * anything hears about the ending there is no session left to scope to. See
+   * `ChatLog.forgetAll`, which says the same thing at more length.
+   */
+  forgetAll(): void {
+    this.#db.prepare('DELETE FROM wishes').run()
   }
 
   /** How many are still waiting on somebody. For the heading, and for tests. */

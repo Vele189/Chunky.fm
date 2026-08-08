@@ -3,7 +3,7 @@ import type { ChatMessage, SocketErrorCode } from './protocol.js'
 /**
  * The client's half of chat: what to keep, and what is worth sending.
  *
- * Mirrors `server/src/chat.ts` — keep the two in step. The cap here is the
+ * Mirrors `server/src/chat.ts`; keep the two in step. The cap here is the
  * composer's; the server enforces its own, and refuses rather than truncates.
  */
 
@@ -18,7 +18,7 @@ export const MESSAGE_MAX_LENGTH = 500
  */
 export const MAX_KEPT_MESSAGES = 200
 
-/** One line, trimmed and capped — the same shape the server will store. */
+/** One line, trimmed and capped: the same shape the server will store. */
 export function normalizeMessageText(raw: string): string {
   const collapsed = raw
     .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
@@ -62,7 +62,7 @@ export function formatTime(at: number, locale?: string): string {
  *
  * Keyed on the code rather than shown as the server's own words: `message` is
  * written for whoever is holding the API wrong, and "slow down" on its own next
- * to an empty composer does not say the thing that actually matters — that what
+ * to an empty composer does not say the thing that actually matters: that what
  * they typed was not sent.
  *
  * Null for anything that is not about a message they tried to send. A refusal
@@ -72,22 +72,22 @@ export function formatTime(at: number, locale?: string): string {
 export function chatRefusal(code: SocketErrorCode): string | null {
   switch (code) {
     case 'slow_down':
-      return 'Not sent — you are saying things faster than the room will take them.'
+      return 'Not sent. You are saying things faster than the room will take them.'
     case 'not_joined':
-      return 'Not sent — the station has not finished putting you in the room yet.'
+      return 'Not sent. The station has not finished putting you in the room yet.'
     case 'no_chat':
-      return 'Not sent — this station has no chat.'
+      return 'Not sent. This station has no chat.'
     case 'message_too_long':
-      return 'Not sent — that message is too long.'
+      return 'Not sent. That message is too long.'
     case 'empty_message':
-      return 'Not sent — there was nothing in that message.'
+      return 'Not sent. There was nothing in that message.'
     case 'off_air':
-      return 'Not sent — the station is not on air.'
+      return 'Not sent. The station is not on air.'
     case 'muted':
       // Told rather than swallowed. A message that vanished quietly would read
       // exactly like one that was sent, and somebody would spend the evening
       // talking to a room that cannot hear them.
-      return 'Not sent — whoever runs the decks has muted you.'
+      return 'Not sent. Whoever runs the decks has muted you.'
     default:
       return null
   }
@@ -97,7 +97,7 @@ export function chatRefusal(code: SocketErrorCode): string | null {
  * What the composer should hold after a refusal.
  *
  * A refused message is not a sent message, so the text goes back rather than
- * being lost — the composer is cleared optimistically the moment something is
+ * being lost. The composer is cleared optimistically the moment something is
  * sent, and without this a message the server declined simply vanishes, which
  * on screen is indistinguishable from having said it.
  *

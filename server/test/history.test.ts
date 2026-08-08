@@ -57,7 +57,7 @@ describe('PlayLog', () => {
 
   /**
    * The line the whole module turns on. It is driven by playback's `change`
-   * event, which fires for pauses and seeks too — and a history that grew a row
+   * event, which fires for pauses and seeks too, and a history that grew a row
    * every time the admin nudged the needle would be a list of one song, forty
    * times.
    */
@@ -109,7 +109,7 @@ describe('PlayLog', () => {
     expect(plays.count()).toBe(1)
 
     // Back on after a stop is a new play of it, even though it is what was on
-    // before — the station went quiet in between.
+    // before: the station went quiet in between.
     expect(plays.record(opener)).not.toBeNull()
     expect(plays.count()).toBe(2)
   })
@@ -138,7 +138,7 @@ describe('PlayLog', () => {
     ])
   })
 
-  it('survives being reopened — the plays are in the database', () => {
+  it('survives being reopened: the plays are in the database', () => {
     log().record(opener)
 
     expect(log().recent().map((play) => play.track.title)).toEqual(['Opening Number'])
@@ -173,7 +173,7 @@ describe('the plays table', () => {
   /**
    * The one place this table is looser than the others, and on purpose: a play
    * is written from inside playback's `change` event, so an insert that could be
-   * refused would throw into whatever put the track on — an admin command
+   * refused would throw into whatever put the track on: an admin command
    * answering 500 after the track already changed, or the end-of-track timer
    * dying mid-set. A note about what happened must not be able to break the
    * thing it is a note about.

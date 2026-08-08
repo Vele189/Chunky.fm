@@ -18,7 +18,7 @@ import type { ReactNode } from 'react'
  * deck is cut to that instead: the active card is the face, and the rest follow
  * it round. Scrolling deals the next one.
  *
- * Nothing is unmounted as the order changes — the same reason the crossfade it
+ * Nothing is unmounted as the order changes, for the same reason the crossfade it
  * replaces did not unmount either. One of these panels holds a conversation
  * that fills as the page scrolls, and a card rebuilt every time it came to the
  * front would keep starting the evening again.

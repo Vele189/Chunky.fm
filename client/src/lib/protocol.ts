@@ -1,4 +1,4 @@
-/** Wire types. Mirrors server/src/protocol.ts — keep the two in step. */
+/** Wire types. Mirrors server/src/protocol.ts; keep the two in step. */
 
 export interface Track {
   id: number
@@ -24,7 +24,7 @@ export interface StateMessage {
 }
 
 /**
- * The same tuple as it comes back from `POST /api/playback` — the broadcast's
+ * The same tuple as it comes back from `POST /api/playback`: the broadcast's
  * payload without the frame around it.
  */
 export type PlaybackSnapshot = Omit<StateMessage, 'type'>
@@ -37,7 +37,7 @@ export type PlaybackSnapshot = Omit<StateMessage, 'type'>
  * a different sentence for each: the socket is down (no signal), the station is
  * on air with nothing on the decks (a gap between songs), or nobody is
  * broadcasting tonight. Only the last of those is this. It cannot be derived
- * from the playback snapshot — an empty deck looks identical either way — which
+ * from the playback snapshot (an empty deck looks identical either way) which
  * is the whole reason it is its own frame.
  */
 export interface AirMessage {
@@ -110,7 +110,7 @@ export interface Wish {
  * The one thing the server sends that is not a broadcast: a wish goes to the
  * admin, who reads the book over HTTP, and back to whoever asked. So the only
  * wishes a listener is ever told about are their own, and this is the whole of
- * that — nothing replays them, so a reload starts the list empty even though the
+ * that: nothing replays them, so a reload starts the list empty even though the
  * wishes themselves are still in the book. (Unlike the history, which is
  * replayed on connect precisely because it is the room's rather than one
  * listener's.)
@@ -120,7 +120,7 @@ export interface WishedMessage {
   wish: Wish
 }
 
-/** A track that went on air. `at` is server epoch ms — when it started. */
+/** A track that went on air. `at` is server epoch ms: when it started. */
 export interface Play {
   /** The play's id, not the track's: the same track can be on more than once. */
   id: number
@@ -146,7 +146,7 @@ export interface PongMessage {
 }
 
 /**
- * Why the socket refused something. Mirrors `SocketErrorCode` on the server —
+ * Why the socket refused something. Mirrors `SocketErrorCode` on the server;
  * keep the two in step.
  *
  * A code rather than prose for the same reason `AdminError.code` is one: a
@@ -173,7 +173,7 @@ export type SocketErrorCode =
  * Which frame a refusal is about, when it is about one.
  *
  * `slow_down` and `not_joined` can each come from more than one thing a
- * listener did — both composers, on one socket. Without this, a wish refused
+ * listener did: both composers, on one socket. Without this, a wish refused
  * for pace also puts "not sent" under the chat, telling someone a message they
  * never sent went nowhere.
  */
@@ -194,7 +194,7 @@ export interface SocketRefusal {
 }
 
 /**
- * The refusal, if the last one was about this composer — otherwise nothing.
+ * The refusal, if the last one was about this composer; otherwise nothing.
  *
  * Null rather than a stale value on purpose: a composer that filtered on the
  * code alone would react to the other one's refusals, and one that held onto
@@ -208,9 +208,33 @@ export function refusalAbout(
   return refusal && refusal.error.about === about ? refusal : null
 }
 
+/**
+ * When the station is next on, and the poster for it.
+ *
+ * The other half of the sentence `air` starts: off air on its own is a fact
+ * about right now, and this is what turns it into "back Saturday at nine". Null
+ * when nothing is announced. Sent on connect and again whenever it changes, so
+ * a page left open on the off-air screen picks up an announcement made after it
+ * loaded.
+ *
+ * `poster` is a bare filename, the way a track carries `artworkPath`; see
+ * `posterUrl`. Unlike everything else on this socket the same thing is readable
+ * over HTTP without a key, which is what lets the landing page draw it.
+ */
+export interface ScheduledSession {
+  startsAt: number
+  poster: string | null
+}
+
+export interface ScheduleMessage {
+  type: 'schedule'
+  schedule: ScheduledSession | null
+}
+
 export type ServerMessage =
   | StateMessage
   | AirMessage
+  | ScheduleMessage
   | QueueMessage
   | PresenceMessage
   | ChatMessagesMessage
@@ -237,7 +261,7 @@ export interface SayMessage {
 }
 
 /**
- * "I'd love to hear this." Free text and nothing else — listeners do not browse
+ * "I'd love to hear this." Free text and nothing else: listeners do not browse
  * the library, and the name on it is the one the roster already has.
  */
 export interface WishMessage {
@@ -254,3 +278,7 @@ export type ClientMessage =
 export const audioUrl = (track: Track) => `/api/audio/${track.filename}`
 export const artworkUrl = (track: Track) =>
   track.artworkPath ? `/api/artwork/${track.artworkPath}` : null
+
+/** The poster, or null for an announced time with no picture behind it. */
+export const posterUrl = (next: ScheduledSession | null) =>
+  next?.poster ? `/api/poster/${next.poster}` : null

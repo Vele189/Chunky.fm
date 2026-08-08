@@ -6,7 +6,7 @@ import { isServerPath } from './doorway.js'
  * One error shape for the whole API.
  *
  * Every refusal written by hand in this codebase answers `{error, message}`,
- * where `error` is a machine-readable code the client switches on — see
+ * where `error` is a machine-readable code the client switches on; see
  * `AdminError.code` on the other side. Fastify's own refusals do not: a schema
  * rejection or an unparseable body comes back as `{statusCode, error: "Bad
  * Request", message}`, where `error` is prose about the *status*, not a code
@@ -43,7 +43,7 @@ export function errorBody(statusCode: number, message: string): ErrorBody {
 /**
  * @param appShell The built station document, when this process is also serving
  *   the client. Given one, an unknown path is answered with it rather than with
- *   a 404 — the station is a single document that decides what to show from the
+ *   a 404. The station is a single document that decides what to show from the
  *   fragment, so `/listen`, `/listen#chat` and anything else a listener types
  *   all have to arrive at the same place. Null under compose and in
  *   development, where nginx's `try_files` and Vite's SPA fallback do this.
@@ -70,7 +70,7 @@ export function registerErrorHandlers(
   })
 
   app.setNotFoundHandler((request: FastifyRequest, reply: FastifyReply) => {
-    // An unknown path is the station — but only when there is a station
+    // An unknown path is the station, but only when there is a station
     // document to answer with, and only for the kind of request a browser
     // makes for a page. A mistyped API route (`/api/wishez`) must still be
     // told there is no such route, in the shape every other refusal uses:

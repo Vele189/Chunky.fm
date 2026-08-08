@@ -1,4 +1,4 @@
-# chunky.fm — build plan
+# chunky.fm build plan
 
 A single, permanent radio station. You paste one link, friends land in it, and
 everyone hears the exact same instant of the exact same song. You run the decks.
@@ -8,9 +8,9 @@ everyone hears the exact same instant of the exact same song. You run the decks.
 | Question | Decision |
 |---|---|
 | Audio source | Self-hosted files you upload |
-| Sync | True live sync — join mid-song, drop into the moment |
+| Sync | True live sync: join mid-song, drop into the moment |
 | Scale | Under ~30 concurrent |
-| Availability | Session-based — you go live, you end it |
+| Availability | Session-based: you go live, you end it |
 | Requests | Free-text wishes, no library browsing for listeners |
 | Ingest | Drag-and-drop web upload, admin only |
 | Identity | Nickname only, stored in localStorage |
@@ -21,16 +21,16 @@ everyone hears the exact same instant of the exact same song. You run the decks.
 
 ## Stack
 
-- **Server** — Node + TypeScript, Fastify (clean story for websockets, static
+- **Server.** Node + TypeScript, Fastify (clean story for websockets, static
   range requests, and multipart uploads in one process).
-- **Realtime** — plain `ws`. Socket.IO handles reconnection and heartbeats for
+- **Realtime.** Plain `ws`. Socket.IO handles reconnection and heartbeats for
   you, but it's weight you don't need at this scale; budget ~30 lines for a
   reconnect wrapper instead.
-- **DB** — SQLite via `better-sqlite3`, file sitting on the Railway volume next
+- **DB.** SQLite via `better-sqlite3`, file sitting on the Railway volume next
   to the audio. Synchronous API, one writer, no second service to pay for.
-- **Uploads** — `@fastify/multipart` + `music-metadata` for ID3 tags and
+- **Uploads.** `@fastify/multipart` + `music-metadata` for ID3 tags and
   embedded artwork.
-- **Client** — React + Vite. One page, two modes (listener / admin).
+- **Client.** React + Vite. One page, two modes (listener / admin).
 
 ## The hard part: synchronized playback
 
@@ -55,7 +55,7 @@ are responsible for aligning themselves to it.
 
 Because `startedAt` is a point in the past, a listener joining at 2:14 computes
 2:14 and seeks there. Joining mid-song is the *same code path* as joining at the
-start — there's no special case.
+start; there's no special case.
 
 ### Clock offset handshake
 
@@ -68,7 +68,7 @@ Browser clocks are wrong by seconds. Measure the offset, NTP-style:
    - `offset = t1 - (t0 + rtt/2)`
 
 Run this ~5 times on connect and keep **the sample with the lowest RTT**, not
-the average — the fastest round trip is the least contaminated by queueing
+the average, because the fastest round trip is the least contaminated by queueing
 delay. Re-run every 30s to catch clock drift. Then `serverNow()` is just
 `Date.now() + offset`.
 
@@ -81,7 +81,7 @@ const expected = (serverNow() - startedAt) / 1000
 const diff = audio.currentTime - expected
 
 if (Math.abs(diff) > 1.0) {
-  audio.currentTime = expected           // way off — eat the audible seek
+  audio.currentTime = expected           // way off, eat the audible seek
 } else if (Math.abs(diff) > 0.05) {
   audio.playbackRate = 1 - clamp(diff * 0.5, -0.02, 0.02)
 } else {
@@ -91,13 +91,13 @@ if (Math.abs(diff) > 1.0) {
 
 Correct with **playback rate, not seeking**. A seek is an audible glitch; a 2%
 rate nudge is not. Modern browsers default `preservesPitch = true`, so the rate
-change time-stretches instead of pitch-shifting — at 2% there's no perceptible
+change time-stretches instead of pitch-shifting, and at 2% there's no perceptible
 artifact. Convergence takes a few seconds, which is fine.
 
 ### Things that will bite
 
 - **Autoplay policy.** Browsers won't start audio without a user gesture. The
-  nickname "Join" button *is* that gesture — call `audio.play()` synchronously
+  nickname "Join" button *is* that gesture, so call `audio.play()` synchronously
   inside that click handler, not in a promise chain after it.
 - **Range requests.** Seeking to 2:14 requires the server to honour
   `Range` headers. Fastify's static plugin does; verify it rather than assume.
@@ -119,7 +119,7 @@ wishes    (id, session_id, nick, text, created_at, status)
 messages  (id, session_id, nick, text, created_at)
 ```
 
-The queue lives in memory, not the DB — it's session-scoped and dies with the
+The queue lives in memory, not the DB: it's session-scoped and dies with the
 session anyway.
 
 ## Server responsibilities
@@ -141,7 +141,7 @@ end session, see wishes, see skip tallies, mute a nickname.
 
 ## Milestones
 
-Build in this order — M1 is the only one with real technical risk, so it goes
+Build in this order. M1 is the only one with real technical risk, so it goes
 first and alone.
 
 1. **Sync spike.** Upload one file, play it, open two browsers, confirm they're
@@ -159,14 +159,14 @@ first and alone.
   silently wipes your uploads and your SQLite file. ~$0.15/GB/mo.
 - **Pin to a single replica.** Playback state is in memory. Two replicas means
   two stations disagreeing with each other, with listeners randomly split
-  between them — a genuinely confusing bug to diagnose.
+  between them, which is a genuinely confusing bug to diagnose.
 - **Disable app sleeping.** A sleeping instance drops every websocket.
 - If the library outgrows the volume, move audio to Cloudflare R2 (no egress
   fees) and keep the app on Railway. Don't start there.
 
 ## Deferred, deliberately
 
-- Floating emoji reactions — cheapest way to add life later, and it reuses the
+- Floating emoji reactions: cheapest way to add life later, and it reuses the
   sync work already done.
 - Auto-DJ when the queue empties.
 - Multiple rooms.

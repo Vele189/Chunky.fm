@@ -6,13 +6,13 @@
  * Tune in button and says the station is off the air. A page that was listening
  * when the server went away still has the last thing it heard on it, keeps
  * showing it, and runs a line above it saying so. Those are different screens
- * from different states, and this drives both — plus the third case that reads
+ * from different states, and this drives both, plus the third case that reads
  * like a broken page if nothing explains it: a station that is up and answering
  * with nothing on the decks.
  *
  * This script owns the server process, so the server must be built first
- * (`cd server && npm run build`). Everything else — including starting and
- * stopping the station — comes from qa-env.
+ * (`cd server && npm run build`). Everything else, including starting and
+ * stopping the station, comes from qa-env.
  */
 import type { ChildProcess } from 'node:child_process'
 import { type Page, chromium } from 'playwright-core'
@@ -203,7 +203,7 @@ try {
     await until(page, `${STALE} === ''`, 20),
     'no stale line',
   )
-  // Playback state is in memory by design, so a restarted station is off air —
+  // Playback state is in memory by design, so a restarted station is off air,
   // and that is the quiet screen again, not an error.
   checks.run(
     'a restarted station reads as quiet, not broken',

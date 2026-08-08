@@ -18,10 +18,30 @@ export type StateMessage = PlaybackSnapshot & { type: 'state' }
  * mean entirely different things to somebody staring at a page: the first is a
  * gap between songs, the second is a room that is closed. It is also separate
  * from the socket being up, which is the other thing a listener could mistake it
- * for — a station that cannot be reached and a station that is deliberately off
+ * for: a station that cannot be reached and a station that is deliberately off
  * are told apart on the client, and only because this frame exists.
  */
 export type AirMessage = AirSnapshot & { type: 'air' }
+
+/**
+ * When the station is next on, and the poster for it.
+ *
+ * The other half of the sentence `air` starts. Off air on its own is a fact
+ * about right now and nothing a listener can do anything with; this is what
+ * turns it into "back Saturday at nine". Sent on connect and again whenever an
+ * admin changes it, so a page left open on the off-air screen picks up an
+ * announcement made after it loaded.
+ *
+ * `schedule` is null when nothing is announced, which is the ordinary state and
+ * the one the off-air screen already had a sentence for. `poster` is a URL
+ * under `/api/poster/`, or null for a time with no picture behind it. Unlike
+ * everything else on this socket the same thing is readable over HTTP without a
+ * key: see `scheduleRoutes`.
+ */
+export interface ScheduleMessage {
+  type: 'schedule'
+  schedule: { startsAt: number; poster: string | null } | null
+}
 
 /**
  * What's coming up. Kept out of `state` on purpose: playback changes several
@@ -47,7 +67,7 @@ export interface PresenceMessage {
  * Chat, as a batch rather than one message per frame.
  *
  * A joiner is handed the tail of the conversation, and a new message is a batch
- * of one — same frame, same handling on the other side. Because messages carry
+ * of one: same frame, same handling on the other side. Because messages carry
  * ids, a client that merges on id gets two things for free: a reconnect replays
  * history without duplicating anything, and whatever was said while it was away
  * arrives in that replay instead of being a hole in the conversation.
@@ -61,8 +81,8 @@ export interface ChatMessagesMessage {
  * "Your wish is written down", and only to the socket that made it.
  *
  * Not a broadcast, unlike everything else the server volunteers. A wish is
- * addressed to whoever runs the decks rather than to the room — PLAN.md puts
- * "see wishes" on the admin surface and keeps it off the social one — so the
+ * addressed to whoever runs the decks rather than to the room. PLAN.md puts
+ * "see wishes" on the admin surface and keeps it off the social one, so the
  * only client told about a wish is the one that made it, and the only other way
  * to read the book is `GET /api/wishes`, behind the admin gate.
  *
@@ -92,7 +112,7 @@ export interface HistoryMessage {
 /**
  * Reply to a clock probe. The client computes
  * `rtt = t2 - t0` and `offset = t1 - (t0 + rtt / 2)`, keeping the sample with
- * the lowest RTT — the fastest round trip is the least contaminated by
+ * the lowest RTT, because the fastest round trip is the least contaminated by
  * queueing delay.
  */
 export interface PongMessage {
@@ -153,7 +173,7 @@ export type SocketErrorCode =
  * Which frame a refusal is about, when it is about one.
  *
  * The code says what went wrong; this says what it went wrong *for*. Two of the
- * codes — `slow_down` and `not_joined` — are reachable from more than one thing
+ * codes (`slow_down` and `not_joined`) are reachable from more than one thing
  * a listener can send, and a client showing "not sent" under the composer has
  * to know which composer. Without it, a wish refused for pace also lights up the
  * chat, telling someone a message they never sent was not sent.
@@ -174,13 +194,14 @@ export function errorMessage(
   about?: SocketErrorAbout,
 ): ErrorMessage {
   // `about` left undefined simply doesn't survive JSON.stringify, which is the
-  // "absent" the type describes — there is nothing to strip by hand.
+  // "absent" the type describes, so there is nothing to strip by hand.
   return { type: 'error', code, message, about }
 }
 
 export type ServerMessage =
   | StateMessage
   | AirMessage
+  | ScheduleMessage
   | QueueMessage
   | PresenceMessage
   | ChatMessagesMessage
@@ -200,7 +221,7 @@ export interface PingMessage {
  * The one frame a listener sends that the server keeps, and it still drives
  * nothing: a nickname buys a row in the roster and no say over the decks. It is
  * separate from connecting because a socket opens when the page loads, which is
- * before anyone has typed a name — and because a reconnect has to say it again.
+ * before anyone has typed a name, and because a reconnect has to say it again.
  */
 export interface JoinMessage {
   type: 'join'
@@ -210,7 +231,7 @@ export interface JoinMessage {
 /**
  * "Say this to the room."
  *
- * Carries the text and nothing else — no author, no timestamp, no id. Those are
+ * Carries the text and nothing else: no author, no timestamp, no id. Those are
  * the server's to decide: a frame that named its own sender would let a client
  * sign someone else's name to a message, and the nickname on the roster is
  * already the answer to who this socket is.
@@ -223,7 +244,7 @@ export interface SayMessage {
 /**
  * "I'd love to hear this."
  *
- * Free text and nothing else — no track id, because listeners do not browse the
+ * Free text and nothing else: no track id, because listeners do not browse the
  * library, and no author, for the reason `say` carries none. What comes back is
  * a `wished` frame to this socket alone; the room is not told, and neither is
  * the queue. Whether it gets played is a person's decision, made later.
@@ -238,8 +259,8 @@ export type ClientMessage = PingMessage | JoinMessage | SayMessage | WishMessage
 /**
  * Frames that read as an attempt to drive the station.
  *
- * The socket has no mutating surface at all — commands go over HTTP, where the
- * admin gate is — so these are refused like anything else. They are named only
+ * The socket has no mutating surface at all. Commands go over HTTP, where the
+ * admin gate is, so these are refused like anything else. They are named only
  * so a client that tries gets told why instead of a shrug, and so the refusal
  * is a line of code with a test behind it rather than an accident of `ping`
  * being the one type the parser happens to know.
@@ -277,6 +298,10 @@ export function stateMessage(snapshot: PlaybackSnapshot): StateMessage {
 
 export function airMessage(snapshot: AirSnapshot): AirMessage {
   return { type: 'air', ...snapshot }
+}
+
+export function scheduleMessage(next: ScheduleMessage['schedule']): ScheduleMessage {
+  return { type: 'schedule', schedule: next }
 }
 
 export function queueMessage(entries: QueueEntry[]): QueueMessage {
@@ -321,7 +346,7 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
   if (message.type === 'join' && typeof message.nickname === 'string') {
     // Normalised here rather than taken as sent. The client caps and cleans a
     // nickname before it stores one, but nothing about a socket obliges it to,
-    // and the roster goes out to every listener — so the rules are enforced on
+    // and the roster goes out to every listener, so the rules are enforced on
     // the side that owns the roster.
     const nickname = normalizeNickname(message.nickname)
     if (nickname.length === 0) {
@@ -359,7 +384,7 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
   }
   if (message.type === 'wish' && typeof message.text === 'string') {
     // Refused rather than truncated, as an over-long message is: the composer
-    // caps what can be typed, and half a request is worse than none — the admin
+    // caps what can be typed, and half a request is worse than none, since the admin
     // would read out an album title cut in the middle.
     if ([...message.text].length > WISH_MAX_LENGTH) {
       return {

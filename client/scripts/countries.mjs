@@ -6,15 +6,15 @@
  * is. Two things here are for it rather than for size:
  *
  *  - Consecutive duplicate points are dropped. Rounding coordinates makes them,
- *    and a zero-length edge is what h3 throws `E_FAILED` on — an uncaught
+ *    and a zero-length edge is what h3 throws `E_FAILED` on: an uncaught
  *    "The operation failed but a more specific error is not available (code: 1)"
  *    on the page, and the countries after the bad one silently missing.
  *  - Rings left with fewer than four points are dropped, and polygons left with
  *    no outer ring go with them. A triangle-with-a-repeated-corner is not a
  *    polygon, and h3 says so the same way.
  *
- * The rest is size. Every property is stripped — the globe reads geometry and
- * nothing else — and coordinates are cut to three decimal places, which is
+ * The rest is size. Every property is stripped (the globe reads geometry and
+ * nothing else) and coordinates are cut to three decimal places, which is
  * about 100m and far under one hex at resolution 3. Two was smaller and is what
  * produced the degenerate rings above; three has none.
  *

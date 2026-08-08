@@ -5,12 +5,12 @@
 #   npm run qa:all
 #
 # Needs a Vite dev server on CLIENT_URL, a built server (`cd server && npm run
-# build`), and at least two tracks in the library a few minutes long — see the
+# build`), and at least two tracks in the library a few minutes long. See the
 # README and scripts/qa-env.ts.
 #
 # The station is restarted before each script, and that is the point of this
 # file. The roster, the chat and the evening's history all live
-# in the session, and most of these scripts open by asserting on an empty one —
+# in the session, and most of these scripts open by asserting on an empty one,
 # so run back-to-back against one long-lived station, whichever goes second
 # fails on the first one's leftovers. Restarting is the only thing that gives
 # each script the empty room it is written against.

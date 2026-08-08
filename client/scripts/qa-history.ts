@@ -3,9 +3,9 @@
  * survives a reload, and is waiting for whoever turns up later.
  *
  * The two properties worth driving a browser for are the two halves of the
- * acceptance. *In real time* — a listener who is already sitting there watches
+ * acceptance. *In real time*: a listener who is already sitting there watches
  * the line appear the moment the next track starts, without touching anything.
- * And *persists* — this is the one social list that is written down rather than
+ * And *persists*: this is the one social list that is written down rather than
  * held on a socket, so a reload and a late arrival both get the evening back,
  * which is exactly what the roster cannot do.
  *
@@ -34,7 +34,7 @@ const earlier = (page: Page): Promise<string[]> =>
     rows.map((row) => row.textContent ?? ''),
   )
 
-/** Which tracks the history names, by id — stable across retagging. */
+/** Which tracks the history names, by id, stable across retagging. */
 const earlierIds = (page: Page): Promise<number[]> =>
   page.$$eval('[data-testid="earlier"] li', (rows) =>
     rows.map((row) => Number(row.getAttribute('data-track'))),
@@ -59,7 +59,7 @@ async function join(browser: Browser, nickname: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage()
   await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, nickname)
-  // The evening lives behind its rail mark now — the aside beside the deck is
+  // The evening lives behind its rail mark now; the aside beside the deck is
   // the lyrics' alone.
   await visit(page, '#history')
   return page

@@ -8,28 +8,28 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
  * (<https://ui.aceternity.com/components/macbook-scroll>). The mechanism is the
  * original's: a tall frame, and a lid whose `rotateX` goes from folded to
  * upright across the first third of the reader's pass through it, while the
- * whole machine drifts down the page at almost the rate the page is scrolling —
+ * whole machine drifts down the page at almost the rate the page is scrolling,
  * which is what keeps it in front of you long enough to open at all.
  *
  * Four departures, and all four are this page's rather than preference:
  *
  *  - **The screen is a live page, not a JPEG.** The original takes `src` and
  *    puts an image behind the bezel. Ours takes a node, because what is on this
- *    screen is the listener's view built out of the station's own components —
- *    see `ListenerView`. That is the point of the section: not a picture of the
+ *    screen is the listener's view built out of the station's own components.
+ *    See `ListenerView`. That is the point of the section: not a picture of the
  *    thing, the thing.
  *  - **It ends at scale 1.** The original grows the screen to 1.5 as it opens,
  *    which an image does not mind. Text does: a transform is a raster, and a
  *    page of 12px type drawn at 8px and blown up is the blurry screenshot every
  *    product site has. So the lid is *built* at its open size and scaled up to
- *    it, ending at exactly 1 — the same rendered geometry as the original,
+ *    it, ending at exactly 1: the same rendered geometry as the original,
  *    arrived at from the other end, and crisp at the size it is read at.
  *  - **The keyboard is dealt from a list.** The original writes all sixty-odd
  *    keys out by hand with an icon on each function key. The icons are a
  *    dependency this page does not have, and at the size a key ends up they are
  *    two grey pixels; the letters are the part that reads as a keyboard.
  *  - **It is measured, not subscribed to.** `useScroll` caches where the element
- *    is and re-measures on resize; this page changes height without resizing —
+ *    is and re-measures on resize; this page changes height without resizing, since
  *    the room panel opens a row every time the playhead reaches a line, so
  *    everything below it moves down and no resize ever fires. The cached offsets
  *    go stale and the progress comes out as a step rather than a sweep.
@@ -51,7 +51,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 /**
  * The keys, as they sit on the machine this is a drawing of.
  *
- * A row is a list of caps and a weight — how many key-widths it takes, where a
+ * A row is a list of caps and a weight: how many key-widths it takes, where a
  * letter key is 1. Space is the wide one; the rest are the mac's own oddities.
  * `sub` is the character above the main one, which only the number row has.
  */
@@ -127,7 +127,7 @@ const KEYS: readonly (readonly Key[])[] = [
  * The machine's one measurement, in pixels, as a plain number.
  *
  * Every length in the laptop and in the page on its screen is written in `em` of
- * this, so the whole object scales as one drawing — the original's three
+ * this, so the whole object scales as one drawing: the original's three
  * Tailwind scale steps, made continuous. It is a number rather than a CSS
  * `clamp()` because two things need it and only one of them is a length: the
  * turntable inside the screen is a fixed 340px object whose arm is placed in
@@ -139,7 +139,7 @@ const PER_VIEWPORT = 0.015
 const SMALLEST = 6
 
 export interface MacbookScrollProps {
-  /** What is on the screen. A node rather than an image — see above. */
+  /** What is on the screen. A node rather than an image. See above. */
   screen: ReactNode
   /** Above the machine, and gone by the time it is open. */
   title?: ReactNode
@@ -221,7 +221,7 @@ export function MacbookScroll({ screen, title, className = '' }: MacbookScrollPr
         </motion.div>
       )}
 
-      {/* Sticky, not translated — the note above says why. */}
+      {/* Sticky, not translated. The note above says why. */}
       <div className="macbook__stack">
         {/* The lid, which is two things in the same place: the back of it,
             lying shut at a fixed angle, and the screen that lifts off it. */}

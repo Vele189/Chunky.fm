@@ -3,12 +3,12 @@
  * in late and finds the conversation already there, and one of them survives
  * the station being restarted underneath them with the history intact.
  *
- * That last part is the acceptance criterion — chat persists for the session —
+ * That last part is the acceptance criterion (chat persists for the session)
  * and the only honest way to check it is to make the client fetch it again
  * rather than to read the database.
  *
  * Needs a running Vite dev server and a built server (`cd server && npm run
- * build`) — the restart phase owns the server process. See README.
+ * build`), and the restart phase owns the server process. See README.
  */
 import type { ChildProcess } from 'node:child_process'
 import { type Browser, type Page, chromium } from 'playwright-core'
@@ -69,7 +69,7 @@ async function join(browser: Browser, nickname: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage()
   await page.goto(STATION_URL, { waitUntil: 'domcontentloaded' })
   await tuneIn(page, nickname)
-  // The room lives behind its rail mark now — the aside beside the deck is
+  // The room lives behind its rail mark now; the aside beside the deck is
   // the lyrics' alone.
   await visit(page, '#chat')
   console.log(`${nickname}: tuned in`)
@@ -99,7 +99,7 @@ try {
 
   await say(ana, 'evening')
   // The sender sees their own line come back from the server, like everyone
-  // else's — there is no optimistic copy rendered locally.
+  // else's; there is no optimistic copy rendered locally.
   await expectTranscript(ana, 'ana after her own message', ['ana: evening'])
   await expectTranscript(ben, 'ben after ana speaks', ['ana: evening'])
 
@@ -163,8 +163,8 @@ try {
   )
 
   // The session ended with the process, so the new one is an empty room. A page
-  // that stayed open keeps the scrollback it already had — that is what it saw
-  // — and chat has to go on working on the socket that came back.
+  // that stayed open keeps the scrollback it already had, which is what it saw,
+  // and chat has to go on working on the socket that came back.
   await say(ana, 'new session, same station')
   await expectTranscript(ana, 'ana talking after the restart', [
     ...beforeRestart,

@@ -14,6 +14,7 @@ import { ResizableNavbar } from './ResizableNavbar.js'
 import { SquigglyText } from './SquigglyText.js'
 import { InfiniteMovingCards } from './InfiniteMovingCards.js'
 import { ListenerView } from './ListenerView.js'
+import { NextSession } from './NextSession.js'
 import { MacbookScroll } from './MacbookScroll.js'
 import { MaskContainer } from './MaskContainer.js'
 import { MovingColumns } from './MovingColumns.js'
@@ -34,21 +35,21 @@ import { useScrubbedSession } from './useScrubbedSession.js'
 /**
  * The page in front of the station.
  *
- * It is a separate document from the station itself — see landing.html — and it
+ * It is a separate document from the station itself (see landing.html) and it
  * knows nothing about a socket, a clock or a listener. Everything on it is
  * fixed, so it renders the same whether the station is on the air, off it, or
  * not deployed yet. That is the point: it has to answer "what is this" for
  * somebody who cannot get in, and a page that needed the station to be up in
  * order to describe the station would be down exactly when it was needed.
  *
- * It is arranged as one question at a time — what is this, why does it exist,
- * how does it work, what is it not, who is running it — because a visitor who
+ * It is arranged as one question at a time (what is this, why does it exist,
+ * how does it work, what is it not, who is running it) because a visitor who
  * has to hold six ideas at once puts the page down. The philosophy is meant to
  * arrive by the end rather than in the first screen.
  *
  * The one thing it does not invent is the design. The deck and the level meter
  * here are the station's own components imported unchanged, and every colour
- * comes from tokens.css — so what a visitor sees before tuning in is the thing
+ * comes from tokens.css, so what a visitor sees before tuning in is the thing
  * they get afterwards, not an artist's impression of it.
  *
  * And one thing it does that a page of prose could not: the whole document is
@@ -66,6 +67,11 @@ export function Landing() {
       <ResizableNavbar items={NAV} action={TUNE_IN_ACTION} aside={DECKS_ASIDE} brand={WORDMARK} />
       <main>
         <Hero />
+        {/* The one true thing on this page, and only when there is one. See
+            NextSession: everything else here is an invented evening, because
+            the page in front of the station cannot ask it anything. This can,
+            because a poster is for the people who have not been let in. */}
+        <NextSession />
         <Moment />
         <Why />
         <Creed />
@@ -84,7 +90,7 @@ export function Landing() {
   )
 }
 
-/** The two ways off this page, named once — see STATION_PATH in lib/routes.ts. */
+/** The two ways off this page, named once. See STATION_PATH in lib/routes.ts. */
 const TUNE_IN = stationUrl()
 const DECKS = stationUrl('admin')
 
@@ -99,7 +105,7 @@ const NAV = [
  * The station's name, and the bar's other two props.
  *
  * Built once at the module rather than per render. `Landing` re-renders on every
- * scroll frame — the playhead moves — and a fresh object literal here would
+ * scroll frame (the playhead moves) and a fresh object literal here would
  * re-render the bar with it, throwing away the spring it is in the middle of.
  */
 const WORDMARK = (
@@ -119,15 +125,15 @@ const DECKS_ASIDE = {
  *
  * A claim, the line that backs it, a paragraph, and one thing to press.
  * Everything else that could go here is somewhere below it, and the reason it is
- * almost empty is that the job of this screen is not to explain the station — it
+ * almost empty is that the job of this screen is not to explain the station: it
  * is to make somebody want to hear it, and then to get out of the way.
  *
  * The claim is about the alternative rather than about loneliness. "Music wasn't
  * meant to be heard alone" named a feeling the visitor may not have; an
  * algorithm is the thing they are actually being offered everywhere else, and
  * this is the page saying what it is instead of that. What follows is the DJ's
- * own sentence — the same one the section at the bottom of the page opens with,
- * said twice on purpose — and then the mechanism, in the order it happens: the
+ * own sentence (the same one the section at the bottom of the page opens with,
+ * said twice on purpose) and then the mechanism, in the order it happens: the
  * room asks, somebody spends the day on it, and then everybody is in the same
  * second of it together.
  *
@@ -135,7 +141,7 @@ const DECKS_ASIDE = {
  * anything: it turns because a gramophone turns, on a page with no station
  * behind it to ask. Shown as an object, in the place a reader takes as a
  * picture, it is honest; shown as a live instrument it would be claiming
- * something the page cannot know. See `Gramophone` — until the model arrives,
+ * something the page cannot know. See `Gramophone`: until the model arrives,
  * and forever on a machine that cannot draw it, this is the flat deck instead.
  */
 const Hero = memo(function Hero() {
@@ -169,17 +175,17 @@ const Hero = memo(function Hero() {
  * a globe with every listener's arc landing on the one station, the sentence
  * beside it, under them the evening's records in a pile across the whole width,
  * and under those the level meter. The pile gets the whole width because there
- * are nine records — four sat in a column beside the sentence, and nine want a
+ * are nine records: four sat in a column beside the sentence, and nine want a
  * table.
  *
- * They can be picked up and thrown — see DraggableCard, a port of Aceternity
+ * They can be picked up and thrown; see DraggableCard, a port of Aceternity
  * UI's. Which is not decoration: the argument of this whole page is that a
  * station is a person putting records on rather than a queue running, and a
  * pile of sleeves you can shove around says that in a way a rectangle with a
  * progress bar in it does not.
  *
  * Every sleeve is the same sleeve. The one that is on is the one at the front
- * of the pile and nothing else — no badge on it, no clock, no head count. It is
+ * of the pile and nothing else: no badge on it, no clock, no head count. It is
  * a record, and a record does not report anything; the LIVE mark beside the
  * sentence is where this page says what is happening, and saying it twice
  * would be the pile pretending to be an interface rather than a stack of
@@ -194,7 +200,7 @@ const Hero = memo(function Hero() {
  * By hand rather than at random: a random scatter has to be re-rolled until it
  * looks like a pile, and this one is the roll that did. Newest first, so the
  * record that is on is the one on top and nearest the middle, with the rest of
- * the evening spread out under it — which is the only thing on the page that
+ * the evening spread out under it, which is the only thing on the page that
  * says which one is playing.
  *
  * Positions are percentages of the table rather than pixels, so the whole
@@ -228,7 +234,7 @@ const Moment = memo(function Moment() {
     <section className="moment" id="moment">
       <div className="moment__top">
         {/* Twelve listeners, one station, and every arc landing on it. See
-            Globe — nothing arrives until the page is readable, and on a machine
+            Globe: nothing arrives until the page is readable, and on a machine
             that cannot draw it the sentence stands on its own. */}
         <Globe />
 
@@ -297,7 +303,7 @@ const Moment = memo(function Moment() {
  *
  * The argument is built rather than stated: a claim, then the things that are
  * true about streaming and are not the complaint, then the turn, then what was
- * actually lost, then the verdict. One thought a line — the same setting as the
+ * actually lost, then the verdict. One thought a line, the same setting as the
  * DJ's own lines at the bottom of the page, because this section is the same
  * voice making the case the station is an answer to.
  *
@@ -360,13 +366,13 @@ const Why = memo(function Why() {
  * section shows.
  *
  * It is the second section in the first person, and the only one before the
- * bottom of the page. That is not the same as the DJ introducing himself — see
+ * bottom of the page. That is not the same as the DJ introducing himself; see
  * `Dj`, which is deliberately last but one and is a person saying who they are.
  * This is an argument that happens to be told through something that happened to
  * somebody, which is a different thing and can be read by a stranger.
  *
  * The record is not chosen at random. Pink Floyd's Wish You Were Here is the
- * session this whole page is scrubbing through — see SESSION in session.ts —
+ * session this whole page is scrubbing through (see SESSION in session.ts)
  * so the album named as the thing somebody once explained is the album playing
  * along the bottom of the screen while you read about it.
  *
@@ -412,7 +418,7 @@ const Creed = memo(function Creed() {
  *
  * Each one is a heading and then the same shape under it: a few fragments, and
  * then the line that says what they were for. It is the setting `Why` and
- * `Creed` use, applied five times — the page has settled on one thought a line
+ * `Creed` use, applied five times. The page has settled on one thought a line
  * for anything that is an argument rather than a description, and this is the
  * argument for the shape of an evening rather than a description of a feature.
  */
@@ -458,7 +464,7 @@ const STEPS = [
 /**
  * The five of them, going past.
  *
- * The same row the six shorter steps were in — `InfiniteMovingCards`, holding a
+ * The same row the six shorter steps were in: `InfiniteMovingCards`, holding a
  * `GlareCard` each. A row rather than a column because they are a sequence and a
  * column of five reads as a feature list, and because below the width five fit
  * in, a row keeps the order that a reflowing grid would quietly lose by putting
@@ -467,7 +473,7 @@ const STEPS = [
  * The card is bigger than it was, and had to be. These steps are five to seven
  * lines where the old ones were one sentence, and at the 268×331 the row used
  * before, step 04 came to about 285px of the 281px a card actually has inside
- * its padding — it overflowed by a hair, which is the worst amount to overflow
+ * its padding, so it overflowed by a hair, which is the worst amount to overflow
  * by because it looks like a rendering fault rather than a decision. The card is
  * 320 wide and 3:4 now, and the longest step sits at a little over half of it.
  */
@@ -477,7 +483,7 @@ const Works = memo(function Works() {
       <h2 className="section__title">Every session tells a story.</h2>
 
       {/* The five of them, going past forever. Slow, because they are steps to
-          be read rather than a row of logos — and paused the moment a pointer, a
+          be read rather than a row of logos, and paused the moment a pointer, a
           finger or a keyboard lands on one, which is the only way a card that
           reveals itself on hover can be looked at at all. */}
       <InfiniteMovingCards
@@ -532,8 +538,8 @@ const Works = memo(function Works() {
  * Written as timestamps rather than as bullet points because the timestamp is
  * half of what a note is: the same sentence at no particular moment is a review,
  * and at 2:14 it is somebody leaning over and telling you to listen to the next
- * bit. The three of them are also a shape — one about the playing, one about the
- * writing, one about why it is on tonight — which is the range the guide covers
+ * bit. The three of them are also a shape (one about the playing, one about the
+ * writing, one about why it is on tonight) which is the range the guide covers
  * said without a sentence saying it.
  */
 const NOTES = [
@@ -545,14 +551,14 @@ const NOTES = [
 /**
  * What the notes are, and what they are not.
  *
- * Straight after `Works`, which is where the guide is named — step 04 says to
+ * Straight after `Works`, which is where the guide is named: step 04 says to
  * follow it and this is the section that says what following it is like. The two
  * denials come first on purpose: everybody arriving at the phrase "listening
  * guide" is already imagining commentary over the top of the record, and the
  * section has to get rid of that before it can say what it means.
  *
  * The timestamps are not `aria-hidden`, unlike every other clock on this page.
- * The others are pictures of a playhead; these are the content — a note without
+ * The others are pictures of a playhead; these are the content, and a note without
  * the second it belongs to is a different and much worse thing.
  */
 const Guide = memo(function Guide() {
@@ -582,7 +588,7 @@ const Guide = memo(function Guide() {
 })
 
 /**
- * The room, talking — and the one section that moves.
+ * The room, talking, and the one section that moves.
  *
  * The lines arrive as the page's playhead reaches them, so a reader who has
  * scrolled this far is somewhere in particular in a song and the room is
@@ -610,7 +616,7 @@ function Room({ at }: { at: number }) {
 
       {/* The framing, before any of the mechanics below it. What the panels show
           is a chat window, and a chat window is what everybody has already
-          decided this is by the time they get here — so the section says what
+          decided this is by the time they get here, so the section says what
           the talking is for before it shows any of it. The claim is not that
           people talk during the music; it is that there is only one point in the
           record for all of them, which is what makes a sentence about the next
@@ -691,7 +697,7 @@ const JoinPanel = memo(function JoinPanel() {
 /**
  * The conversation, filling as the page's playhead advances.
  *
- * Mounted for as long as the section is, whichever item is active — see the
+ * Mounted for as long as the section is, whichever item is active. See the
  * note in StickyScroll about not unmounting the panels. A conversation that
  * started again every time somebody scrolled past it would not be one.
  */
@@ -714,13 +720,13 @@ function TalkPanel({ at }: { at: number }) {
    * In bubbles the nine lines are taller than the panel, so without this the one
    * that just arrived lands below the fold and the whole effect happens where
    * nobody can see it. Keyed on how many have been said rather than on the
-   * playhead, so it only moves when there is actually something new — a panel
+   * playhead, so it only moves when there is actually something new: a panel
    * that re-scrolled every second of the song would fight anyone reading back
    * through it.
    *
    * Watching the rows rather than waiting a fixed time. A line arrives by
    * opening from `0fr` to `1fr`, so at the moment a new one is said the row is
-   * still flat and `scrollHeight` does not include it yet — scrolling to the
+   * still flat and `scrollHeight` does not include it yet, so scrolling to the
    * bottom lands at a bottom that has not happened. A timer set to the length of
    * that transition works until somebody changes it in the stylesheet. A
    * `ResizeObserver` on the rows fires when they have actually finished opening,
@@ -759,7 +765,7 @@ function TalkPanel({ at }: { at: number }) {
             <li className="line" key={line.at} data-said={index < shown ? 'true' : 'false'}>
               {/* The wrapper collapses to nothing rather than the line being
                   removed, so the panel fills like a chat window instead of
-                  standing half empty from the start — and the conversation is
+                  standing half empty from the start, and the conversation is
                   still whole in the DOM for anything not reading it by eye. */}
               <span className="line__inner" data-run={same ? 'true' : 'false'}>
                 <span className="line__face" aria-hidden="true">
@@ -789,24 +795,24 @@ function TalkPanel({ at }: { at: number }) {
  * What the room asks for.
  *
  * The section that would be genres on any other music page, and is not one here.
- * These are wishes — free text, straight to whoever is on the decks — and shown
+ * These are wishes (free text, straight to whoever is on the decks) and shown
  * as themselves because the shape of the sentences *is* the argument: nobody
  * types "indie folk, 1970s" into a box like this.
  *
  * Nothing is around them. The wall used to stand inside a panel that tilted
  * upright as the reader arrived at it, and every wish sat on its own card; both
- * were the page presenting the sentences — one announcing them, the other
+ * were the page presenting the sentences: one announcing them, the other
  * putting a surface under each to say it was an item.
  * They are neither. They are things people typed, and the way to show that is to
  * put them on the page and let them go past: no panel, no card, no frame telling
  * the reader how to take them. The section is the same shape as every other one
- * here now, which is the point — the wishes are the surprising thing, not the
+ * here now, which is the point: the wishes are the surprising thing, not the
  * furniture around them.
  */
 const Wishes = memo(function Wishes() {
   return (
     <section className="wishes">
-      {/* Kept in the document and out of the picture — the same idiom as
+      {/* Kept in the document and out of the picture, the same idiom as
           `.limits__spoken`. There is nothing here that reads as this section's
           heading the way the question does in `Live`, so rather than leave the
           page's outline with a hole in it where a section used to be, the title
@@ -844,13 +850,13 @@ const Wishes = memo(function Wishes() {
  *
  * Sentences, going past. Nothing under them: the card they used to sit on was a
  * surface grading into the sheet with graph paper in one corner, which is a
- * good-looking card and was doing the wrong job — it made each wish an entry in
+ * good-looking card and was doing the wrong job: it made each wish an entry in
  * something. Set on the page with only the quotation marks around them, they are
  * what they are, and the reader is looking at the words rather than at a wall of
  * tiles that happen to have words on.
  *
  * They go past rather than sit still, and the two columns disagree about which
- * way — the left falls, the right rises. See `MovingColumns`. There is nothing
+ * way: the left falls, the right rises. See `MovingColumns`. There is nothing
  * else here: no heading over them and no line under them, because a caption
  * explaining that these are wishes would be the section reading itself out.
  */
@@ -870,11 +876,11 @@ function WishWall() {
  *
  * The question every page like this forgets: what stops me just playing the same
  * songs tomorrow. The answer is not a feature, so this section has no cards in
- * it — and the honest half of the answer is the second paragraph, which is that
+ * it, and the honest half of the answer is the second paragraph, which is that
  * the station is often not on.
  *
  * The question is on a panel you have to look under. Aceternity UI's SVG Mask
- * Effect — see `MaskContainer` — with the section's own two lines in it: the
+ * Effect (see `MaskContainer`) with the section's own two lines in it: the
  * question on the page, and the answer to it lit underneath, found with the
  * cursor. It is the one section on the page where that device is not decoration.
  * The whole argument here is that hearing a song and being in the room while it
@@ -889,7 +895,7 @@ function WishWall() {
  * It is the only section with no title over it. "Why it has to be live" was a
  * label on a section whose first line is already the question it was labelling,
  * and reading the two in a row was being told the subject and then asked about
- * it. So the question is the heading — the same `h2` every other section has,
+ * it. So the question is the heading, the same `h2` every other section has,
  * set as the pull-quote it looks like, which is what keeps this section in the
  * document's outline rather than leaving a hole in it.
  */
@@ -928,8 +934,8 @@ const Live = memo(function Live() {
  * The evening so far.
  *
  * Deliberately not billed as an archive. The station keeps this for as long as
- * it is up and no longer — it is what a person arriving at eleven scrolls to
- * see, not a back catalogue — and the note under the grid says so, because a
+ * it is up and no longer. It is what a person arriving at eleven scrolls to
+ * see, not a back catalogue, and the note under the grid says so, because a
  * page implying there are past sessions to browse would be selling one.
  */
 /** What the journal keeps, in the order it accumulates over an evening. */
@@ -957,10 +963,10 @@ const BeenOn = memo(function BeenOn() {
 
       <p className="section__body been__after">
         That is the whole of it: the deck and the room on the left, the words beside them, and
-        everything else — the chat, the wishes, the evening so far — one mark away on the rail.
+        everything else (the chat, the wishes, the evening so far) one mark away on the rail.
       </p>
 
-      {/* What the journal holds, as a list rather than a sentence — five things
+      {/* What the journal holds, as a list rather than a sentence: five things
           named plainly is the difference between a tracklist and a record of an
           evening, and running them together into prose would bury the two that
           are not obvious. */}
@@ -987,7 +993,7 @@ const BeenOn = memo(function BeenOn() {
  * themselves before that is asking for trust they have not been given yet.
  *
  * These are Ndamulelo's own lines, kept as written and broken where they were
- * written — one thought a line. Do not run them together into paragraphs. It is
+ * written, one thought a line. Do not run them together into paragraphs. It is
  * the only section on the page in a voice that is not the product's, and the
  * whole reason it works is that it sounds like a person rather than like the
  * rest of the page.
@@ -995,7 +1001,7 @@ const BeenOn = memo(function BeenOn() {
  * They come in four groups and the spacing in landing.css is what says so: the
  * name, what he thinks music is, what he does about it, and the line the whole
  * page has been walking toward. The group breaks are `nth-child` rules, so
- * adding or reordering a line here silently moves them — they are counted from
+ * adding or reordering a line here silently moves them; they are counted from
  * the top of this list and nothing checks that they still land between thoughts.
  *
  * Line five is long enough to wrap, and that is allowed now where it was not
@@ -1021,7 +1027,7 @@ const Dj = memo(function Dj() {
           that depends on is the one place saying so is comfortable. See
           `Gramophone`: one component that draws the model when it can and keeps
           the flat deck when it cannot, so this is not a second thing to
-          maintain — and still or off screen, it is not drawing. */}
+          maintain, and still or off screen, it is not drawing. */}
       <div className="dj__mark" aria-hidden="true">
         <Gramophone still />
       </div>
@@ -1046,7 +1052,7 @@ const Dj = memo(function Dj() {
  * setting it up. A landing page that hid them would just be selling a different
  * product.
  *
- * These used to be the constraints as a specification would list them — a head
+ * These used to be the constraints as a specification would list them: a head
  * count, no uploads, no accounts, no schedule. They are the reasons for those
  * constraints now, which is a different and better claim: `No autoplay` and `No
  * pressure to maximize listening time` are the same decision said as a fact and
@@ -1054,15 +1060,15 @@ const Dj = memo(function Dj() {
  * care. The last line is not a limit at all. It is what is left when you take
  * all of them away, and it is the one the section is really for.
  *
- * Said on a split-flap board — see `FlipBoard` — one at a time, the way the
+ * Said on a split-flap board (see `FlipBoard`) one at a time, the way the
  * board at a station tells you what is not running. Each of these used to carry
  * a line of explanation under it and no longer does: eight statements, on the
  * wall, turning over. The reasons are all further up the page anyway, in the
  * sections that spend a screen each on them.
  *
  * The board is 4 rows of 22 and word-wraps, so 88 characters is the ceiling and
- * the longest of these is 55. Anything much longer would be silently cut — see
- * the `slice(0, rows)` in FlipBoard — rather than overflowing where you could
+ * the longest of these is 55. Anything much longer would be silently cut (see
+ * the `slice(0, rows)` in FlipBoard) rather than overflowing where you could
  * see it.
  */
 const LIMITS = [
@@ -1081,7 +1087,7 @@ const LIMITS = [
  *
  * It was 4200ms, which was long enough to read twice when the longest of these
  * was `Around thirty listeners`. They are sentences now and the last is
- * fifty-five characters over three rows of the board — and none of it is legible
+ * fifty-five characters over three rows of the board, and none of it is legible
  * until the flaps have finished turning, which is itself most of a second. This
  * is long enough to read the longest one twice and the short ones several times,
  * which is the right way round: nobody minds a short line lingering.
@@ -1131,7 +1137,7 @@ const Call = memo(function Call() {
     <section className="call">
       <h2 className="call__headline">Join the room.</h2>
 
-      {/* The evening's records, fanned — see FeyCards. The last thing above the
+      {/* The evening's records, fanned. See FeyCards. The last thing above the
           button is the thing the button gets you: not a picture of a product, a
           hand of sleeves somebody put on. */}
       <FeyCards sleeves={SLEEVES.map((play) => play.cover)} />

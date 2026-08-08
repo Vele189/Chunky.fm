@@ -9,13 +9,13 @@ import { normalizeNickname } from './presence.js'
  * it takes to notice you have been muted. The name is the thing the room sees
  * and the thing the admin clicked, so the name is what carries it.
  *
- * That has a limit worth being honest about — someone can rename themselves out
+ * That has a limit worth being honest about: someone can rename themselves out
  * of a mute, and nothing here stops them. Making it stick would mean identity,
  * and PLAN.md's decision is "nickname only, stored in localStorage": there is
  * nothing to pin a person to. This is a volume knob for a small room, not a ban
  * hammer, and the room is under thirty people who mostly know each other.
  *
- * In memory, and cleared when the session ends — like the queue and the roster,
+ * In memory, and cleared when the session ends, like the queue and the roster,
  * and for the same reason: a mute is about tonight. Somebody who was shouting
  * over the music at midnight should not find themselves silenced next Tuesday
  * by a rule nobody remembers making.
@@ -29,8 +29,8 @@ export class Mutes {
 
   /**
    * Compared on the normalised name, so a mute survives the whitespace and
-   * control characters a hand-written client could pad a nickname with —
-   * otherwise "sam " would walk straight past a mute on "sam".
+   * control characters a hand-written client could pad a nickname with.
+   * Otherwise "sam " would walk straight past a mute on "sam".
    */
   has(nickname: string): boolean {
     return this.#muted.has(normalizeNickname(nickname))

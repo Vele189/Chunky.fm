@@ -10,9 +10,9 @@ import countries from './data/countries.json'
  * A port of Aceternity UI's GitHub Globe
  * (<https://ui.aceternity.com/components/github-globe>), which arrives via
  * `npx shadcn add` into a Tailwind + shadcn project. This is neither, so the
- * mechanics are kept — three-globe's hex polygons, the dashed animated arcs,
+ * mechanics are kept: three-globe's hex polygons, the dashed animated arcs,
  * the rings that fire at the arc origins, the locked OrbitControls doing the
- * slow spin — and everything that was a Tailwind class or an `@/` alias is a
+ * slow spin. Everything that was a Tailwind class or an `@/` alias is a
  * rule in landing.css or a relative import here.
  *
  * Four things are deliberately not the original's:
@@ -23,20 +23,20 @@ import countries from './data/countries.json'
  *    land at low alpha on a near-black sphere, white arcs, and no red anywhere
  *    near it.
  *  - **Where the arcs go.** The demo's are a mesh of city-to-city routes, which
- *    is the picture of a network. This is not a network — it is one station and
+ *    is the picture of a network. This is not a network: it is one station and
  *    one link. So every arc lands on the same point, which is both the truer
  *    picture and the one this section is actually about.
  *  - **The country data.** The component imports `@/data/globe.json`, which
  *    shadcn does not install and you are expected to supply. `data/countries.json`
  *    is Natural Earth 110m (public domain, from three-globe's own examples) with
- *    every property stripped — the globe reads geometry and nothing else — and
+ *    every property stripped (the globe reads geometry and nothing else) and
  *    the coordinates rounded to two decimal places, which at this scale is well
  *    under one hex. 477 KB to 164 KB.
  *  - **Pixel ratio.** The original sets the renderer to `devicePixelRatio`
  *    uncapped. Past 2 those are pixels nobody can see, costing frames on the
  *    phones least able to spare them.
  *  - **No drei, and no hand-built camera.** The original spins the globe with
- *    an `OrbitControls` that has pan, zoom and rotate all switched off — a whole
+ *    an `OrbitControls` that has pan, zoom and rotate all switched off: a whole
  *    dependency for `autoRotate`, which is one line in `useFrame`. And its
  *    camera is an instance built with a hardcoded 1.2 aspect ratio, which draws
  *    the sphere as an ellipse in any box that is not that shape; described to
@@ -99,7 +99,7 @@ export interface GlobeConfig {
 interface WorldProps {
   globeConfig: GlobeConfig
   data: Arc[]
-  /** False stops the frame loop — see `useOnScreen`. */
+  /** False stops the frame loop. See `useOnScreen`. */
   running?: boolean
 }
 
@@ -133,7 +133,7 @@ function Globe({ globeConfig, data }: WorldProps) {
     group.current.add(globe.current)
     /* Turned so the station is facing the viewer on the first frame. three-globe
        puts longitude −90 at the camera, so this is how far round the station's
-       own longitude has to come — otherwise the page opens on the Pacific and
+       own longitude has to come; otherwise the page opens on the Pacific and
        the arcs are all round the back for the first half-minute. */
     group.current.rotation.y = ((-90 - (globeConfig.faceLng ?? 0)) * Math.PI) / 180
     setReady(true)
@@ -157,7 +157,7 @@ function Globe({ globeConfig, data }: WorldProps) {
     if (!globe.current || !ready || !data) return
 
     /*
-     * A point at each end of every arc, deduplicated — the original builds this
+     * A point at each end of every arc, deduplicated, the way the original builds this
      * the same way. With every arc landing on the same place, the dedupe is
      * what stops the station being drawn once per listener.
      */
@@ -192,7 +192,7 @@ function Globe({ globeConfig, data }: WorldProps) {
       // What staggers them, so they do not all set off together.
       .arcDashInitialGap((d) => (d as Arc).order)
       /* The original's is 15, which with a dash of 0.85 leaves every arc dark
-         for about 95% of its cycle — on a demo with fifty arcs something is
+         for about 95% of its cycle: on a demo with fifty arcs something is
          always lit, but with twelve the globe is mostly empty. Small enough
          here that arcs are usually in flight, large enough that they still
          arrive rather than being twelve static lines. */
@@ -249,7 +249,7 @@ function RendererConfig() {
   const { gl, size } = useThree()
 
   useEffect(() => {
-    // Capped at 2 — see the note at the top of the file.
+    // Capped at 2. See the note at the top of the file.
     gl.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     gl.setSize(size.width, size.height)
     gl.setClearAlpha(0)
@@ -260,7 +260,7 @@ function RendererConfig() {
 
 export default function World({ globeConfig, data, running = true }: WorldProps) {
   return (
-    /* Camera described rather than constructed, so its aspect tracks the box —
+    /* Camera described rather than constructed, so its aspect tracks the box;
        see the note at the top. No fog: the original's is white and this page is
        not, and at this camera distance it only ever greyed the far limb. */
     <Canvas

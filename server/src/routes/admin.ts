@@ -41,7 +41,7 @@ const SIGN_IN_SCHEMA = {
 } as const
 
 /**
- * The admin session — PLAN.md's password-for-a-signed-cookie exchange.
+ * The admin session: PLAN.md's password-for-a-signed-cookie exchange.
  *
  * The password crosses the wire once, at sign-in, and what comes back is an
  * HMAC-signed token in an HttpOnly cookie the browser presents from then on. So
@@ -59,9 +59,10 @@ export function adminRoutes({
   signInBurst = DEFAULT_SIGN_IN_BURST,
   signInRefillMs = DEFAULT_SIGN_IN_REFILL_MS,
 }: AdminDeps): FastifyPluginAsync {
-  // Keyed on the caller's address, and only ever charged for a *wrong* password
-  // — an admin signing in from a second tab is not an attack, and a limiter that
-  // counted successes would lock out the one person it exists to protect.
+  // Keyed on the caller's address, and only ever charged for a *wrong*
+  // password: an admin signing in from a second tab is not an attack, and a
+  // limiter that counted successes would lock out the one person it exists to
+  // protect.
   const attempts = new KeyedRateLimit({ burst: signInBurst, refillMs: signInRefillMs })
 
   return async function routes(app: FastifyInstance) {
@@ -81,7 +82,7 @@ export function adminRoutes({
             .header('retry-after', String(Math.ceil(retryAfterMs / 1000)))
             .header('set-cookie', clearedCookie(secure))
             .code(429)
-            .send(errorBody(429, 'too many sign-in attempts — wait a moment and try again'))
+            .send(errorBody(429, 'too many sign-in attempts. Wait a moment and try again'))
         }
 
         if (!isValidPassword(config, request.body.password)) {
@@ -107,7 +108,7 @@ export function adminRoutes({
     /**
      * Is the caller still the admin? Every other admin route *does* something,
      * so there is no harmless one to probe with, and the panel has to ask
-     * before it shows a single control — on load, and after every reload.
+     * before it shows a single control: on load, and after every reload.
      */
     app.get('/api/admin/session', { preHandler: requireAdmin(config) }, async () => ({ ok: true }))
 

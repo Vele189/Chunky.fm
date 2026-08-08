@@ -5,7 +5,7 @@ import { fakeClock } from './helpers.js'
 /**
  * `RateLimit` itself is covered by the chat suite, which is where it was
  * written. What is new here is everything that comes of keying it on something
- * a stranger chooses — the map that holds the buckets, and what stops it from
+ * a stranger chooses: the map that holds the buckets, and what stops it from
  * being the thing that falls over instead.
  */
 describe('RateLimit', () => {
@@ -90,7 +90,7 @@ describe('KeyedRateLimit', () => {
 
     for (const key of ['a', 'b', 'c']) limits.take(key)
     // Past the point where an empty bucket would have refilled completely, a
-    // held bucket says nothing a fresh one wouldn't — so dropping it to make
+    // held bucket says nothing a fresh one wouldn't, so dropping it to make
     // room forgives nobody anything.
     clock.advance(2_001)
     for (let i = 0; i < 20; i++) limits.take(`newcomer-${i}`)
@@ -106,7 +106,7 @@ describe('KeyedRateLimit', () => {
     expect(limits.take(guesser)).toBe(true)
     expect(limits.take(guesser)).toBe(false)
 
-    // Every bucket here is live — no time passes, so nothing has refilled and
+    // Every bucket here is live: no time passes, so nothing has refilled and
     // the cap has to evict something real. Whoever is still knocking is the
     // most recently used, so it is the last thing dropped: filling the map with
     // fresh keys is not a way to buy your own tokens back.

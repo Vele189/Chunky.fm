@@ -3,7 +3,7 @@
  *
  * `usePresence` is three lines around `connection.send`, and what can actually
  * go wrong lives underneath it: the shape of the frame, and the fact that a
- * send on a socket that has not finished opening is thrown away in silence —
+ * send on a socket that has not finished opening is thrown away in silence,
  * which is a listener nobody else can see, with nothing to retry it. That is
  * why the hook waits for `connected` rather than for a connection, and this is
  * what makes the trap visible.
@@ -54,7 +54,7 @@ describe('presence over the socket', () => {
 
     station.send({ type: 'join', nickname: 'too early' })
 
-    // Silently — which is exactly why usePresence gates on `connected`.
+    // Silently, which is exactly why usePresence gates on `connected`.
     expect(FakeSocket.last.sent).toEqual([])
   })
 
@@ -83,7 +83,7 @@ describe('presence over the socket', () => {
     FakeSocket.last.deliver(roster('sam', 'ana'))
 
     expect(messages).toEqual([roster(), roster('sam'), roster('sam', 'ana')])
-    // Whole rosters, not joins and leaves — nothing here has to reconcile.
+    // Whole rosters, not joins and leaves; nothing here has to reconcile.
     expect((messages.at(-1) as PresenceMessage).listeners.map((l) => l.nickname)).toEqual([
       'sam',
       'ana',

@@ -43,7 +43,7 @@ afterEach(async () => {
   await harness.cleanup()
 })
 
-describe('POST /api/upload — auth', () => {
+describe('POST /api/upload: auth', () => {
   it('rejects a request with no credentials', async () => {
     const res = await upload(
       harness,
@@ -97,7 +97,7 @@ describe('POST /api/upload — auth', () => {
   })
 })
 
-describe('POST /api/upload — valid files', () => {
+describe('POST /api/upload: valid files', () => {
   it('stores a tagged mp3, its artwork and its metadata', async () => {
     const data = await fixture('tagged.mp3')
     const res = await upload(harness, {
@@ -171,7 +171,7 @@ describe('POST /api/upload — valid files', () => {
   })
 })
 
-describe('POST /api/upload — rejections', () => {
+describe('POST /api/upload: rejections', () => {
   it('rejects a request with no file part', async () => {
     const res = await harness.app.inject({
       method: 'POST',
@@ -254,7 +254,7 @@ describe('POST /api/upload — rejections', () => {
   })
 })
 
-describe('POST /api/upload — duplicates', () => {
+describe('POST /api/upload: duplicates', () => {
   it('refuses to store the same audio twice', async () => {
     const data = await fixture('tagged.mp3')
     const first = await upload(harness, { filename: 'a.mp3', contentType: 'audio/mpeg', data })

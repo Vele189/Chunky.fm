@@ -79,7 +79,7 @@ export function playbackRoutes({ config, db, station }: PlaybackDeps): FastifyPl
             playback.stop()
             break
           case 'skip':
-            // Off air when the queue is empty — skipping the last track is
+            // Off air when the queue is empty: skipping the last track is
             // the end of the set, not a reason to replay anything.
             station.advance()
             break

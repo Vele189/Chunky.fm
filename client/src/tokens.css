@@ -1,6 +1,6 @@
 @import './assets/fonts/fonts.css';
 
-/* chunky.fm — the design, as values.
+/* chunky.fm: the design, as values.
  *
  * Colours, radii and spacing here are the Figma file's, not inventions: the
  * page is a near-black sheet with translucent panels floating on it, one accent
@@ -10,7 +10,7 @@
  * thing is noise.
  *
  * This file is the tokens alone, with no rules of its own, because two pages
- * are now drawn from them — the station in styles.css and the landing page in
+ * are now drawn from them: the station in styles.css and the landing page in
  * landing/landing.css. A landing page that quietly drifted a shade off the
  * product it is advertising would be worse than one that never matched.
  */
@@ -36,7 +36,7 @@
 
   /* --- signals ------------------------------------------------------------
    * Red is only ever "on the air". Green is only ever "the socket is open".
-   * Something is wrong, but nothing is lost — warm rather than alarming, since
+   * Something is wrong, but nothing is lost: warm rather than alarming, since
    * every state wearing --warn is one the page recovers from by itself. */
   --live: #fb2c36;
   --live-text: #ff6467;
@@ -52,7 +52,7 @@
   --pill: 999px;
 
   --font: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
-  /* Everything that counts — clocks, tallies, head counts, track numbers —
+  /* Everything that counts (clocks, tallies, head counts, track numbers)
      so a digit changing never shifts what is beside it. */
   --font-numeric: 'Cousine', ui-monospace, 'SF Mono', monospace;
 }

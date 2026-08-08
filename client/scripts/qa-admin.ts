@@ -1,6 +1,6 @@
 /**
  * Admin QA in a real browser: sign in, upload, queue, reorder, and drive the
- * decks — then check a plain listener sees none of it but hears all of it.
+ * decks, then check a plain listener sees none of it but hears all of it.
  *
  * Needs a running server and a running Vite dev server. The file it uploads
  * comes from QA_UPLOAD_FILE; use something a few minutes long, or the track
@@ -51,7 +51,7 @@ async function signIn(page: Page, password: string): Promise<void> {
 }
 
 async function openPage(browser: Browser, url: string): Promise<Page> {
-  // A context each, so the two tabs don't share cookies — otherwise the
+  // A context each, so the two tabs don't share cookies; otherwise the
   // "listener" would inherit the admin's session and prove nothing.
   const page = await (await browser.newContext()).newPage()
   await page.goto(url, { waitUntil: 'domcontentloaded' })
@@ -102,7 +102,7 @@ try {
   await admin.waitForSelector('[data-testid="admin-panel"]', { timeout: 10_000 })
   checks.run('the right password reveals the controls', true, 'panel visible')
 
-  // The session survives a reload — a station is run over hours, and a stray
+  // The session survives a reload: a station is run over hours, and a stray
   // refresh should not mean typing the password again.
   await admin.reload({ waitUntil: 'domcontentloaded' })
   await admin.waitForSelector('[data-testid="admin-panel"]', { timeout: 10_000 })
@@ -171,8 +171,8 @@ try {
   )
 
   // --- a second listener, for the transport checks below ----------------------
-  // Listeners no longer render the queue — what is coming is the admin's
-  // worksheet alone — so whether the frame reached them is checked the way a
+  // Listeners no longer render the queue (what is coming is the admin's
+  // worksheet alone) so whether the frame reached them is checked the way a
   // listener would notice: both ears end up on the same file at the skip.
   const latecomer = await openPage(browser, STATION_URL)
   await tuneIn(latecomer, 'latecomer')

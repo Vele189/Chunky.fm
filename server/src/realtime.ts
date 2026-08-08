@@ -9,6 +9,7 @@ import { type Listener, Presence } from './presence.js'
 import {
   type ServerMessage,
   airMessage,
+  scheduleMessage,
   chatMessages,
   errorMessage,
   historyMessage,
@@ -19,6 +20,7 @@ import {
   wishedMessage,
 } from './protocol.js'
 import type { QueueEntry } from './queue.js'
+import type { Schedule, ScheduledSession } from './schedule.js'
 import type { Station } from './station.js'
 import type { WishBook } from './wishes.js'
 
@@ -35,6 +37,12 @@ export interface RealtimeOptions {
    * what the tests that are about something else want.
    */
   air?: OnAir
+  /**
+   * The next session, announced. Optional like `air`: a harness that is about
+   * something else should not have to build one, and a socket with no schedule
+   * behind it simply says there is nothing announced.
+   */
+  schedule?: Schedule
   /** Who has been asked to stop talking. Omit and nobody is muted. */
   mutes?: Mutes
   /** The session's chat. Omit and the socket refuses `say` frames. */
@@ -48,7 +56,7 @@ export interface RealtimeOptions {
    * Decides whether an upgrade is allowed to become a socket at all.
    *
    * A predicate rather than the config, so realtime does not have to know what
-   * a station key is — and so the tests can open sockets without one. Omit it
+   * a station key is, and so the tests can open sockets without one. Omit it
    * and every upgrade is admitted, which is the open station.
    */
   admit?(headers: IncomingHttpHeaders): boolean
@@ -73,7 +81,7 @@ export interface RealtimeOptions {
 
 export interface RealtimeHandle {
   clientCount(): number
-  /** Who has named themselves — a subset of the sockets `clientCount` counts. */
+  /** Who has named themselves: a subset of the sockets `clientCount` counts. */
   listeners(): Listener[]
   broadcast(message: ServerMessage): void
   close(): Promise<void>
@@ -87,8 +95,8 @@ const DEFAULT_CLOSE_GRACE_MS = 1_000
 const DEFAULT_CHAT_BURST = 5
 const DEFAULT_CHAT_REFILL_MS = 2_000
 /**
- * A socket names itself once, and again only if the listener changes their mind
- * — so this is generous for anything a person does, and the first thing a script
+ * A socket names itself once, and again only if the listener changes their mind,
+ * so this is generous for anything a person does, and the first thing a script
  * renaming itself in a loop runs into.
  */
 const DEFAULT_JOIN_BURST = 5
@@ -96,7 +104,7 @@ const DEFAULT_JOIN_REFILL_MS = 5_000
 /**
  * Asking for three things at once is a person remembering a set they liked;
  * asking for a fourth in the same half-minute is not. Tighter than chat because
- * a wish is not conversation — every one of them is a row in a list somebody
+ * a wish is not conversation: every one of them is a row in a list somebody
  * has to read, and a book nobody can get through is the same as no book.
  */
 const DEFAULT_WISH_BURST = 3
@@ -115,7 +123,7 @@ const ALWAYS_ON: AirSnapshot = { live: true, since: null }
  * Connections are read-only, and that *is* the socket's half of the admin gate:
  * there is no privileged frame here to authenticate, because every mutation
  * lives behind `requireAdmin` on an HTTP route. A socket that carries a valid
- * admin cookie gets no more than one that carries nothing — command-shaped
+ * admin cookie gets no more than one that carries nothing. Command-shaped
  * frames are refused by name (see `parseClientMessage`), so the only way to
  * drive the station is a request that went through the gate.
  *
@@ -127,6 +135,7 @@ export function attachRealtime({
   server,
   station,
   air,
+  schedule,
   mutes,
   chat,
   wishes,
@@ -155,7 +164,7 @@ export function attachRealtime({
     maxPayload: MAX_PAYLOAD_BYTES,
     // Refused at the handshake, before a socket exists. Closing it a moment
     // later would work too, but the client cannot tell that apart from the
-    // station dropping — and would sit there reconnecting into it forever,
+    // station dropping, and would sit there reconnecting into it forever,
     // telling the listener the station was down when it is only shut to them.
     // A 401 on the upgrade is unambiguous, and `ws` sends one for `false`.
     verifyClient: admit ? (info: { req: { headers: IncomingHttpHeaders } }) => admit(info.req.headers) : undefined,
@@ -215,7 +224,7 @@ export function attachRealtime({
       send(socket, errorMessage('not_joined', 'name yourself before saying anything', 'say'))
       return
     }
-    // After the name is known, because a mute is about a name — and before the
+    // After the name is known, because a mute is about a name, and before the
     // pace check, so being muted does not also cost a token.
     if (mutes?.has(nickname)) {
       send(socket, errorMessage('muted', 'the decks have muted you', 'say'))
@@ -237,7 +246,7 @@ export function attachRealtime({
    *
    * The gate is the roster, as it is for chat and for the same reason: a wish is
    * signed with the name its own socket is listed under, so there is nothing to
-   * sign with before naming yourself. What is different is where it goes — this
+   * sign with before naming yourself. What is different is where it goes: this
    * is the one thing a listener can send that is *not* broadcast, because a wish
    * is addressed to whoever runs the decks rather than to the room. The room
    * would learn nothing from it, and the person who asked would have made a
@@ -282,13 +291,13 @@ export function attachRealtime({
    * Paced, because this is the one frame a listener can send that costs every
    * *other* listener something: a roster goes out to all of them each time one
    * changes. Unpaced, a single socket renaming itself in a loop is a broadcast
-   * to the whole room per frame — the cheapest way in there is to make the
+   * to the whole room per frame. The cheapest way in there is to make the
    * station shout at everyone, and it needs no nickname, no password and no
    * chat to do it.
    *
    * A join that names a socket what it is already called is free, because it
    * broadcasts nothing: only a change to the roster spends a token. That keeps a
-   * client that re-sends its name — on a reconnect, or a render it didn't mean —
+   * client that re-sends its name (on a reconnect, or a render it didn't mean)
    * from being charged for saying nothing.
    */
   function join(socket: WebSocket, listenerId: number, limit: RateLimit, nickname: string): void {
@@ -317,14 +326,18 @@ export function attachRealtime({
     // told the decks are empty without being told the station is off air would
     // show a gap between songs that never ends.
     send(socket, airMessage(airSnapshot()))
+    // And, straight after it, when the station is next on. The two are one
+    // sentence on the off-air screen, and a page that got the first without the
+    // second would draw "off the air" and then replace it a frame later.
+    send(socket, scheduleMessage(schedule?.get() ?? null))
     // Drop straight into the moment: the snapshot alone is enough to align.
     send(socket, stateMessage(playback.snapshot()))
     send(socket, queueMessage(queue.list()))
-    // Who is already here. This socket is not on that list yet — it has not
-    // said who it is — and joins it the moment it does.
+    // Who is already here. This socket is not on that list yet, because it has
+    // not said who it is, and joins it the moment it does.
     send(socket, presenceMessage(presence.list()))
     // What has been on, so a listener who arrives at 9pm can see what they
-    // caught the end of. Written down, so this survives a reload — unlike the
+    // caught the end of. Written down, so this survives a reload, unlike the
     // roster, which is only true while a socket is open.
     if (plays) send(socket, historyMessage(plays.recent()))
     // The conversation so far, so a joiner walks into a room mid-sentence
@@ -341,7 +354,7 @@ export function attachRealtime({
       }
       const { message } = parsed
       if (message.type === 'ping') {
-        // Same clock that stamps startedAt — see PlaybackState.now().
+        // Same clock that stamps startedAt. See PlaybackState.now().
         send(socket, { type: 'pong', t0: message.t0, t1: playback.now() })
       }
       if (message.type === 'join') join(socket, listenerId, joinLimit, message.nickname)
@@ -349,8 +362,8 @@ export function attachRealtime({
       if (message.type === 'wish') wish(socket, listenerId, wishLimit, message.text)
     })
 
-    // Every way a socket can end arrives here — a tab closing, a network that
-    // vanished and was terminated by the heartbeat, a shutdown — so this is the
+    // Every way a socket can end arrives here: a tab closing, a network that
+    // vanished and was terminated by the heartbeat, a shutdown. So this is the
     // only place a listener needs to be taken off the roster.
     socket.on('close', () => {
       if (presence.leave(listenerId)) broadcastPresence()
@@ -369,7 +382,7 @@ export function attachRealtime({
     )
     broadcast(stateMessage(snapshot))
     // A track going on is the one playback change worth writing down. `record`
-    // is what decides that — most changes here are a pause, a seek or a resume,
+    // is what decides that: most changes here are a pause, a seek or a resume,
     // and none of those is a new play. A batch of one, in the same frame the
     // history arrives in.
     const played = plays?.record(snapshot.track) ?? null
@@ -383,15 +396,21 @@ export function attachRealtime({
   const onAirChange = (snapshot: AirSnapshot) => {
     log?.info({ live: snapshot.live, listeners: wss.clients.size }, 'broadcasting air state')
     broadcast(airMessage(snapshot))
-    // A session ending takes the chat and the history with it — they are scoped
-    // to it — so every client is told to start again rather than being left
-    // showing a conversation that no longer exists anywhere.
+    // A session ending takes the chat and the history with it, since they are
+    // scoped to it, so every client is told to start again rather than being
+    // left showing a conversation that no longer exists anywhere.
     if (!snapshot.live) {
       broadcast(chatMessages([]))
       broadcast(historyMessage([]))
     }
   }
+  const onScheduleChange = (next: ScheduledSession | null) => {
+    log?.info({ announced: next !== null, listeners: wss.clients.size }, 'broadcasting schedule')
+    broadcast(scheduleMessage(next))
+  }
+
   air?.on('change', onAirChange)
+  schedule?.on('change', onScheduleChange)
 
   const onQueueChange = (entries: QueueEntry[]) => {
     log?.info({ queued: entries.length, listeners: wss.clients.size }, 'broadcasting queue')
@@ -412,8 +431,8 @@ export function attachRealtime({
   }, heartbeatIntervalMs)
   heartbeat.unref()
 
-  // Shutting down twice is normal — a manual close followed by the app's
-  // onClose hook — and ws throws if its server is closed a second time.
+  // Shutting down twice is normal (a manual close followed by the app's
+  // onClose hook), and ws throws if its server is closed a second time.
   let closing: Promise<void> | null = null
 
   async function shutdown(): Promise<void> {
@@ -422,6 +441,7 @@ export function attachRealtime({
     playback.off('change', onChange)
     queue.off('change', onQueueChange)
     air?.off('change', onAirChange)
+    schedule?.off('change', onScheduleChange)
 
     const sockets = [...wss.clients]
     const allClosed = Promise.all(

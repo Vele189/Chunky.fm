@@ -7,8 +7,8 @@ import { memo, type ReactNode, useState } from 'react'
  * A port of Aceternity UI's Resizable Navbar
  * (<https://ui.aceternity.com/components/resizable-navbar>). The mechanism is
  * the original's: past 100px of scroll it goes from full width to a floating
- * pill — width and a 20px drop on a spring (stiffness 200, damping 50), with the
- * blur and the lift arriving with it — and the hovered item is a single pill
+ * pill, with width and a 20px drop on a spring (stiffness 200, damping 50) and
+ * the blur and the lift arriving with it. The hovered item is a single pill
  * that slides between them on a shared `layoutId` rather than one fading in per
  * item.
  *
@@ -23,7 +23,7 @@ import { memo, type ReactNode, useState } from 'react'
  *    mobile toggle and does not list it as a dependency, so `shadcn add` leaves
  *    you with a build error. Two nine-line SVGs cost less than the package.
  *  - **`useScroll()` with no target.** The original passes `{ target, offset }`,
- *    which only ever affects `scrollYProgress` — and it reads `scrollY`, which
+ *    which only ever affects `scrollYProgress`, and it reads `scrollY`, which
  *    is the window's either way. Dropping them removes a measurement this page
  *    has twice been bitten by and changes nothing.
  *  - **It shrinks further.** The original goes to 40% with an 800px floor, which
@@ -39,14 +39,14 @@ const SPRING = { type: 'spring', stiffness: 200, damping: 50 } as const
  * The original animates `boxShadow` from `"none"` to a five-part shadow. Two
  * things are wrong with it. The first is fatal: that pair cannot be
  * interpolated, so motion writes one frame and abandons the whole `animate`
- * object — the bar never resizes, never drops and never blurs, because every
+ * object: the bar never resizes, never drops and never blurs, because every
  * property in the batch goes down with the shadow.
  *
  * The second is what you see once it does work. A box-shadow is not a
  * composited property: interpolating one repaints the element every frame, and
  * one of its five parts is a 1px white `inset` ring. A hairline being both
  * colour-interpolated and re-rasterised at a new width sixty times a second
- * shimmers along its edge — which reads exactly like a glitchy border, because
+ * shimmers along its edge, which reads exactly like a glitchy border, because
  * it is one.
  *
  * So the lift lives on `.navbar__body::after` in landing.css and comes up on
@@ -61,7 +61,7 @@ export interface NavItem {
 
 /* Memoised: `Landing` re-renders on every scroll frame, and this holds a spring
    that should not be interrupted by a playhead moving. Its props are built once
-   at the module — see Landing.tsx. */
+   at the module. See Landing.tsx. */
 export const ResizableNavbar = memo(function ResizableNavbar({
   items,
   action,
@@ -106,7 +106,7 @@ export const ResizableNavbar = memo(function ResizableNavbar({
       <motion.div
         className="navbar__mobile"
         data-shrunk={shrunk ? 'true' : 'false'}
-        /* The radius is CSS, on the same data attribute — one more property
+        /* The radius is CSS, on the same data attribute: one more property
            motion does not have to repaint for. */
         animate={{ width: shrunk ? '92%' : '100%', y: shrunk ? 16 : 0 }}
         transition={SPRING}
@@ -166,7 +166,7 @@ export const ResizableNavbar = memo(function ResizableNavbar({
  * The links, and the one pill that moves between them.
  *
  * `layoutId` is what makes it one pill sliding rather than a background fading
- * in under each link — the same trick the original uses, and the reason the
+ * in under each link, the same trick the original uses, and the reason the
  * hover reads as a thing being pointed at rather than as six separate hovers.
  */
 function NavItems({ items }: { items: readonly NavItem[] }) {

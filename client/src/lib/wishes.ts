@@ -4,7 +4,7 @@ import type { SocketErrorCode, Wish, WishStatus } from './protocol.js'
  * The client's half of wishes: what is worth asking for, and what to do with
  * the note that comes back.
  *
- * Mirrors `server/src/wishes.ts` — keep the two in step. The cap here is the
+ * Mirrors `server/src/wishes.ts`; keep the two in step. The cap here is the
  * composer's; the server enforces its own, and refuses rather than truncates.
  */
 
@@ -12,12 +12,12 @@ export const WISH_MAX_LENGTH = 200
 
 /**
  * How many of a listener's own wishes are kept on screen. Nobody asks for
- * twenty things in one sitting, and this is only ever this client's own — the
+ * twenty things in one sitting, and this is only ever this client's own: the
  * room's wishes are the admin's list, not this one.
  */
 export const MAX_KEPT_WISHES = 20
 
-/** One line, trimmed and capped — the same shape the server will store. */
+/** One line, trimmed and capped: the same shape the server will store. */
 export function normalizeWishText(raw: string): string {
   const collapsed = raw
     .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
@@ -34,8 +34,8 @@ export function isSendableWish(raw: string): boolean {
 /**
  * Folds a wish the station wrote down into the list of this listener's own.
  *
- * Keyed on id and ordered by it, so it is idempotent — a frame seen twice
- * changes nothing — and a later wish lands at the end where it was asked.
+ * Keyed on id and ordered by it, so it is idempotent (a frame seen twice
+ * changes nothing) and a later wish lands at the end where it was asked.
  * Returns the original array when nothing was new, so React can skip a render.
  */
 export function mergeWishes(current: Wish[], incoming: Wish[]): Wish[] {
@@ -55,7 +55,7 @@ export function wishStatusLabel(status: WishStatus): string {
 /**
  * What to tell a listener whose wish the station would not take.
  *
- * Null for anything that is not about a wish they tried to make — including
+ * Null for anything that is not about a wish they tried to make, including
  * every refusal that belongs to the chat, which has its own notice. The `about`
  * field on the frame is what separates the two; this only has to explain the
  * codes a wish composer can actually cause.
@@ -63,19 +63,19 @@ export function wishStatusLabel(status: WishStatus): string {
 export function wishRefusal(code: SocketErrorCode): string | null {
   switch (code) {
     case 'slow_down':
-      return 'Not asked — you are asking faster than the station will take it.'
+      return 'Not asked. You are asking faster than the station will take it.'
     case 'not_joined':
-      return 'Not asked — the station has not finished putting you in the room yet.'
+      return 'Not asked. The station has not finished putting you in the room yet.'
     case 'no_wishes':
-      return 'Not asked — this station takes no wishes.'
+      return 'Not asked. This station takes no wishes.'
     case 'wish_too_long':
-      return 'Not asked — that wish is too long.'
+      return 'Not asked. That wish is too long.'
     case 'empty_wish':
-      return 'Not asked — there was nothing in that wish.'
+      return 'Not asked. There was nothing in that wish.'
     case 'off_air':
-      return 'Not asked — the station is not on air.'
+      return 'Not asked. The station is not on air.'
     case 'muted':
-      return 'Not asked — whoever runs the decks has muted you.'
+      return 'Not asked. Whoever runs the decks has muted you.'
     default:
       return null
   }

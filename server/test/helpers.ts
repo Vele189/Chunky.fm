@@ -9,6 +9,7 @@ import { buildApp } from '../src/app.js'
 import type { ChatLog } from '../src/chat.js'
 import type { Config } from '../src/config.js'
 import type { OnAir } from '../src/air.js'
+import type { Schedule } from '../src/schedule.js'
 import type { Mutes } from '../src/mutes.js'
 import { type Db, openDb } from '../src/db.js'
 import type { Track } from '../src/lib/track.js'
@@ -31,6 +32,7 @@ export interface Harness {
   wishes: WishBook
   plays: PlayLog
   air: OnAir
+  schedule: Schedule
   mutes: Mutes
   lyrics: LyricsService
   /** Only set when the harness was started with `listen: true`. */
@@ -66,7 +68,7 @@ export interface HarnessOptions {
    * that answers.
    */
   lyricsFetch?: typeof fetch
-  /** Bind a real port — required for anything that opens a websocket. */
+  /** Bind a real port: required for anything that opens a websocket. */
   listen?: boolean
 }
 
@@ -98,6 +100,7 @@ export async function startHarness(
     storageDir,
     audioDir: path.join(storageDir, 'audio'),
     artworkDir: path.join(storageDir, 'artwork'),
+    posterDir: path.join(storageDir, 'posters'),
     tmpDir: path.join(storageDir, 'tmp'),
     dbPath: ':memory:',
     adminPassword: ADMIN_PASSWORD,
@@ -105,7 +108,7 @@ export async function startHarness(
     // tests want. The ones about the gate pass a key through `overrides`.
     stationKey: null,
     maxUploadBytes: 10 * 1024 * 1024,
-    // Never resolved: the harness stubs the fetch itself — see `lyricsFetch`.
+    // Never resolved: the harness stubs the fetch itself. See `lyricsFetch`.
     lrclibBaseUrl: 'http://lrclib.invalid',
     // No client bundle: these tests are about the API. The doorway tests build
     // a bundle in a temp dir and pass it through `overrides`.
@@ -155,6 +158,7 @@ export async function startHarness(
     wishes: app.wishes,
     plays: app.plays,
     air: app.air,
+    schedule: app.schedule,
     mutes: app.mutes,
     lyrics: app.lyrics,
     wsUrl,
@@ -168,7 +172,7 @@ export async function startHarness(
 
 /**
  * Sign in the way the browser does, and hand back the `Cookie` header it would
- * send from then on — `chunky_admin=<token>`, without the attributes, which is
+ * send from then on: `chunky_admin=<token>`, without the attributes, which is
  * all a request carries back.
  */
 export async function signIn(harness: Harness, password = ADMIN_PASSWORD): Promise<string> {
@@ -224,8 +228,8 @@ export type FakeClock = ReturnType<typeof fakeClock>
 /**
  * Move the station clock and the timer wheel together.
  *
- * The two are independent — PlaybackState reads an injected clock, timers live
- * on vitest's fake wheel — so stepping only one produces states that cannot
+ * The two are independent (PlaybackState reads an injected clock, timers live
+ * on vitest's fake wheel), so stepping only one produces states that cannot
  * happen in production. Stepping in slices keeps them close enough that a timer
  * firing mid-window still sees a sane clock; anything that ends exactly on a
  * slice boundary lands on the exact millisecond.

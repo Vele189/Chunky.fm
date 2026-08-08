@@ -3,7 +3,7 @@
  * over HTTP and marks it off.
  *
  * The two halves are tested together because the interesting properties live
- * between them — that the name on a wish is the roster's answer rather than the
+ * between them: that the name on a wish is the roster's answer rather than the
  * frame's, and that a wish reaches the admin without reaching the room.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -117,14 +117,14 @@ describe('making a wish', () => {
     sam.send({ type: 'wish', text: 'the one I am not' })
     expect(await nextError(sam)).toMatchObject({ code: 'slow_down', about: 'wish' })
 
-    // The chat bucket is untouched — a refused wish is not a gag order.
+    // The chat bucket is untouched: a refused wish is not a gag order.
     const said = await sam.say('can I still talk?')
     expect(said.messages[0]).toMatchObject({ nickname: 'sam', text: 'can I still talk?' })
   })
 })
 
 describe('GET /api/wishes', () => {
-  it('needs admin credentials — this is the one read that is not open', async () => {
+  it('needs admin credentials: this is the one read that is not open', async () => {
     const sam = await listener('sam')
     await sam.wish('something for the drive home')
 

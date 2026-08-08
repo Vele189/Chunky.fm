@@ -7,7 +7,7 @@ import { useOnScreen } from './useOnScreen.js'
  * The object in the hero.
  *
  * A real gramophone, turned slowly, behind the headline. It replaces the flat
- * `Deck` that used to sit there — but only once it has actually arrived, and
+ * `Deck` that used to sit there, but only once it has actually arrived, and
  * only on a machine that can draw it. Until then, and forever on a machine that
  * cannot, the `Deck` is what is on screen. That is the whole design of this
  * component: the page has never needed the model, so nothing about the page
@@ -18,7 +18,7 @@ import { useOnScreen } from './useOnScreen.js'
  *  - **three.js and the model are both loaded after the page is.** They are a
  *    dynamic `import()`, so neither is in the landing bundle and neither is
  *    fetched until the browser has something readable on screen. The landing
- *    page's own bundle is a few kilobytes and has to stay that way — it is the
+ *    page's own bundle is a few kilobytes and has to stay that way: it is the
  *    page that has to work on the days nothing else does.
  *  - **WebGL is checked before three is fetched.** A machine that cannot draw
  *    this should not download a renderer to discover that.
@@ -26,14 +26,14 @@ import { useOnScreen } from './useOnScreen.js'
  *    object on a page, not an instrument: it turns because gramophones turn,
  *    not because a station is playing. There is no station behind this page.
  *
- * `still` stops it. The page uses this once, beside the DJ — the station is off
+ * `still` stops it. The page uses this once, beside the DJ. The station is off
  * more than it is on, and a stopped gramophone next to the person who decides
  * that is the page saying so without a sentence. It is not the same as
  * `prefers-reduced-motion`, which stops every instance and is the visitor's
  * setting rather than the page's meaning; both end in the same frame loop, and
  * a still gramophone stops drawing rather than redrawing an identical frame.
  *
- * The model is 30 MB as it came off Sketchfab and 1 MB in the bundle — 25 PNG
+ * The model is 30 MB as it came off Sketchfab and 1 MB in the bundle: 25 PNG
  * textures down to WebP at 1024, and the geometry quantized. See the
  * `assets:models` script in package.json, which is the command that did it and
  * the way to do it again. Quantization rather than Draco deliberately: Draco
@@ -41,14 +41,14 @@ import { useOnScreen } from './useOnScreen.js'
  * origin for anything.
  */
 
-/** How long one turn takes. Slower than the flat deck — this one has detail. */
+/** How long one turn takes. Slower than the flat deck; this one has detail. */
 const TURN_MS = 26_000
 
 /**
  * The shortest gap between two draws, in milliseconds.
  *
  * A full turn takes twenty-six seconds, so at 60fps this object moves about a
- * seventh of a degree per frame — half of those frames are indistinguishable
+ * seventh of a degree per frame, and half of those frames are indistinguishable
  * from the one before, and every one of them costs the same as a real one. At
  * 30 it looks identical and gives the rest of the page back half a budget it
  * badly wants while the bar is resizing over the top of it.
@@ -94,7 +94,7 @@ export function Gramophone({ still = false }: { still?: boolean }) {
       // Transparent: the sheet behind it is the page's own near-black, and a
       // renderer clearing to its own black would draw a visible square on it.
       renderer.setClearAlpha(0)
-      // Capped at 2 — past that it is pixels nobody can see costing frames on
+      // Capped at 2: past that it is pixels nobody can see costing frames on
       // the phones least able to spare them.
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
       renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -104,8 +104,8 @@ export function Gramophone({ still = false }: { still?: boolean }) {
        * Lighting, and it is doing more work than it looks.
        *
        * The model came with metal and lacquer materials that expect an
-       * environment to reflect. There isn't one — an HDR would be another
-       * megabyte off the network — so this is three lights standing in for a
+       * environment to reflect. There isn't one (an HDR would be another
+       * megabyte off the network) so this is three lights standing in for a
        * room: a key from the front left, a rim from behind to pick the horn's
        * edge out of a near-black page, and enough ambient that the unlit side
        * is dark rather than absent.
@@ -200,7 +200,7 @@ export function Gramophone({ still = false }: { still?: boolean }) {
         cancelAnimationFrame(frame)
         watcher.disconnect()
         renderer.domElement.remove()
-        // Textures and buffers are GPU allocations and are not garbage —
+        // Textures and buffers are GPU allocations and are not garbage;
         // without this, a re-mount in development leaks a whole model each time.
         scene.traverse((node) => {
           if (!(node instanceof THREE.Mesh)) return
@@ -224,7 +224,7 @@ export function Gramophone({ still = false }: { still?: boolean }) {
   return (
     <div className="gram" data-shown={shown ? 'true' : 'false'}>
       {/* What is on screen until the model is, and what stays there if it never
-          comes. Not a placeholder box — it is the station's own deck, which is
+          comes. Not a placeholder box: it is the station's own deck, which is
           what the hero was before this and is a finished thing in its own right.
           It stands still where the model would, so a machine that cannot draw
           one still says the same thing about the station. */}

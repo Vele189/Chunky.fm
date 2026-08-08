@@ -87,7 +87,7 @@ describe('WishBook', () => {
     expect(wishes.list().map((wish) => wish.text)).toEqual(['three', 'four', 'five'])
   })
 
-  it('survives being reopened — the wishes are in the database', () => {
+  it('survives being reopened: the wishes are in the database', () => {
     book().make('sam', 'still here?')
 
     expect(book().list().map((wish) => wish.text)).toEqual(['still here?'])
@@ -112,7 +112,7 @@ describe('WishBook', () => {
 
     expect(wishes.setStatus(first.id, 'handled')).toMatchObject({ id: first.id, status: 'handled' })
     expect(wishes.outstanding()).toBe(1)
-    // The row stays in the book — handled is a note about it, not a deletion.
+    // The row stays in the book: handled is a note about it, not a deletion.
     expect(wishes.list()).toHaveLength(2)
   })
 
@@ -204,7 +204,7 @@ describe('the wish frame', () => {
     expect(parsed).toMatchObject({ ok: false, code: 'wish_too_long', about: 'wish' })
   })
 
-  it('carries no author and no track — that is the roster’s and the admin’s', () => {
+  it('carries no author and no track: that is the roster’s and the admin’s', () => {
     const parsed = parseClientMessage(
       JSON.stringify({ type: 'wish', text: 'some Bowie', nickname: 'someone else', trackId: 3 }),
     )

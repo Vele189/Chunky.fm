@@ -14,7 +14,7 @@ concurrency:
 jobs:
   # Both workspaces expose the same three scripts, so one matrix covers them.
   # Node 20 is in there because package.json claims `>=20.12` and the containers
-  # ship 22 — without both, one of those two statements quietly stops being true.
+  # ship 22, and without both, one of those two statements quietly stops being true.
   checks:
     name: ${{ matrix.workspace }} (node ${{ matrix.node }})
     runs-on: ubuntu-latest
@@ -51,7 +51,7 @@ jobs:
         run: npm run build
 
   # The property the whole project rests on: two listeners joining at different
-  # times land on the same instant of the song. Headless, no browser, ~2s — it
+  # times land on the same instant of the song. Headless, no browser, ~2s, and it
   # runs on every push because it is the one thing that must never regress.
   sync-check:
     name: sync check
@@ -81,10 +81,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ADMIN_PASSWORD: ci-admin-password
-      # Set explicitly so the job drives the door rather than the house key it
-      # would otherwise fall back to — see `stationKeyFromEnv`. A station with
-      # no STATION_KEY is private now, not open, so a job that assumed the old
-      # default would be testing a 401.
+      # Set explicitly, because a station with no STATION_KEY is open and this
+      # job is here to drive the door. The default coming off the listening side
+      # is what made that necessary: without a key the assertions below would be
+      # checking that an open station lets everybody in, which is true and
+      # tests nothing. See `stationKeyFromEnv`.
       STATION_KEY: ci-station-key
       WEB_PORT: '18173'
       SERVER_PORT: '13000'
@@ -120,7 +121,7 @@ jobs:
 
       # The landing page is a second Vite entry, and there are two ways for it
       # to break that a build alone will not catch: the entry silently missing
-      # from the image, and the nginx rule not being there — in which case
+      # from the image, and the nginx rule not being there, in which case
       # `location /` would answer the root with the station and everything below
       # except the wordmark would still pass. Hence checking for the landing
       # bundle by name rather than for any bundle at all.
@@ -141,7 +142,7 @@ jobs:
         run: |
           head=$(curl -fsS -o /dev/null -D - "http://localhost:$WEB_PORT/?k=abc123")
           grep -qi '^HTTP/1.1 302' <<<"$head" || { echo "an invite at / was not sent on"; exit 1; }
-          # Relative on purpose — `absolute_redirect off`. An absolute Location
+          # Relative on purpose: `absolute_redirect off`. An absolute Location
           # would be built from nginx's own listen port, which is 80 in the
           # container and $WEB_PORT out here, and the invite would land nowhere.
           grep -qi "^location: /listen?k=abc123" <<<"$head" || {
@@ -150,7 +151,7 @@ jobs:
           # And it is followable from out here, which is the thing that breaks
           # if the redirect ever goes absolute again.
           curl -fsS -L "http://localhost:$WEB_PORT/?k=abc123" | grep -q '/assets/station-'
-          # And a root with no key on it is the landing page, not a redirect —
+          # And a root with no key on it is the landing page, not a redirect:
           # `if ($arg_k != "")` rather than nginx's own idea of truth.
           curl -fsS "http://localhost:$WEB_PORT/?utm=x" | grep -q '/assets/landing-'
 
@@ -160,7 +161,7 @@ jobs:
         run: |
           curl -fsS -L "http://localhost:$WEB_PORT/welcome" | grep -q '/assets/landing-'
 
-      # The door is on, and it is the library it guards — not the documents. A
+      # The door is on, and it is the library it guards, not the documents. A
       # page has to load in order to redeem a code typed into it, so the two
       # checks above must keep passing without any credential at all.
       - name: The library is behind the door
@@ -183,8 +184,8 @@ jobs:
             "http://localhost:$WEB_PORT/api/listen")
           test "$code" = 401 || { echo "expected 401, got $code"; exit 1; }
 
-      # Proves ADMIN_PASSWORD reached the container and the cookie is issued —
-      # the wrong-password half matters just as much, since a misread password
+      # Proves ADMIN_PASSWORD reached the container and the cookie is issued.
+      # The wrong-password half matters just as much, since a misread password
       # that let everyone in would still pass the happy path.
       - name: Admin sign-in refuses the wrong password
         run: |
@@ -217,7 +218,7 @@ jobs:
   # The other supported deployment: one container, no nginx, Fastify serving the
   # client as well as the API. That is what ships to Railway, and the front-door
   # rules it enforces are a *second copy* of the ones the `stack` job checks
-  # against nginx — so they get the same assertions, or the two drift and only
+  # against nginx, so they get the same assertions, or the two drift and only
   # whichever environment holds the odd copy is wrong.
   single-image:
     name: single image
@@ -279,7 +280,7 @@ jobs:
           curl -s http://localhost:13000/api/wishez | grep -q not_found
 
       # Same shape as the compose job: the door guards the library, never the
-      # documents — a page that would not load could never redeem a code.
+      # documents: a page that would not load could never redeem a code.
       - name: The library is behind the door, and a code opens it
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:13000/api/tracks)

@@ -6,7 +6,7 @@ import type { Track } from './lib/track.js'
  *
  * There is no per-listener state and nothing is streamed: listeners are handed
  * this tuple and align themselves to it. Because `startedAt` is a point in the
- * past, a listener joining at 2:14 computes 2:14 and seeks there — joining
+ * past, a listener joining at 2:14 computes 2:14 and seeks there, so joining
  * mid-song is the same code path as joining at the start.
  */
 export interface PlaybackSnapshot {
@@ -55,8 +55,8 @@ export class PlaybackState extends EventEmitter {
   }
 
   /**
-   * The station clock. Everything time-shaped the server says — `startedAt`,
-   * `serverTime`, the pong in the offset handshake — must read from here, or
+   * The station clock. Everything time-shaped the server says (`startedAt`,
+   * `serverTime`, the pong in the offset handshake) must read from here, or
    * clients would be aligning to a timebase that isn't the one `startedAt` is
    * expressed in.
    */
@@ -114,7 +114,7 @@ export class PlaybackState extends EventEmitter {
     return this.#changed()
   }
 
-  /** Clear the decks — off air, nothing loaded. */
+  /** Clear the decks: off air, nothing loaded. */
   stop(): PlaybackSnapshot {
     if (!this.#track) return this.snapshot()
     this.#track = null

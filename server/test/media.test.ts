@@ -102,7 +102,7 @@ describe('GET /api/audio/:filename', () => {
     expect(res.statusCode).toBe(416)
   })
 
-  it('marks content immutable — the URL is a content hash', async () => {
+  it('marks content immutable: the URL is a content hash', async () => {
     const res = await harness.app.inject({ method: 'GET', url: `/api/audio/${track.filename}` })
 
     expect(res.headers['cache-control']).toContain('immutable')

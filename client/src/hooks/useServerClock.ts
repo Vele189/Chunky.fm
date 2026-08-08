@@ -14,7 +14,7 @@ export interface ServerClock {
   serverNow: () => number
   offsetMs: number
   rttMs: number | null
-  /** False until the first probe is answered — nothing should align yet. */
+  /** False until the first probe is answered; nothing should align yet. */
   synced: boolean
   /** Feed every server message here so pongs get matched to their probes. */
   handleMessage: (message: ServerMessage) => void
@@ -23,7 +23,7 @@ export interface ServerClock {
 export interface ServerClockOptions {
   /**
    * Whether the socket is actually open. Probing before it is would drop every
-   * packet on the floor — `send` on a connecting socket is a silent no-op.
+   * packet on the floor: `send` on a connecting socket is a silent no-op.
    */
   connected: boolean
   probeCount?: number
@@ -40,7 +40,7 @@ export interface ServerClockOptions {
  * picking the lowest RTT is supposed to avoid.
  *
  * Samples live in a rolling window instead of being cleared per round, so a
- * single slow round trip can never briefly become the estimate — a bad offset
+ * single slow round trip can never briefly become the estimate, since a bad offset
  * would show up as an audible hard seek.
  */
 export function useServerClock(
@@ -79,8 +79,8 @@ export function useServerClock(
 
   useEffect(() => {
     // Gated on the socket actually being open. Probing a connecting socket
-    // drops every packet silently, which left listeners unsynced — and so
-    // uncorrected — until the next resync half a minute later.
+    // drops every packet silently, which left listeners unsynced,
+    // and so uncorrected, until the next resync half a minute later.
     if (!connection || !connected) return
 
     // A reconnect may follow a long outage or a sleeping device, so the old
@@ -103,7 +103,7 @@ export function useServerClock(
       // A round supersedes the one before it: any probe still pending is
       // cancelled, and any probe still unanswered never will be. Without this
       // both the timer list and the in-flight set grow for as long as the
-      // listener stays tuned in — a resync every 30s, forever.
+      // listener stays tuned in: a resync every 30s, forever.
       for (const timer of timers) window.clearTimeout(timer)
       timers.length = 0
       inFlight.current.clear()

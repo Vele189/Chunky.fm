@@ -44,8 +44,8 @@ const ENTRY_PARAMS_SCHEMA = {
 } as const
 
 /**
- * The admin's view of what's coming up. Reads are open — listeners get the same
- * queue over the websocket anyway — and every mutation is admin-only.
+ * The admin's view of what's coming up. Reads are open, since listeners get the same
+ * queue over the websocket anyway, and every mutation is admin-only.
  *
  * Entries are addressed by entry id rather than position, because the queue
  * shifts by itself when a track ends: an index the admin's UI read a second ago
@@ -71,8 +71,8 @@ export function queueRoutes({ config, db, station }: QueueDeps): FastifyPluginAs
           return reply.code(404).send({ error: 'unknown_track', message: `no track ${trackId}` })
         }
 
-        // On an idle station this starts playing immediately — see
-        // Station.enqueue — so the entry may already be off the queue by the
+        // On an idle station this starts playing immediately (see
+        // Station.enqueue), so the entry may already be off the queue by the
         // time we answer. That's why the entry is reported alongside it.
         const entry = station.enqueue(toTrack(row))
         return reply.code(201).send({ entry, ...entries() })

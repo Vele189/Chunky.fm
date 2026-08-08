@@ -5,16 +5,16 @@
  * are written down in three places because three different things can be the
  * front door:
  *
- *   - `client/nginx.conf`   — the compose stack, where nginx serves the client
- *   - `client/vite.config.ts` — `npm run dev` and `vite preview`
- *   - this file             — the single-image deployment, where Fastify is
- *                             the only thing listening and there is no nginx
+ *   - `client/nginx.conf`:     the compose stack, where nginx serves the client
+ *   - `client/vite.config.ts`: `npm run dev` and `vite preview`
+ *   - this file:               the single-image deployment, where Fastify is
+ *                              the only thing listening and there is no nginx
  *
  * They have to agree. The app ships unchanged across all three, so a rule that
  * drifts in one of them is a difference nobody notices until whichever
  * environment holds the odd copy is the one in front of a listener. The rules:
  *
- *   /            the landing page — the document describing the station, which
+ *   /            the landing page, the document describing the station, which
  *                has to be able to speak on the days the station's own bundle
  *                would have nothing to say
  *   /?k=<key>    an invite, sent on to the station with the key intact
@@ -27,7 +27,7 @@
 /**
  * The invite parameter, spelled out here as it is in `nginx.conf` and
  * `vite.config.ts`, and kept in step with `INVITE_PARAM` in the client's
- * `src/lib/invite.ts` by hand. Nothing imports across the two workspaces —
+ * `src/lib/invite.ts` by hand. Nothing imports across the two workspaces:
  * the client image does not contain the server directory, and vice versa.
  */
 export const INVITE_PARAM = 'k'
@@ -37,7 +37,7 @@ export type Doorway =
   | { kind: 'redirect'; status: 301 | 302; location: string }
   /** The page in front of the station. */
   | { kind: 'landing' }
-  /** Not the doorway's business — a route, an asset, or the app itself. */
+  /** Not the doorway's business: a route, an asset, or the app itself. */
   | { kind: 'pass' }
 
 /**
@@ -50,7 +50,7 @@ export type Doorway =
  */
 export function doorway(url: string): Doorway {
   // Only the path decides. `/welcome?utm=x` is still /welcome, and `/welcomely`
-  // is not — the same split both other copies do.
+  // is not, the same split both other copies do.
   const cut = url.indexOf('?')
   const path = cut === -1 ? url : url.slice(0, cut)
   const query = cut === -1 ? '' : url.slice(cut + 1)
@@ -61,7 +61,7 @@ export function doorway(url: string): Doorway {
 
   if (path === '/') {
     // Non-empty rather than merely present, which is what nginx's `!= ""` says
-    // and what `if ($arg_k)` would get wrong — that reads a key of literally
+    // and what `if ($arg_k)` would get wrong, since that reads a key of literally
     // "0" as no key at all.
     if ((new URLSearchParams(query).get(INVITE_PARAM) ?? '') !== '') {
       // Relative, and with the query carried across whole: an absolute location

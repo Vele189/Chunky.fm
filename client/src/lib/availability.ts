@@ -3,14 +3,14 @@ import type { StationStatus } from './station.js'
 /**
  * Whether there is a station there at all, and what to say when there isn't.
  *
- * `StationStatus` is about one socket — opening, open, closed — and that is the
+ * `StationStatus` is about one socket (opening, open, closed) and that is the
  * wrong grain for a screen. A page loaded while the server is down cycles
  * `connecting → offline → connecting → offline` forever as the backoff runs, so
  * a message hung off the raw status flickers between "tuning in" and
  * "reconnecting" while the truth stays the same: nothing has ever answered.
  *
  * The missing piece is whether this page has *ever* reached the station, which
- * is what separates "we cannot find it" from "we had it and lost it" — a
+ * is what separates "we cannot find it" from "we had it and lost it", a
  * distinction worth making, because the second one usually fixes itself in a
  * second or two and the first one usually does not.
  */
@@ -20,7 +20,7 @@ export type Availability =
   | 'live'
   /** First attempt, still in flight. Nothing has failed yet. */
   | 'reaching'
-  /** Nothing has ever answered — the station is down, or this is the wrong URL. */
+  /** Nothing has ever answered: the station is down, or this is the wrong URL. */
   | 'unreachable'
   /** We had it and lost it. The backoff is running; this usually comes back. */
   | 'dropped'
@@ -33,7 +33,7 @@ export const INITIALLY: Availability = 'reaching'
  *
  * A fold rather than a mapping, because no single status carries the answer.
  * `offline` is "we cannot find it" the first time and "we lost it" afterwards,
- * and `connecting` is not news at all — it is the backoff opening yet another
+ * and `connecting` is not news at all: it is the backoff opening yet another
  * socket, which says nothing new about the station and must not change what the
  * listener is being told. Map each status on its own and a page waiting out a
  * dead server alternates between "no signal" and "tuning in…" forever, once per
@@ -42,7 +42,7 @@ export const INITIALLY: Availability = 'reaching'
 /**
  * What the page should actually say, once the broadcast is folded in.
  *
- * `Availability` is about the *socket* — can this page reach the station. That
+ * `Availability` is about the *socket*: can this page reach the station. That
  * is only half the question. A station that answers perfectly well and is not
  * broadcasting tonight is a third thing, and telling somebody to check their
  * connection about it would be a lie.
@@ -55,7 +55,7 @@ export type Standing = Availability | 'off-air'
 
 /**
  * @param live What the station last said about itself, or null before it has
- *   said anything. Null reads as on air — the `air` frame arrives first of all
+ *   said anything. Null reads as on air, since the `air` frame arrives first of all
  *   on connect, so the gap is a few milliseconds, and guessing "off" would
  *   flash "off the air tonight" at the start of every healthy page load.
  */
@@ -108,7 +108,7 @@ export interface Outage {
  *
  * Null while reaching, on purpose. The first attempt takes a few hundred
  * milliseconds on a healthy station, and a page that announced a problem for
- * that long every time it loaded would be crying wolf — the header already says
+ * that long every time it loaded would be crying wolf. The header already says
  * "tuning in…", which is the honest amount of noise to make about it.
  *
  * Every message ends by saying the page retries on its own, because it does,
@@ -118,28 +118,28 @@ export interface Outage {
 export function outage(state: Standing): Outage | null {
   switch (state) {
     case 'off-air':
-      // Not an outage in the sense the other two are — nothing is broken, and
+      // Not an outage in the sense the other two are: nothing is broken, and
       // there is nothing to retry. The page is right, the room is just closed.
       // It still belongs here because it is the same screen: no music, and
       // nothing on the page that came from a station.
       return {
         headline: 'chunky.fm is off the air',
         detail:
-          'Nobody is on the decks tonight. This page stays connected — leave it ' +
+          'Nobody is on the decks tonight. This page stays connected, so leave it ' +
           'open and the music starts the moment somebody goes live.',
       }
     case 'unreachable':
       return {
         headline: 'Can’t find the station',
         detail:
-          'Nothing is answering at the station right now. This page keeps trying — ' +
+          'Nothing is answering at the station right now. This page keeps trying, so ' +
           'leave it open and it will tune itself in the moment the station is back.',
       }
     case 'dropped':
       return {
         headline: 'Lost the station',
         detail:
-          'The connection dropped. This page keeps trying — leave it open and the ' +
+          'The connection dropped. This page keeps trying, so leave it open and the ' +
           'music picks back up on its own.',
       }
     default:
@@ -151,7 +151,7 @@ export function outage(state: Standing): Outage | null {
  * The line to run above a page that still has something on it.
  *
  * A short outage is the common one, and the audio usually plays straight
- * through it out of the buffer — so the page keeps showing what is on rather
+ * through it out of the buffer, so the page keeps showing what is on rather
  * than blanking a track the listener can still hear. What it must not do is
  * keep presenting that as live: the roster, the tally and the clock all stopped
  * at the drop, and this line is what says so.
@@ -159,9 +159,9 @@ export function outage(state: Standing): Outage | null {
 export function staleNotice(state: Standing): string | null {
   switch (state) {
     case 'unreachable':
-      return 'No signal — trying to reach the station. Nothing here is up to date.'
+      return 'No signal. Trying to reach the station. Nothing here is up to date.'
     case 'dropped':
-      return 'Reconnecting — what is on screen is from before the station dropped.'
+      return 'Reconnecting. What is on screen is from before the station dropped.'
     default:
       return null
   }

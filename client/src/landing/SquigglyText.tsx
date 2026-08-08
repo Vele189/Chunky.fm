@@ -8,7 +8,7 @@ import { useOnScreen } from './useOnScreen.js'
  * (<https://ui.aceternity.com/components/squiggly-text>), which is Lucas
  * Bebber's trick: a handful of SVG filters, each one `feTurbulence` noise fed
  * into an `feDisplacementMap`, cycled fast enough that the letters appear to
- * wriggle. Nothing moves — it is five stills shown in turn.
+ * wriggle. Nothing moves; it is five stills shown in turn.
  *
  * Two departures, both about not spending frames this page has other plans for:
  *
@@ -18,7 +18,7 @@ import { useOnScreen } from './useOnScreen.js'
  *    the step duration writes the same filter at the same moments and costs
  *    a twentieth of that.
  *  - **It stops when nobody is looking.** Off screen it was still swapping
- *    filters — and an SVG filter swap re-rasterises the text it is applied to,
+ *    filters, and an SVG filter swap re-rasterises the text it is applied to,
  *    which is not free. Same `useOnScreen` the gramophone and the globe use.
  *
  * And it does not run at all for anyone who has asked their machine not to
@@ -85,7 +85,7 @@ export function SquigglyText({
     <span className={`squiggly ${className}`} ref={word}>
       {/* No `<title>`: this svg is a bag of filter definitions, not a picture.
           A title here is read as part of the sentence by anything taking the
-          element's text — `Music is Displacement filtersinfinite now.` — and
+          element's text (`Music is Displacement filtersinfinite now.`) and
           `aria-hidden` already keeps it away from anything that would announce
           it. */}
       <svg className="squiggly__filters" aria-hidden="true" focusable="false">

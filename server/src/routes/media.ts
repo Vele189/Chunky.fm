@@ -24,7 +24,7 @@ export function mediaRoutes({ config, db }: MediaDeps): FastifyPluginAsync {
 
     // The whole of this plugin, not route by route: the library listing, the
     // audio and the artwork are the station, and on a private one none of the
-    // three is public. An open station admits everyone here — see mayListen.
+    // three is public. An open station admits everyone here; see mayListen.
     app.addHook('onRequest', requireListener(config))
 
     app.get('/api/tracks', async () => ({

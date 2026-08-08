@@ -7,7 +7,7 @@ import { type CSSProperties, memo, useEffect, useMemo, useRef, useState } from '
  * A port of Aceternity UI's Text Flipping Board
  * (<https://ui.aceternity.com/components/text-flipping-board>). The mechanism is
  * the original's exactly: every cell is two static halves with the character on
- * them, and a flip is two more halves on top — the old character's top half
+ * them, and a flip is two more halves on top: the old character's top half
  * falling forward on `rotateX`, the new one's bottom half swinging up to meet
  * it. Changing a cell runs it through twenty-five to forty random characters
  * first, each a flip of its own, and the delay before a cell starts is its
@@ -27,7 +27,7 @@ import { type CSSProperties, memo, useEffect, useMemo, useRef, useState } from '
  *  - **The board is a picture of the words, not the words.** Every cell is a
  *    `div` with one letter in it, which is a way of spelling something that only
  *    works by eye. The board is `aria-hidden` and whatever is put on it should
- *    be somewhere in the document as a sentence — see `Limits`.
+ *    be somewhere in the document as a sentence. See `Limits`.
  *
  * The size is fixed in cells rather than in pixels: the flaps are square-ish and
  * the grid gives them the width it has, so the board is the same board on a
@@ -40,27 +40,32 @@ const FLAPS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$()-+&=;:'\"%,./?°"
 /**
  * The characters the page is written in, and the ones a board can spell.
  *
- * Everything else on this site is set with proper typography — curly quotes, em
- * dashes, a real ellipsis — because it is type. A split-flap board is not type:
- * it is a physical thing with a fixed set of flaps on it, and the set above is
- * the one the original ships. A curly apostrophe is not on it, so `what’s` was
- * landing on the board as `WHAT S` with a hole where the flap could not turn.
+ * Everything else on this site is set with proper typography: curly quotes and
+ * a real ellipsis, because it is type. A split-flap board is not type. It is a
+ * physical thing with a fixed set of flaps on it, and the set above is the one
+ * the original ships. A curly apostrophe is not on it, so `what’s` was landing
+ * on the board as `WHAT S` with a hole where the flap could not turn.
  *
  * Mapped rather than added to `FLAPS`, because a board that could spell a curly
  * apostrophe would be a board pretending to be a font. This is what a real one
  * does with a character it does not have: turn up the nearest flap it owns.
+ *
+ * The two dashes are written as escapes rather than as themselves, so that the
+ * one character this site is deliberately written without does not sit in a
+ * source file. They stay in the table because text handed to the board is not
+ * this file's to vouch for, and a flap that cannot turn is worse than a hyphen.
  */
 const PLAIN: Record<string, string> = {
   '’': "'",
   '‘': "'",
   '“': '"',
   '”': '"',
-  '—': '-',
-  '–': '-',
+  '\u2014': '-',
+  '\u2013': '-',
   '…': '.',
 }
 
-const flatten = (text: string) => text.replace(/[’‘“”—–…]/g, (mark) => PLAIN[mark] ?? mark)
+const flatten = (text: string) => text.replace(/[’‘“”\u2014\u2013…]/g, (mark) => PLAIN[mark] ?? mark)
 
 /** The original's timings, in milliseconds and seconds respectively. */
 const COL_DELAY = 30
@@ -78,7 +83,7 @@ export interface FlipBoardProps {
   text: string
   rows?: number
   cols?: number
-  /** False parks the board — see the note above about eighty-eight timers. */
+  /** False parks the board. See the note above about eighty-eight timers. */
   running?: boolean
   className?: string
 }
@@ -159,7 +164,7 @@ const Flap = memo(function Flap({
   const [shown, setShown] = useState(' ')
   const [before, setBefore] = useState(' ')
   // Bumped on every step, and used as the key that restarts the two flapping
-  // halves — a flip is a fresh element rather than an animation replayed.
+  // halves: a flip is a fresh element rather than an animation replayed.
   const [flip, setFlip] = useState(0)
 
   const at = useRef(' ')
@@ -177,8 +182,8 @@ const Flap = memo(function Flap({
     /*
      * Asked not to animate, a cell simply reads what it reads.
      *
-     * The board still turns over — a board that stopped would be six statements
-     * of which a reader saw one — but there is no scramble and nothing swings:
+     * The board still turns over, since a board that stopped would be six
+     * statements of which a reader saw one, but there is no scramble and nothing swings:
      * the words change, which is the content doing what content does, and the
      * forty flips it took to say them were the part that was motion.
      */

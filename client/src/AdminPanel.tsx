@@ -15,11 +15,14 @@ import { AdminError, type AdminApi, type PlaybackCommand, type WishBook } from '
 import { formatTime } from './lib/chat.js'
 import { expectedPositionSeconds, formatClock } from './lib/position.js'
 import { inviteLink } from './lib/invite.js'
+import { fromLocalInput, nextSessionLabel, toLocalInput } from './lib/schedule.js'
+import { posterUrl } from './lib/protocol.js'
 import type {
   AirSnapshot,
   ChatMessage,
   PlaybackSnapshot,
   QueueEntry,
+  ScheduledSession,
   StateMessage,
   Track,
 } from './lib/protocol.js'
@@ -27,23 +30,28 @@ import type { AdminSession } from './hooks/useAdminSession.js'
 import type { StationStatus } from './lib/station.js'
 
 export interface AdminPanelProps {
-  /** The station's own broadcast — the panel never keeps its own copy. */
+  /** The station's own broadcast; the panel never keeps its own copy. */
   state: StateMessage | null
   /**
    * Whether the station is on air. Null until the first frame arrives.
    *
    * The one piece of state on this panel that is not about *what* is playing
-   * but about whether there is a broadcast at all — PLAN.md's "you go live, you
+   * but about whether there is a broadcast at all: PLAN.md's "you go live, you
    * end it". Ending it clears the decks and the queue and closes the room, so
    * the control for it is deliberately away from the transport buttons.
    */
   air: AirSnapshot | null
+  /**
+   * The next session, announced, or null when nothing is. The one thing on this
+   * panel that outlives the session it is set during: see `ScheduleCard`.
+   */
+  schedule: ScheduledSession | null
   queue: QueueEntry[] | null
-  /** The room talking, read-only — the console is not in the room. */
+  /** The room talking, read-only; the console is not in the room. */
   messages: ChatMessage[]
   /**
    * The station's clock, for the scrub bar. The console reads a position out of
-   * `startedAt`, which is a point on the *server's* clock — subtracting this
+   * `startedAt`, which is a point on the *server's* clock, so subtracting this
    * browser's `Date.now()` from it would put the needle wherever the two
    * machines happen to disagree.
    */
@@ -59,13 +67,14 @@ export interface AdminPanelProps {
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
   applyAir(snapshot: AirSnapshot): void
+  applySchedule(next: ScheduledSession | null): void
 }
 
 /**
  * The decks, for whoever runs the station.
  *
  * Reachable only at #admin and only once the server has accepted a session, so
- * the listener page ships no controls — though the gate that matters is the one
+ * the listener page ships no controls, though the gate that matters is the one
  * on the server, since a hidden button is not a permission.
  *
  * Nothing here holds playback or queue state: both arrive over the websocket
@@ -75,6 +84,7 @@ export interface AdminPanelProps {
 export function AdminPanel({
   state,
   air,
+  schedule,
   queue,
   messages,
   serverNow,
@@ -83,6 +93,7 @@ export function AdminPanel({
   applyState,
   applyQueue,
   applyAir,
+  applySchedule,
 }: AdminPanelProps) {
   const { status: signedIn, api, error: sessionError, signIn, signOut } = session
 
@@ -103,6 +114,7 @@ export function AdminPanel({
       api={api}
       state={state}
       air={air}
+      schedule={schedule}
       queue={queue}
       messages={messages}
       serverNow={serverNow}
@@ -110,6 +122,7 @@ export function AdminPanel({
       applyState={applyState}
       applyQueue={applyQueue}
       applyAir={applyAir}
+      applySchedule={applySchedule}
       onSignOut={signOut}
     />
   )
@@ -121,7 +134,7 @@ export function AdminPanel({
  * Deliberately the whole console until it is answered: there is nothing behind
  * it worth showing in outline, and a greyed-out set of controls would only
  * suggest the password was the last thing standing between a stranger and the
- * decks. It is not — the server refuses every one of these calls without a
+ * decks. It is not: the server refuses every one of these calls without a
  * session, whatever this page renders.
  */
 function SignIn({
@@ -147,7 +160,7 @@ function SignIn({
       <div className="gate">
         <h1 className="console__title">Broadcast Console</h1>
         <p className="console__blurb">
-          Whoever runs the decks, this is the way in. Not the door code — this is
+          Whoever runs the decks, this is the way in. Not the door code; this is
           the other one.
         </p>
         <form className="gate__form" onSubmit={submit}>
@@ -181,6 +194,7 @@ interface ControlsProps {
   api: AdminApi
   state: StateMessage | null
   air: AirSnapshot | null
+  schedule: ScheduledSession | null
   queue: QueueEntry[] | null
   messages: ChatMessage[]
   serverNow(): number
@@ -188,6 +202,7 @@ interface ControlsProps {
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
   applyAir(snapshot: AirSnapshot): void
+  applySchedule(next: ScheduledSession | null): void
   onSignOut: () => void
 }
 
@@ -195,6 +210,7 @@ function Controls({
   api,
   state,
   air,
+  schedule,
   queue,
   messages,
   serverNow,
@@ -202,6 +218,7 @@ function Controls({
   applyState,
   applyQueue,
   applyAir,
+  applySchedule,
   onSignOut,
 }: ControlsProps) {
   const [tracks, setTracks] = useState<Track[]>([])
@@ -210,7 +227,7 @@ function Controls({
   const [busy, setBusy] = useState(false)
   const [uploads, setUploads] = useState<{ id: number; line: string }[]>([])
   // Held here rather than arriving on the socket: who has been muted is
-  // admin-only, so it is never broadcast — see routes/mutes.ts.
+  // admin-only, so it is never broadcast. See routes/mutes.ts.
   const [muted, setMuted] = useState<string[]>([])
 
   const refreshLibrary = useCallback(async () => {
@@ -226,7 +243,7 @@ function Controls({
   }, [refreshLibrary])
 
   // Once, on open. A mute only changes because somebody on this panel changed
-  // it, and the answer to that request carries the new list — so there is
+  // it, and the answer to that request carries the new list, so there is
   // nothing for a poll to discover.
   useEffect(() => {
     void (async () => {
@@ -243,7 +260,7 @@ function Controls({
   /**
    * Not through `run`: this fires on a timer, and a poll that set `busy` would
    * flicker every control on the panel twice a minute. A lapsed session still
-   * has to end the same way it does everywhere else, though — the poll is the
+   * has to end the same way it does everywhere else, though: the poll is the
    * one request here that happens without the admin touching anything, so it is
    * also the first thing to notice.
    */
@@ -258,7 +275,7 @@ function Controls({
 
   /**
    * Polled, because a wish arrives over a socket that carries no privileged
-   * frames — the gate is on HTTP, and the station deliberately tells a socket
+   * frames: the gate is on HTTP, and the station deliberately tells a socket
    * holding an admin cookie nothing it would not tell a stranger. So the panel
    * asks, rather than the station pushing. Ten seconds is well inside how long
    * a track lasts, which is the pace anyone is actually working at.
@@ -271,7 +288,7 @@ function Controls({
 
   /**
    * Every control goes through here. A 401 means the session stopped being
-   * accepted — it lapsed, or the server restarted with a different password —
+   * accepted (it lapsed, or the server restarted with a different password),
    * and the only honest response is to put the sign-in form back rather than
    * let the admin keep pressing buttons that quietly do nothing.
    */
@@ -325,10 +342,10 @@ function Controls({
       for (const file of files) {
         try {
           const { track: uploaded, duplicate } = await api.upload(file)
-          report(`${uploaded.title} — ${duplicate ? 'already in the library' : 'uploaded'}`)
+          report(`${uploaded.title}: ${duplicate ? 'already in the library' : 'uploaded'}`)
         } catch (err) {
           if (err instanceof AdminError && err.unauthorized) return onSignOut()
-          report(`${file.name} — ${err instanceof Error ? err.message : 'failed'}`)
+          report(`${file.name}: ${err instanceof Error ? err.message : 'failed'}`)
         }
       }
       await refreshLibrary()
@@ -365,11 +382,11 @@ function Controls({
       )}
 
       {/* Commands go over HTTP and still land while the socket is down, but
-          what the panel shows arrives on the socket — so say so rather than
+          what the panel shows arrives on the socket, so say so rather than
           quietly showing a queue that may have moved on. */}
       {!connected && (
         <p className="console__note" data-testid="admin-offline">
-          reconnecting — what's shown here may be out of date
+          reconnecting; what's shown here may be out of date
         </p>
       )}
 
@@ -405,6 +422,18 @@ function Controls({
             onQueue={(id) => queueAction(() => api.enqueue(id))}
             onPlay={(id) => command({ action: 'play', trackId: id })}
           />
+          {/* Last, and deliberately. Everything above it drives a broadcast
+              that is happening or is about to; this is about a night that has
+              not, and it is the one thing on the panel nobody needs to reach
+              during a set. */}
+          <ScheduleCard
+            schedule={schedule}
+            busy={busy}
+            onAnnounce={(startsAt, poster) =>
+              run(async () => applySchedule(await api.announce(startsAt, poster)))
+            }
+            onTakeDown={() => run(async () => applySchedule(await api.unannounce()))}
+          />
         </div>
 
         <CommentsCard messages={messages} muted={muted} busy={busy} onMute={mute} />
@@ -413,12 +442,181 @@ function Controls({
   )
 }
 
+
+/**
+ * The next session, announced before it happens.
+ *
+ * The one control on this panel that is not about tonight. Everything else here
+ * drives a broadcast that is happening or is about to; this writes down a night
+ * that has not, and it survives the session it was set during, because the
+ * moment it becomes worth reading is usually the moment the broadcast ends.
+ *
+ * **It starts nothing.** The time is a promise to whoever reads it. Going on
+ * air is still the button above, which is PLAN.md's decision and not this
+ * card's to take back: a clock that opened the station by itself would do it
+ * into an empty queue and an empty room more often than not.
+ *
+ * The poster is optional and separate from the time in the one way that
+ * matters: leaving the file alone and changing the hour keeps the picture. An
+ * admin moving a session by an hour from a phone should not have to find the
+ * image again.
+ */
+function ScheduleCard({
+  schedule,
+  busy,
+  onAnnounce,
+  onTakeDown,
+}: {
+  schedule: ScheduledSession | null
+  busy: boolean
+  onAnnounce(startsAt: number, poster: File | null): void
+  onTakeDown(): void
+}) {
+  // Seeded from what is announced, and re-seeded when that changes underneath,
+  // so a second tab setting a time does not leave this field lying about it.
+  const [when, setWhen] = useState(() => (schedule ? toLocalInput(schedule.startsAt) : ''))
+  const [poster, setPoster] = useState<File | null>(null)
+  const [over, setOver] = useState(false)
+  const announced = schedule?.startsAt ?? null
+  useEffect(() => {
+    setWhen(announced === null ? '' : toLocalInput(announced))
+    setPoster(null)
+  }, [announced])
+
+  // What a picked file looks like, before it has been anywhere. Revoked on the
+  // way out: an object URL pins the file in memory until it is let go, and an
+  // admin trying three posters would pin all three.
+  const [preview, setPreview] = useState<string | null>(null)
+  useEffect(() => {
+    if (!poster) return setPreview(null)
+    const url = URL.createObjectURL(poster)
+    setPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [poster])
+
+  const startsAt = fromLocalInput(when)
+  // The picked file wins over what is up: it is what pressing Update will
+  // announce, and showing the old one there would be the panel arguing with
+  // the button under it.
+  const shown = preview ?? posterUrl(schedule)
+
+  return (
+    <section className="card">
+      <header className="card__head">
+        <h2 className="card__title">Next session</h2>
+        {schedule && (
+          <button
+            type="button"
+            className="card__more"
+            disabled={busy}
+            onClick={onTakeDown}
+            data-testid="schedule-clear"
+          >
+            Take down
+          </button>
+        )}
+      </header>
+
+      <form
+        className="schedule__form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (startsAt !== null) onAnnounce(startsAt, poster)
+        }}
+      >
+        {/* The poster is both the preview and the way to change it: the whole
+            rectangle is the target, the same way the upload zone above is, and
+            a picture that can be dropped on is more obviously replaceable than
+            a picture with a file input under it.
+
+            A label wrapping a real input rather than a div with a handler,
+            because that is what gives it a keyboard and a screen reader. */}
+        <label
+          className={`poster${over ? ' poster--over' : ''}${shown ? ' poster--set' : ''}`}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setOver(true)
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(event) => {
+            event.preventDefault()
+            setOver(false)
+            // Images only, and quietly: a dragged folder or a stray mp3 is a
+            // slip, not something worth an error about a file nobody meant.
+            const picked = [...event.dataTransfer.files].find((file) =>
+              file.type.startsWith('image/'),
+            )
+            if (picked) setPoster(picked)
+          }}
+        >
+          {shown ? (
+            <img className="poster__art" src={shown} alt="" />
+          ) : (
+            <span className="poster__badge" aria-hidden="true">
+              <img src={uploadIcon} alt="" width={22} height={22} />
+            </span>
+          )}
+          <span className="poster__hint">
+            {poster
+              ? `${poster.name}. Press ${schedule ? 'Update' : 'Announce'} to put it up.`
+              : shown
+                ? 'Drop a new poster, or click to replace'
+                : 'Drop a poster here, or click to browse'}
+          </span>
+          {/* Said once, here, rather than discovered from a 415 after the
+              upload. 1080x1350 is Instagram's portrait post, which is the shape
+              whoever runs the decks already has one in. */}
+          <span className="poster__spec">1080&times;1350 reads best. Under 8 MB.</span>
+          <input
+            type="file"
+            className="dropzone__input"
+            accept="image/jpeg,image/png,image/webp"
+            // Named explicitly, or it inherits the whole of the label's copy as
+            // its accessible name.
+            aria-label="Choose a poster"
+            data-testid="schedule-poster"
+            onChange={(event) => {
+              const picked = event.target.files?.[0] ?? null
+              event.target.value = '' // so the same file can be picked twice
+              setPoster(picked)
+            }}
+          />
+        </label>
+
+        <label className="schedule__field">
+          <span className="schedule__label">When</span>
+          <input
+            type="datetime-local"
+            className="gate__input"
+            value={when}
+            onChange={(event) => setWhen(event.target.value)}
+            data-testid="schedule-when"
+          />
+        </label>
+
+        <button type="submit" className="button" disabled={busy || startsAt === null}>
+          {schedule ? 'Update' : 'Announce'}
+        </button>
+
+        {/* The sentence a listener will actually read, checked against the
+            field rather than against what was saved: the point of showing it is
+            to catch a date typed as next year before it is announced. */}
+        {startsAt !== null && (
+          <p className="schedule__preview" data-testid="schedule-preview">
+            Listeners see: <strong>{nextSessionLabel(startsAt, Date.now())}</strong>
+          </p>
+        )}
+      </form>
+    </section>
+  )
+}
+
 /**
  * Going on air, and ending it. PLAN.md's availability decision, as one button.
  *
- * Ending a broadcast is the most destructive thing on this panel — it stops the
+ * Ending a broadcast is the most destructive thing on this panel: it stops the
  * music, empties the queue and closes the room, and the chat and the history go
- * with the session — so it asks first. Going live does not: it takes nothing
+ * with the session, so it asks first. Going live does not: it takes nothing
  * away, and an evening that starts a click sooner than intended is not a
  * problem the way one that ends early is.
  *
@@ -437,7 +635,7 @@ function OnAirSwitch({
 }) {
   const [confirming, setConfirming] = useState(false)
 
-  // Not yet known. See the note above — no guessing which way round it is.
+  // Not yet known. See the note above: no guessing which way round it is.
   if (air === null) {
     return (
       <button type="button" className="button button--quiet" disabled>
@@ -476,7 +674,7 @@ function OnAirSwitch({
             onSet('end')
           }}
         >
-          End it — clears the queue
+          End it (clears the queue)
         </button>
         <button
           type="button"
@@ -505,9 +703,9 @@ function OnAirSwitch({
 /**
  * The link to hand out.
  *
- * The one place an invite can come from. A listener's browser cannot build one
- * — the cookie is HttpOnly and the key was taken out of the address bar when
- * they arrived — so being invited means somebody with the password sent you a
+ * The one place an invite can come from. A listener's browser cannot build one:
+ * the cookie is HttpOnly and the key was taken out of the address bar when
+ * they arrived, so being invited means somebody with the password sent you a
  * link, which is the whole point of the station key.
  *
  * The link is always shown, not only copied. Sharing and clipboard access both
@@ -527,7 +725,7 @@ function ShareInvite({ api }: { api: AdminApi }) {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2_000)
     } catch {
-      // No clipboard here — an insecure origin, or permission refused. The link
+      // No clipboard here: an insecure origin, or permission refused. The link
       // is on screen either way, which is the fallback that always works.
       setCopied(false)
     }
@@ -541,7 +739,7 @@ function ShareInvite({ api }: { api: AdminApi }) {
       setKey(invite.key)
       setLink(url)
 
-      // The native sheet where there is one — on a phone this is the whole
+      // The native sheet where there is one: on a phone this is the whole
       // gesture. A cancelled share is a decision, not a failure, so it does not
       // fall through to the clipboard.
       if (navigator.share) {
@@ -585,7 +783,7 @@ function ShareInvite({ api }: { api: AdminApi }) {
       {link !== null && (
         <p className="invite__note">
           {key === null
-            ? 'The station is open — anyone with this address can listen. Set STATION_KEY to change that.'
+            ? 'The station is open. Anyone with this address can listen. Set STATION_KEY to change that.'
             : 'This link carries the station key. Rotating STATION_KEY ends every link already sent.'}
         </p>
       )}
@@ -627,7 +825,7 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => Promise<void> }) {
         <img src={uploadIcon} alt="" width={24} height={24} />
       </span>
       <span className="dropzone__headline">Drop MP3 files here</span>
-      <span className="dropzone__detail">or click to browse — files are added to the queue</span>
+      <span className="dropzone__detail">or click to browse. Files are added to the queue</span>
       <input
         type="file"
         className="dropzone__input"
@@ -635,7 +833,7 @@ function DropZone({ onFiles }: { onFiles: (files: File[]) => Promise<void> }) {
         multiple
         data-testid="admin-upload"
         // Named explicitly, or it inherits the whole of the label's copy as its
-        // accessible name — which is a paragraph to read out before you can
+        // accessible name, which is a paragraph to read out before you can
         // pick a file, and a name that collides with every other control on the
         // page whose label happens to contain one of those words.
         aria-label="Choose audio files"
@@ -688,7 +886,7 @@ function QueueCard({
   const [over, setOver] = useState<number | null>(null)
 
   // Where the needle is, worked out from the station's tuple rather than from
-  // any audio element — the console is not playing anything.
+  // any audio element: the console is not playing anything.
   const [position, setPosition] = useState(0)
   // What the admin is dragging the scrub bar to, before they let go. Null when
   // nobody is holding it, which is when the ticker below owns the value.
@@ -706,7 +904,7 @@ function QueueCard({
 
   const duration = track?.durationMs ?? 0
   // While the admin is holding the bar, what they are holding it at wins over
-  // the ticker — otherwise every tick would drag the needle back under them.
+  // the ticker; otherwise every tick would drag the needle back under them.
   const shown = scrubbing ?? position
 
   // Every command here moves everyone in the room, so they are not sent per
@@ -740,7 +938,7 @@ function QueueCard({
     dragging.current = null
     setOver(null)
     if (id === null) return
-    // The server addresses entries by id and clamps the index it is given —
+    // The server addresses entries by id and clamps the index it is given,
     // which is what makes this safe against a queue that advanced mid-drag.
     void queueAction(() => api.move(id, index))
   }
@@ -806,7 +1004,7 @@ function QueueCard({
 
       {/* PLAN.md's last unbuilt transport control. A range input rather than a
           bar with a pointer handler, because that is what gives it arrow keys,
-          Home and End, and a value a screen reader can read out — and because
+          Home and End, and a value a screen reader can read out, and because
           the station takes a position in milliseconds either way.
 
           The command goes on release, not on every frame of the drag: each one
@@ -826,7 +1024,7 @@ function QueueCard({
             disabled={busy}
             aria-label={`Seek within ${track.title}`}
             onChange={(event) => scrubTo(Number(event.target.value))}
-            // A release is a decision — no reason to make it wait out the idle
+            // A release is a decision: no reason to make it wait out the idle
             // timer that keyboard runs need.
             onPointerUp={(event) => commit(Number(event.currentTarget.value))}
           />
@@ -1041,7 +1239,7 @@ function LibraryCard({
  * Read-only, and not because the design left the composer out: the console
  * never tunes in, so it is not in the room, and the station would refuse a
  * message from it. Whoever is running the decks and wants to say something
- * opens the listener page — which is one press of the chip in the top bar.
+ * opens the listener page, which is one press of the chip in the top bar.
  */
 function CommentsCard({
   messages,
@@ -1131,7 +1329,7 @@ function CommentsCard({
 }
 
 /**
- * A stable hue in [0, 360) for a nickname — the same derivation the listener
+ * A stable hue in [0, 360) for a nickname: the same derivation the listener
  * page uses, so a listener is the same colour on both sides of the station.
  */
 function hueFor(nickname: string): number {

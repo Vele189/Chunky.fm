@@ -1,7 +1,7 @@
 /**
  * Properties that have to hold while the station moves underneath a request.
  *
- * Nothing here tests a single call in isolation — the point is the seam: a
+ * Nothing here tests a single call in isolation. The point is the seam: a
  * queue reordered while a track ends, a session checked on the millisecond it
  * lapses, an upload that failed halfway. That seam is where this project's
  * bugs have actually been (see docs/qa-notes.md), and it is invisible to tests
@@ -99,15 +99,19 @@ describe('the socket, over a real connection', () => {
     await harness.cleanup()
   })
 
-  it('opens with the whole room — air, state, queue, roster, history, chat', async () => {
+  it('opens with the whole room: air, schedule, state, queue, roster, history, chat', async () => {
     for (let i = 0; i < 5; i++) {
       const client = await TestClient.connect(harness.wsUrl)
-      await client.nextChat() // the last of the six
+      await client.nextChat() // the last of the seven
       expect(client.seen.map((m) => m.type)).toEqual([
         // First, and deliberately: whether there is a broadcast at all comes
         // before what is on it. A page told the decks are empty without being
         // told the station is off air shows a gap between songs that never ends.
         'air',
+        // And straight after it, when the station is next on: the two are one
+        // sentence on the off-air screen, so they arrive together or the page
+        // draws "off the air" and replaces it a frame later.
+        'schedule',
         'state',
         'queue',
         'presence',
@@ -129,14 +133,14 @@ describe('the socket, over a real connection', () => {
 
     expect(pong.t0).toBe(t0)
     // A pong drawn from a different timebase than startedAt would show up here
-    // as a wild gap — and downstream as every listener aligning to the wrong
+    // as a wild gap, and downstream as every listener aligning to the wrong
     // instant, which is the one thing this project cannot get wrong.
     expect(pong.t1).toBeGreaterThanOrEqual(state.serverTime)
     expect(pong.t1 - state.serverTime).toBeLessThan(5_000)
     await client.close()
   })
 
-  it('echoes a fractional t0 exactly — the client matches probes by that number', async () => {
+  it('echoes a fractional t0 exactly: the client matches probes by that number', async () => {
     const client = await TestClient.connect(harness.wsUrl)
     const t0 = Date.now() + 0.001
     client.send({ type: 'ping', t0 })
@@ -301,7 +305,7 @@ describe('the queue keeps its promises while the station moves', () => {
       headers: admin(),
       payload: { entryId: ids[3], toIndex: 0 },
     })
-    harness.station.advance() // takes ids[3] — the one just moved to the front
+    harness.station.advance() // takes ids[3]: the one just moved to the front
 
     const listed = (await harness.app.inject({ method: 'GET', url: '/api/queue' })).json()
     expect(listed.entries.map((e: { id: number }) => e.id)).toEqual([ids[0], ids[1], ids[2]])

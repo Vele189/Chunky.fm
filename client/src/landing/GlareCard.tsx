@@ -6,9 +6,9 @@ import { type CSSProperties, type PointerEvent, type ReactNode, useRef } from 'r
  * A port of Aceternity UI's Glare Card
  * (<https://ui.aceternity.com/components/glare-card>), which arrives via
  * `npx shadcn add` into a Tailwind + shadcn project. This is neither, so the
- * whole effect is kept — the pointer-driven tilt, the white glare that follows
+ * whole effect is kept: the pointer-driven tilt, the white glare that follows
  * the cursor, and the rainbow foil under it with its four stacked gradients and
- * its blend modes — and the wall of Tailwind arbitrary values that expressed it
+ * its blend modes, and the wall of Tailwind arbitrary values that expressed it
  * is `.glare*` in landing.css instead.
  *
  * The effect is entirely CSS custom properties. Everything this component does
@@ -23,7 +23,7 @@ import { type CSSProperties, type PointerEvent, type ReactNode, useRef } from 'r
  *
  *  - **The radius is 18px, not 48px.** Everything on this site is drawn at
  *    14–22px, and a 48px corner on a 236px card is not a card, it is a lozenge.
- *  - **`--opacity` at rest is 0.** So is the original's — which matters more
+ *  - **`--opacity` at rest is 0.** So is the original's, which matters more
  *    here than there. `tokens.css` allows this design one accent (white) and one
  *    signal (red, meaning on the air right now); a rainbow is neither. Keeping
  *    it to a hover means the page a visitor reads is still monochrome, and the
@@ -70,7 +70,7 @@ export function GlareCard({ children, className = '' }: { children: ReactNode; c
       onPointerEnter={() => {
         inside.current = true
         // The card eases into place on the way in, and then follows the pointer
-        // with no easing at all — a transition still running while the cursor
+        // with no easing at all: a transition still running while the cursor
         // moves is a card that lags behind it.
         setTimeout(() => {
           if (inside.current) card.current?.style.setProperty('--duration', '0s')
@@ -117,7 +117,7 @@ const REST = {
  * swoosh that catches the light, `--rainbow` the spectrum it catches, `--diagonal`
  * the brushed sheen across it, and `--shade` the soft highlight under the
  * pointer. Inline rather than in the stylesheet because two of them are data
- * URIs and one is a seven-stop repeating gradient — in CSS they would be one
+ * URIs and one is a seven-stop repeating gradient, and in CSS they would be one
  * unreadable line each, and here they are at least labelled.
  */
 const FOIL = {

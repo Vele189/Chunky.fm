@@ -109,7 +109,7 @@ describe('TrackQueue change events', () => {
     queue.move(entry.id, 1)
     queue.remove(entry.id)
     queue.take()
-    queue.clear() // already empty — not a change
+    queue.clear() // already empty, not a change
 
     expect(changes.map(titles)).toEqual([['A'], ['A', 'B'], ['B', 'A'], ['B'], []])
   })

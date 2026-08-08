@@ -1,8 +1,8 @@
 /**
  * The sleeves in the pile, from `assets-src/albums` into `src/assets/albums`.
  *
- * Square and small: a record sleeve is square and the scans are not — the Pink
- * Floyd one is 461x600 — so each is cropped to its most interesting region
+ * Square and small: a record sleeve is square and the scans are not (the Pink
+ * Floyd one is 461x600) so each is cropped to its most interesting region
  * rather than squashed into shape. WebP at 640 is more than the 236px the
  * largest card is ever drawn at, twice over for a retina panel, and lands each
  * one between 25 and 70 KB.

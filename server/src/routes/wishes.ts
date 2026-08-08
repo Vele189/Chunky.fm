@@ -28,8 +28,8 @@ const STATUS_SCHEMA = {
  * The wish book, for whoever runs the decks.
  *
  * The one read in this API that is *not* open. Everything else a listener could
- * ask for over HTTP they are already sent over the socket — the queue, the
- * decks, the roster — so gating those would protect nothing. Wishes are the
+ * ask for over HTTP they are already sent over the socket (the queue, the
+ * decks, the roster), so gating those would protect nothing. Wishes are the
  * exception because they were never broadcast: a wish goes to the admin and
  * back to the listener who made it, and a public list of them would turn asking
  * for a song into asking in front of the room.

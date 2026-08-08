@@ -2,6 +2,7 @@ import type {
   AirSnapshot,
   PlaybackSnapshot,
   QueueEntry,
+  ScheduledSession,
   Track,
   Wish,
   WishStatus,
@@ -24,7 +25,7 @@ export interface PlaybackCommand {
 
 export interface UploadResult {
   track: Track
-  /** The file was already in the library — the same track, not a second copy. */
+  /** The file was already in the library: the same track, not a second copy. */
   duplicate: boolean
 }
 
@@ -51,7 +52,7 @@ export class AdminError extends Error {
     this.code = code
   }
 
-  /** The session is over — sign in again, don't retry. */
+  /** The session is over: sign in again, don't retry. */
   get unauthorized(): boolean {
     return this.status === 401
   }
@@ -61,10 +62,10 @@ export class AdminError extends Error {
  * What the station said, when it is something worth repeating to the admin.
  *
  * Every 4xx message in this API is written for whoever is holding it wrong and
- * says nothing private — that is the contract `lib/errors.ts` keeps, and why
+ * says nothing private; that is the contract `lib/errors.ts` keeps, and why
  * 5xx messages are replaced rather than repeated. So a refusal the station
- * wrote is shown as written, and anything else — a 500, a network failure, a
- * response that was not this API at all — is null for the caller to summarise.
+ * wrote is shown as written, and anything else (a 500, a network failure, a
+ * response that was not this API at all) is null for the caller to summarise.
  *
  * Without this, a throttled sign-in reads as "could not reach the station",
  * which sends the admin looking for a network problem that is not there.
@@ -78,7 +79,7 @@ export function refusalMessage(err: unknown): string | null {
 export interface AdminApiOptions {
   /** Injected in tests; the browser supplies the real one. */
   fetch?: typeof globalThis.fetch
-  /** Same origin by default — Vite proxies /api through to the server. */
+  /** Same origin by default: Vite proxies /api through to the server. */
   baseUrl?: string
 }
 
@@ -92,7 +93,7 @@ interface ErrorBody {
  *
  * The password is handed over once, at `signIn`, and exchanged for the signed
  * session cookie described in PLAN.md. Nothing here holds a secret afterwards:
- * the cookie is HttpOnly, so this code cannot read it even to send it — the
+ * the cookie is HttpOnly, so this code cannot read it even to send it. The
  * browser attaches it, and every method below is just a same-origin request.
  */
 export class AdminApi {
@@ -101,7 +102,7 @@ export class AdminApi {
 
   constructor({ fetch = globalThis.fetch, baseUrl = '' }: AdminApiOptions = {}) {
     // Bound: fetch called as a method of anything but window throws in browsers,
-    // the same way calling a stored setTimeout does — see lib/station.ts.
+    // the same way calling a stored setTimeout does. See lib/station.ts.
     this.#fetch = fetch.bind(globalThis)
     this.#baseUrl = baseUrl
   }
@@ -175,7 +176,31 @@ export class AdminApi {
     return { track: stored.track, duplicate: false }
   }
 
-  /** Answers with the state the command produced — a snapshot, not a frame. */
+  /**
+   * Announce the next session, or move the one already announced.
+   *
+   * One request carrying both, because a time with no poster and a poster with
+   * no time are half-announcements. Leaving `poster` out keeps whatever picture
+   * is already up, so changing the hour does not mean finding the image again;
+   * see the route, which is where that rule actually lives.
+   */
+  async announce(startsAt: number, poster?: File | null): Promise<ScheduledSession | null> {
+    const body = new FormData()
+    body.append('startsAt', String(startsAt))
+    if (poster) body.append('poster', poster, poster.name)
+
+    const response = await this.#request('PUT', '/api/schedule', { body })
+    if (!response.ok) throw await this.#toError(response)
+    return ((await response.json()) as { schedule: ScheduledSession | null }).schedule
+  }
+
+  /** Take the announcement down. The poster goes with it. */
+  async unannounce(): Promise<null> {
+    await this.#json<{ schedule: null }>('DELETE', '/api/schedule')
+    return null
+  }
+
+  /** Answers with the state the command produced: a snapshot, not a frame. */
   command(command: PlaybackCommand): Promise<PlaybackSnapshot> {
     return this.#json<PlaybackSnapshot>('POST', '/api/playback', command)
   }
@@ -196,7 +221,7 @@ export class AdminApi {
    * one row, so the panel responds to the click instead of waiting for a poll.
    *
    * Carries where the nickname now stands rather than "toggle", the same shape
-   * a re-join takes — two of these in a row leave one mute, so a retry after
+   * a re-join takes: two of these in a row leave one mute, so a retry after
    * a dropped response is safe.
    */
   async mute(nickname: string, muted: boolean): Promise<string[]> {
@@ -206,7 +231,7 @@ export class AdminApi {
   }
 
   /**
-   * Whether the station is on air. Open, unlike everything else on this class —
+   * Whether the station is on air. Open, unlike everything else on this class:
    * it is the first thing a listener's page needs, and it is not a secret.
    */
   air(): Promise<AirSnapshot> {
@@ -218,7 +243,7 @@ export class AdminApi {
    *
    * Both are idempotent at the station, so a double-click is not an error and
    * this needs no guard of its own. Ending a session clears the decks and the
-   * queue and closes the room — see `OnAir` on the server.
+   * queue and closes the room. See `OnAir` on the server.
    */
   session(action: 'start' | 'end'): Promise<AirSnapshot> {
     return this.#json<AirSnapshot>('POST', '/api/session', { action })
@@ -274,7 +299,7 @@ export class AdminApi {
   /**
    * Every request goes through here, so every request carries the cookie.
    * `same-origin` is fetch's default, but it is the whole authentication story
-   * now — spelling it out keeps it from being dropped by accident.
+   * now, and spelling it out keeps it from being dropped by accident.
    */
   #request(method: string, path: string, init: RequestInit = {}): Promise<Response> {
     return this.#fetch(`${this.#baseUrl}${path}`, { method, credentials: 'same-origin', ...init })
@@ -292,11 +317,11 @@ export class AdminApi {
     const message =
       typeof body.message === 'string' ? body.message : `request failed (${response.status})`
     // A 401 mid-session is the session ending, not a password being typed
-    // wrong — the panel signs out rather than showing this, but say it plainly.
+    // wrong. The panel signs out rather than showing this, but say it plainly.
     return new AdminError(
       response.status,
       code,
-      response.status === 401 ? 'session ended — sign in again' : message,
+      response.status === 401 ? 'session ended, sign in again' : message,
     )
   }
 }

@@ -12,23 +12,23 @@ In Docker, the whole station from one command:
 
 It writes a `.env` with a generated `ADMIN_PASSWORD` the first time, rebuilds
 whatever has changed since last time, and waits until the station answers before
-telling you where it is —
+telling you where it is:
 <http://localhost:18173/listen> to listen, `/listen#admin` to run it. The bare
 <http://localhost:18173> is the page describing the station; see [the landing
 page](#the-landing-page).
 
-The station **asks for a door code** before it will play anything, and out of
-the box **the same code opens the admin panel** — one code for both doors. It is
-baked into the server; `houseKey` in `server/src/config.ts` says how to read it
-back without it being written down anywhere.
-
-That default trades a real thing away: anybody you give the code to so they can
-listen can also upload, drive the decks and end the broadcast. For a room of
-friends that is the right trade. For anything else, set `ADMIN_PASSWORD` in
-`.env` and the two come apart with no other change — the door code stays what it
-was, and the decks get a password of their own. `STATION_KEY` replaces the door
-code; `STATION_OPEN=true` takes the door off altogether. See
+**Listening asks for nothing.** Anybody with the address can tune in: no code,
+no account, nothing to type. A door is one variable away if you want one, and
+the whole mechanism behind it is still there, but it is off by default, because
+a code somebody has to be told and then remember is the most expensive thing on
+the way in and most stations do not need it. See
 [`/api/listen`](#apilisten--who-may-hear-the-station).
+
+**The decks are guarded.** `ADMIN_PASSWORD` is what stands between a listener
+and uploading, driving the decks or ending the broadcast, and unset it falls
+back to a code baked into the server: `houseKey` in `server/src/config.ts` says
+how to read it back without it being written down anywhere. Anything reachable
+from the internet should set its own.
 
 ```bash
 ./start.sh --build    # the same, but pull fresh base images first
@@ -47,16 +47,16 @@ a container id.
 ### What is actually running
 
 Two containers, not three. chunky.fm's database is SQLite, opened in-process by
-the server through `better-sqlite3` — there is no database server to start, and
+the server through `better-sqlite3`, so there is no database server to start, and
 the thing a `db` container would own is a volume instead:
 
 | | |
 |---|---|
-| `server` | Fastify — API, `/ws`, and the SQLite file it opens directly. Always :3000 inside the network; published on `SERVER_PORT`. |
-| `web` | nginx serving the built client, proxying `/api` and `/ws` to `server` — the same job Vite's dev proxy does, so the client ships unchanged. |
+| `server` | Fastify: API, `/ws`, and the SQLite file it opens directly. Always :3000 inside the network; published on `SERVER_PORT`. |
+| `web` | nginx serving the built client, proxying `/api` and `/ws` to `server`, the same job Vite's dev proxy does, so the client ships unchanged. |
 | `chunky-fm_data` | The volume behind `AUDIO_STORAGE_DIR`: `chunky.sqlite`, audio, artwork. |
 
-Those three parts of the volume only mean anything together — the rows name
+Those three parts of the volume only mean anything together: the rows name
 files, so back it up whole:
 
 ```bash
@@ -69,7 +69,7 @@ library away: `docker compose down && docker volume rm chunky-fm_data`.
 
 ### Without Docker
 
-Two processes in development — the server, and Vite for the client:
+Two processes in development: the server, and Vite for the client:
 
 ```bash
 cd server && npm install && cp .env.example .env && npm run dev   # :3000
@@ -91,7 +91,7 @@ curl -H "Authorization: Bearer $ADMIN_PASSWORD" -H 'content-type: application/js
      -d '{"action":"play","trackId":1}' http://localhost:3000/api/playback
 ```
 
-Or queue tracks up and let the station run itself — the first one goes straight
+Or queue tracks up and let the station run itself. The first one goes straight
 on the decks, the rest follow as each track ends:
 
 ```bash
@@ -118,14 +118,14 @@ Everything the station owns lives under `AUDIO_STORAGE_DIR` (the Railway volume)
 
 ```
 audio_storage/
-  audio/            <sha256>.mp3     — the uploaded files, named by content hash
-  artwork/          <sha256>.jpg     — artwork extracted from tags
-  tmp/                               — in-flight uploads, cleaned on completion
+  audio/            <sha256>.mp3       the uploaded files, named by content hash
+  artwork/          <sha256>.jpg       artwork extracted from tags
+  tmp/                                 in-flight uploads, cleaned on completion
   chunky.sqlite
 ```
 
 The database holds `tracks` (the library), and `sessions` + `messages` +
-`wishes` + `plays` (the chat, the requests and what has been on — see below).
+`wishes` + `plays` (the chat, the requests and what has been on; see below).
 Playback, the queue, the roster and the skip tally are not in it: they are true
 only while the process (or the socket) is up, by design.
 
@@ -140,7 +140,7 @@ curl -H "Authorization: Bearer $ADMIN_PASSWORD" \
 ```
 
 The upload streams to `tmp/` first and is only moved into `audio/` once
-`music-metadata` confirms it is a container we can serve — so the declared
+`music-metadata` confirms it is a container we can serve, so the declared
 Content-Type is a hint, never the gate. Files are stored under their SHA-256,
 which makes re-uploading the same track a no-op rather than a second copy.
 
@@ -167,7 +167,7 @@ Range support is load-bearing: a listener joining at 2:14 has to fetch that byte
 range before it can play, and without it the browser pulls the file from 0:00
 first. URLs are content hashes, so responses are `immutable`.
 
-### `GET /ws` — the station clock
+### `GET /ws`: the station clock
 
 The server owns playback and holds it entirely in memory:
 
@@ -176,7 +176,7 @@ The server owns playback and holds it entirely in memory:
 ```
 
 Position is `pausedAt ?? (serverNow - startedAt)`. Nothing is streamed and there
-is no per-listener state — listeners are handed the tuple and align themselves
+is no per-listener state: listeners are handed the tuple and align themselves
 to it. Because `startedAt` is a point in the past, joining at 2:14 is the same
 code path as joining at 0:00.
 
@@ -195,12 +195,12 @@ code path as joining at 0:00.
 | `{ type: 'error', code, message, about? }` | Anything the socket refused; the connection stays open. |
 
 `code` is machine-readable and `message` is prose, the same split as the `error`
-field on every HTTP refusal — a client telling `slow_down` from `not_joined`
+field on every HTTP refusal, so a client telling `slow_down` from `not_joined`
 switches on the code rather than matching on English. The codes are
 `unrecognised_message`, `nickname_required`, `message_too_long`,
 `empty_message`, `command_over_http`, `not_joined`, `no_chat`, `wish_too_long`,
 `empty_wish`, `no_wishes`, `nothing_playing` and `slow_down`. `about` names the
-frame a refusal was for — `'join'`, `'say'`, `'wish'` or `'vote'` — and is absent
+frame a refusal was for (`'join'`, `'say'`, `'wish'` or `'vote'`) and is absent
 only when the frame was too malformed to say what it was trying to do; a page
 with two composers and a vote button needs it to put "not sent" under the right
 one.
@@ -238,36 +238,36 @@ make the station shout at the whole room.
 Browser clocks are wrong by seconds, so a client measures the offset NTP-style:
 send `t0`, receive `t1`, note `t2` on arrival, then
 `rtt = t2 - t0` and `offset = t1 - (t0 + rtt / 2)`. Run ~5 probes and keep **the
-sample with the lowest RTT** — the fastest round trip is the least contaminated
+sample with the lowest RTT**, because the fastest round trip is the least contaminated
 by queueing delay. `t1` and `startedAt` are stamped from the same server clock,
 so the measured offset applies directly.
 
 Connections are read-only: nothing anyone can send over the socket changes
-playback. That is also the socket's half of the admin gate — a socket
+playback. That is also the socket's half of the admin gate: a socket
 carrying a valid admin cookie gets no more than one carrying nothing, and frames
 that look like commands (`play`, `skip`, `enqueue`, …) are refused *by name*, so
 a client that tries is told where the controls actually are rather than left
 guessing. There is no privileged frame here to authenticate, because every
 mutation lives behind `requireAdmin` on an HTTP route.
 
-**Commands go over HTTP, not the socket** — deliberately. The socket carries
+**Commands go over HTTP, not the socket**, deliberately. The socket carries
 state outward, and inward only what has nowhere else to go: a clock probe, which
 is meaningless anywhere but on the connection it is measuring; a nickname, which
 lives exactly as long as the socket does; a chat message, which has to reach
 everyone in the room the moment it is sent; a wish, which has to be signed with
-the name its own socket is listed under — a `POST` would have to be told who was
+the name its own socket is listed under, and a `POST` would have to be told who was
 asking, and a request that names its own author can name someone else; and a
 skip vote, which is that same signature problem plus a tally that has to reach
 the room live. None of the five drives the station. An admin action wants
 exactly what HTTP already gives it: a request/response pair, a status code that
-says whether it worked, and — for upload — a body measured in megabytes. Adding
+says whether it worked, and, for upload, a body measured in megabytes. Adding
 a second, authenticated command channel over the socket would duplicate that
 surface and add an auth gate to get wrong, in exchange for nothing a `POST`
 doesn't already do. A socket that cannot mutate anything is a socket that cannot
 be abused into mutating something.
 
 So the loop is: admin `POST`s, the server changes its state, and the change goes
-out to every client — including the admin's own page — on the socket they all
+out to every client, including the admin's own page, on the socket they all
 already have open.
 
 ### Presence
@@ -277,14 +277,14 @@ whenever it changes. `listeners` is `[{id, nickname}]`, in join order.
 
 A socket is not a listener. A tab holds one open from the moment the page loads,
 which is before anyone has typed a name, so the roster is who has *said* who
-they are — `join` is what puts a listener on it, and the socket closing is what
+they are. `join` is what puts a listener on it, and the socket closing is what
 takes them off. There is no leave frame: closing is the only signal that also
 covers a tab closed, a laptop shut, and a network that simply stopped. A socket
 that vanishes without a close is dropped by the heartbeat, so a listener whose
 network died lingers for up to one heartbeat interval (30s) and no longer.
 
 The id is the socket's, which has two consequences worth knowing. Two listeners
-may pick the same nickname and are still two rows — the id is what keeps them
+may pick the same nickname and are still two rows: the id is what keeps them
 apart, and what a client should key its list on. And a listener who reconnects
 comes back as a new row rather than reclaiming the old one: identity that a
 client could assert is identity a client could assert about *someone else*, and
@@ -292,9 +292,9 @@ the roster is not worth an eviction primitive. Rosters go out whole rather than
 as joins and leaves, so a client renders the last frame and has nothing to
 reconcile.
 
-A `join` buys a row and nothing else. Nicknames are re-normalised server-side —
+A `join` buys a row and nothing else. Nicknames are re-normalised server-side:
 collapsed, stripped of control characters, capped at 24 characters, and refused
-when what's left is empty — because the client's own normalising is a courtesy
+when what's left is empty, because the client's own normalising is a courtesy
 to the listener, not a guarantee to the server. Re-sending the name a socket
 already has costs no broadcast; sending a different one is a rename, and keeps
 the listener's place in the list.
@@ -310,7 +310,7 @@ messages  (id, session_id, nick, text, created_at)
 
 A message is `{id, nickname, text, at}` on the wire, and frames carry a *batch*
 of them: the tail of the conversation on connect, and a batch of one for each
-new message. One frame type, one code path on the client — and because messages
+new message. One frame type, one code path on the client, and because messages
 carry ids, a client that merges on id gets two properties for free. A reconnect
 replays history without duplicating a line, and whatever was said while it was
 away arrives in that replay instead of being a hole in the conversation.
@@ -320,11 +320,11 @@ text and nothing else; the author is the nickname the sending socket is listed
 under on the roster. A frame that could name its own sender could sign someone
 else's name to a message. That also makes the roster the gate: a socket that has
 not joined has no name to sign with, and is told to name itself rather than
-being quietly ignored. A rename applies from then on — what was already said
+being quietly ignored. A rename applies from then on; what was already said
 keeps the name it was said under, because `nick` is a copy, not a reference.
 
-**Sessions.** PLAN.md's availability story is session-based — you go live, you
-end it — and chat is scoped to a session, so "the chat" means this time on air
+**Sessions.** PLAN.md's availability story is session-based (you go live, you
+end it) and chat is scoped to a session, so "the chat" means this time on air
 rather than everything ever said. The admin controls for starting and ending one
 are a later task; for now a run of the process is a session, opened at startup
 and closed on shutdown. A restarted station is a new session with an empty room,
@@ -337,14 +337,14 @@ back every two seconds. Without it, one client in a loop is an unbounded row
 count and a broadcast storm to everyone else. Buckets are per socket rather than
 per listener, so one listener talking never spends another's, and there is
 nothing to clean up after a socket that never comes back. Over-length messages
-are refused rather than truncated — the composer caps what can be typed, so
+are refused rather than truncated: the composer caps what can be typed, so
 anything longer came from something hand-written, and quietly publishing half of
 what it said would be worse than saying no.
 
 ### Wishes
 
-PLAN.md's requests decision — *free-text wishes, no library browsing for
-listeners* — written down next to the chat:
+PLAN.md's requests decision (*free-text wishes, no library browsing for
+listeners*) written down next to the chat:
 
 ```sql
 wishes  (id, session_id, nick, text, created_at, status)
@@ -356,32 +356,32 @@ A listener sends `{type: 'wish', text}` over the socket and gets back
 a listener asks in their own words, for something the station may not even have,
 and whoever runs the decks reads it and decides. Nothing here touches the queue.
 
-**A wish is not broadcast.** It reaches exactly two places — the admin, and back
+**A wish is not broadcast.** It reaches exactly two places: the admin, and back
 to the socket that made it. That is the one thing on this socket that is not
 sent to the room, and it is why `GET /api/wishes` is the one read in the API
 behind the admin gate: everything else a listener could fetch they were already
 sent, so gating it would protect nothing, while a public book would turn asking
 for a song into asking in front of everyone. It is also why the frame comes back
-at all — with no broadcast to see their wish arrive in, a listener would be left
+at all: with no broadcast to see their wish arrive in, a listener would be left
 guessing whether it went anywhere.
 
 Who asked is the server's answer, exactly as it is for chat: the frame carries
 no author, and the name written down is the one the sending socket is listed
-under on the roster. So the roster is the gate here too — a socket that has not
+under on the roster. So the roster is the gate here too: a socket that has not
 joined has no name to sign with and is told to name itself.
 
 | Route | What |
 |---|---|
-| `GET /api/wishes` | Admin. `{wishes, outstanding}` — this session's, oldest first, and how many are still waiting. |
+| `GET /api/wishes` | Admin. `{wishes, outstanding}`: this session's, oldest first, and how many are still waiting. |
 | `POST /api/wishes/:wishId` | Admin. `{status: 'new'\|'handled'}` → the wish and the book as it now stands. `404 unknown_wish` otherwise. |
 
 Marking is reversible, and a handled wish stays in the book: the mark is a note
 to whoever is reading the list, and a misclick should not be the end of
 somebody's request. The status is constrained in the schema as well as in the
-type — the column outlives the process that wrote it, and a wish in a state
+type, because the column outlives the process that wrote it, and a wish in a state
 nothing can render is a wish nobody will ever see.
 
-**Pacing.** Three wishes back to back, one earned back every 30 seconds —
+**Pacing.** Three wishes back to back, one earned back every 30 seconds,
 tighter than chat, because a wish is not conversation. Every one of them is a
 row somebody has to read, and a book nobody can get through is the same as no
 book. The bucket is separate from the chat's, so being refused a wish never
@@ -393,7 +393,7 @@ album title cut in half.
 reachable from both the chat and the wishes, and the page has a box for each, so
 every socket refusal that is about something a listener typed carries
 `about: 'say' | 'wish' | 'join'` alongside the code. Without it, a wish refused
-for pace also puts "not sent" under the chat — telling someone a message they
+for pace also puts "not sent" under the chat, telling someone a message they
 never sent went nowhere.
 
 ### Skip votes
@@ -406,20 +406,20 @@ votes as a set of socket IDs; clear it on every track change.* A listener sends
 **A vote skips nothing.** No threshold here advances the station, and that is a
 decision rather than an unfinished half: the socket carries nothing that drives
 the decks, and a quorum that did would be exactly such a frame wearing a vote as
-a disguise. PLAN.md puts *see skip tallies* on the admin surface — the tally is
+a disguise. PLAN.md puts *see skip tallies* on the admin surface: the tally is
 the room telling whoever runs the decks something, and what happens next is a
 person pressing Skip. A unanimous room is still a room.
 
 **The votes are a set of listeners, not a counter.** One listener counts once
 however many times they press it, and the frame carries where they now stand
-rather than "toggle" — so a retry after a refusal, or a second tap on a slow
+rather than "toggle", so a retry after a refusal, or a second tap on a slow
 connection, leaves one vote instead of cancelling itself. A vote that changes
 nothing broadcasts nothing and so costs nothing, exactly as a re-join under an
 unchanged nickname does.
 
 **A vote lives on the socket that cast it.** It is dropped when that socket
 closes, which keeps a tally from counting people who left the room it is a
-fraction of — otherwise "4 of 3 want the next one". That is also why `voted` is
+fraction of; otherwise "4 of 3 want the next one". That is also why `voted` is
 the station's answer rather than something the page remembers: a client that kept
 its own flag would show a vote across a reconnect that the station let go with
 the old socket. It is the one field that differs per listener, and the reason
@@ -427,13 +427,13 @@ this frame is the only one sent socket by socket instead of serialised once.
 Under thirty listeners, a stringify each is cheaper than a lie.
 
 **Cleared on every track change, and only on a track change.** A pause, a seek
-and a resume all leave the same song on, so the tally survives them — a count
+and a resume all leave the same song on, so the tally survives them. A count
 that a seek could wipe would let the person the room is voting at clear it by
 nudging the needle. The tally goes out *after* the state that cleared it, so no
 client blanks the count against the song that just ended.
 
 The roster is the gate, as it is for chat and wishes: a socket that has not said
-who it is cannot vote, or the count would stop being a fraction of the room —
+who it is cannot vote, or the count would stop being a fraction of the room:
 a script could open sockets and vote from each without ever appearing in it.
 Voting with nothing on the decks is refused by code (`nothing_playing`) rather
 than counted against whatever comes on next.
@@ -449,7 +449,7 @@ plays  (id, session_id, track_id, played_at)
 
 A play is `{id, track, at}` on the wire, in batches like the chat: the evening
 so far on connect, and a batch of one each time a track starts. Ids are the
-play's, not the track's — the same track twice in an evening is two plays — so a
+play's, not the track's (the same track twice in an evening is two plays) so a
 client that merges on id replays a reconnect without duplicating a line and
 fills in whatever went on while it was away.
 
@@ -457,24 +457,24 @@ fills in whatever went on while it was away.
 the same `change` event the state broadcast does, because that is the one place
 that sees every way a track can go on: the end-of-track timer, the admin
 pressing play, a queue advancing by itself. But most of those changes are not a
-track starting — a pause, a seek and a resume all leave the same song on — so
+track starting (a pause, a seek and a resume all leave the same song on) so
 the track id is compared against what the log last saw, and only a different one
 is a play. Unfiltered, an evening of one song would be forty rows. Going off air
 writes nothing and resets that memory, so the same track starting after a stop
 is a new play of it.
 
-`played_at` is stamped from the station clock, not `Date.now()` — a play and the
+`played_at` is stamped from the station clock, not `Date.now()`: a play and the
 `startedAt` of the same track describe one instant, and two timebases would
 disagree about it.
 
-**The row stores a track id, not a copy of the title** — the opposite of what a
+**The row stores a track id, not a copy of the title**, the opposite of what a
 message does with a nickname. A nickname is copied because a person can rename
 themselves and what they said keeps the name it was said under; a track that
 gets retagged was mislabelled all along, so the history should read correctly
 rather than preserve the typo. It is *not* a foreign key even so, which is the
 one place this table is looser than the others: the insert happens inside the
 playback change event, so a constraint that could refuse it would throw into
-whatever put the track on — an admin command answering 500 after the track
+whatever put the track on: an admin command answering 500 after the track
 already changed, or the end-of-track timer dying mid-set. A note about what
 happened must not be able to break the thing it is a note about. The read is an
 inner join, so a play it cannot name is left out rather than rendered blank.
@@ -482,14 +482,14 @@ inner join, so a play it cannot name is left out rather than rendered blank.
 Scoped to a session, like the chat and the wishes: a restarted station starts a
 new list, and the old rows stay where they are.
 
-### `POST /api/playback` — admin
+### `POST /api/playback`: admin
 
 Driving the decks by hand: `{action: 'play'|'pause'|'resume'|'seek'|'stop'
 |'skip', trackId?, positionMs?}`, admin-only, returns the new state. Every
 command broadcasts over `/ws` before the HTTP response returns. `skip` is the
-same advance the end-of-track timer performs — next queued track, or off air.
+same advance the end-of-track timer performs: next queued track, or off air.
 
-### `/api/admin/session` — the admin session
+### `/api/admin/session`: the admin session
 
 PLAN.md's password-for-a-signed-cookie exchange. The password crosses the wire
 once, at sign-in, and what comes back is an HMAC-signed token in a cookie the
@@ -499,12 +499,12 @@ browser presents from then on.
 |---|---|
 | `POST /api/admin/session` | `{password}` → `200 {ok, expiresAt}` and the cookie, `401`, or `429` once guesses are coming too fast. |
 | `GET /api/admin/session` | `{ok: true}` while the session holds, `401` once it doesn't. |
-| `DELETE /api/admin/session` | Signs out. Needs no credentials — dropping a cookie you hold isn't an attack. |
+| `DELETE /api/admin/session` | Signs out. Needs no credentials; dropping a cookie you hold isn't an attack. |
 
 Sign-in is paced per caller: five wrong passwords, then one earned back a
 minute, answered `429` with a `Retry-After`. The password is the whole admin
 gate, so the rate at which a stranger can test guesses is part of how strong it
-is — unpaced, a passphrase that would take centuries offline is a few hours of
+is. Unpaced, a passphrase that would take centuries offline is a few hours of
 HTTP. Only *wrong* attempts are charged, and getting it right clears the count,
 so an admin who fumbles their own password twice is not then locked out of
 their own station. Nothing else is throttled: a session already issued is a
@@ -519,7 +519,7 @@ curl -b jar -H 'content-type: application/json' \
 
 The cookie is `HttpOnly` (page script can't read the token, so an XSS can't
 carry it off), `SameSite=Strict` (nothing the admin clicks elsewhere can drive
-the station), and `Secure` whenever the request arrived over TLS — following the
+the station), and `Secure` whenever the request arrived over TLS, following the
 scheme rather than hardcoding it, or development over plain HTTP would never get
 the cookie back.
 
@@ -528,7 +528,7 @@ the expiry is *inside* the signed payload, so a client that keeps the cookie
 past `Max-Age` still finds it refused. The signing key is derived from
 `ADMIN_PASSWORD` (through an HMAC, so a signature is never an oracle for the
 password itself), which means a restart leaves sessions intact and a **password
-change ends every one of them at once**. Sessions last 12 hours — an evening,
+change ends every one of them at once**. Sessions last 12 hours: an evening,
 not a week. Revoking one session in particular is not something a station with
 one admin has any use for.
 
@@ -537,39 +537,40 @@ harmless one to probe with, and the panel has to ask whether it is still signed
 in before it shows a single control.
 
 **The password is still accepted directly**, as `Authorization: Bearer …` or
-`x-admin-password`, on every admin route — that is what the curl examples and
+`x-admin-password`, on every admin route, which is what the curl examples and
 the QA scripts use. The browser is the thing that shouldn't be holding a shared
 secret for hours; a one-liner in a terminal has nowhere else to put it.
 
-### `/api/listen` — who may hear the station
+### `/api/listen`: who may hear the station
 
 The same exchange one rung down, and the answer to "only the people I invited".
 
-**The station has a door on it by default.** An unset `STATION_KEY` used to mean
-an open station; it now falls back to a code baked into the server — see
-`houseKey` in `server/src/config.ts`, which is written backwards and in base64
-and explains how to read it back. That is a speed bump and not a secret: it does
-nothing against anybody holding this repository, and everything against the only
-threat a pet project actually has, which is the code sitting in plain text in a
-file during a screen-share. It never leaves the server — a listener presents a
-guess and is told yes or no — so a browser never has it to give away.
+**There is no door by default.** An unset `STATION_KEY` is an open station:
+anybody with the address can listen, and nobody is asked for anything.
 
-The default changed in the direction that fails safe. A station that quietly
-became public because a variable went missing during a deploy is a worse
-surprise than one that quietly asks for a password. Taking the door off is
-therefore something you have to *say*: `STATION_OPEN=true`, exactly that string,
-and an explicit `STATION_KEY` still wins if somebody sets both.
+This default has been both ways round, so it is worth writing down why it is
+here. The argument for a door was that a station which quietly became public
+because a variable went missing is a bad surprise. The argument against it,
+which won, is that the door was being paid for by every listener on every visit
+to protect a room of friends listening to music together. A code that has to be
+told, remembered and typed is the most expensive thing on the way in.
 
-Any station with real people in it should set its own `STATION_KEY`.
+Setting `STATION_KEY` puts the door back on, and everything below is what
+happens when you do: the mechanism is untouched, not removed. `STATION_OPEN` is
+what taking the door off used to need; it is still accepted and is now a no-op,
+so a compose file that has been carrying it keeps meaning what it always meant.
+
+None of this touches the decks. Opening the station means anybody can listen; it
+has never meant anybody can play anything. See [one code, or two](#one-code-or-two).
 
 The code arrives two ways, and it is the same secret either way:
 
-- **On a link** — `https://…/listen?k=<key>`, and `https://…/?k=<key>`, which is
+- **On a link.** `https://…/listen?k=<key>`, and `https://…/?k=<key>`, which is
   what older invites say, is redirected there with the key intact rather than
   being answered by the landing page. The key then comes straight back *out* of
   the address bar, because a secret left in a URL is a secret in the history, in
   every screenshot and in the `Referer` of every outbound link.
-- **Typed at the door** — the refused screen carries an input. That is what
+- **Typed at the door.** The refused screen carries an input. That is what
   makes the station something you can tell somebody over the phone, and it has
   one advantage over a link: a typed code never enters the address bar, so there
   is nothing to strip out afterwards.
@@ -579,17 +580,18 @@ cookie good for a month.
 
 **If you forget which code is in force**, sign in to the console and press
 Share. Admin credentials satisfy the listener gate too, so whoever holds
-`ADMIN_PASSWORD` can always get in and read the key back — which is why there is
+`ADMIN_PASSWORD` can always get in and read the key back, which is why there is
 no way to lock yourself out of your own station.
 
 ### One code, or two
 
-`ADMIN_PASSWORD` is optional, and unset it falls back to the same house key the
-door does. So an unconfigured station has **one code that opens both** the door
-and the decks.
+`ADMIN_PASSWORD` is optional, and unset it falls back to a code baked into the
+server. An unconfigured station is therefore **open to listen and shut to
+drive**: anybody with the address hears the music, and the decks want a
+password. Set your own for anything reachable from the internet.
 
-They remain two separate settings, not one — moving either leaves the other
-alone — and what keeps an invited listener out of the console when both hold the
+They remain two separate settings, not one (moving either leaves the other
+alone) and what keeps an invited listener out of the console when both hold the
 same string is domain separation in `lib/auth.ts`: the two cookies are HMACs of
 that value under different labels, so a listener token does not verify as an
 admin token. That was a nicety when the secrets differed and is load-bearing now
@@ -602,37 +604,37 @@ Set `ADMIN_PASSWORD` and the two part company immediately.
 |---|---|
 | `GET /api/listen` | `204` if this browser is admitted, `401` if not. Asked once on load, before anything opens a socket. |
 | `POST /api/listen` | `{key}` → `204` and the cookie, `401` for a key that is not this station's, `429` once tries come too fast. |
-| `GET /api/invite` | Admin-only. `{key}` — the station key, or `null` on a station opened with `STATION_OPEN`. What the console's Share button builds a link out of, and how you read back a code you forgot. |
+| `GET /api/invite` | Admin-only. `{key}`: the station key, or `null` on a station with no door on it. What the console's Share button builds a link out of, and how you read back a code you forgot. |
 
 What the key actually guards is the socket and the audio: `/ws` is refused at
 the handshake, and `/api/tracks`, `/api/audio/*` and `/api/artwork/*` are all
-behind the same gate. The socket is the important one — everything a listener
-sees arrives on it — and it is refused with a `401` on the upgrade rather than
+behind the same gate. The socket is the important one (everything a listener
+sees arrives on it) and it is refused with a `401` on the upgrade rather than
 closed a moment later, because a client cannot tell a closed socket from a
 station that dropped, and would sit there reconnecting into the refusal forever.
 
 The signing key is derived from `STATION_KEY` itself, so **rotating it ends
-every invite at once** — which is how you un-invite somebody. There is no
+every invite at once**, which is how you un-invite somebody. There is no
 per-person revocation; a single shared key is the whole model.
 
 **Share** in the console header is where invites come from. It asks the station
 for the key and assembles the link against the address bar the console is
-actually on — behind nginx or Railway the server does not reliably know that,
+actually on: behind nginx or Railway the server does not reliably know that,
 and the browser does. The link is shown as well as copied: sharing and clipboard
 access both need a secure context, so on a LAN address over plain HTTP neither
 exists, and seeing what you are about to send somebody beats a button claiming
 it worked.
 
 `GET /api/invite` is admin-only, and that is the entire invitation policy. A
-listener's browser cannot rebuild an invite on its own — the cookie is HttpOnly
-and the key was taken out of the address bar when they arrived — so being
+listener's browser cannot rebuild an invite on its own (the cookie is HttpOnly
+and the key was taken out of the address bar when they arrived) so being
 invited means somebody holding the password sent you a link. Handing the key to
 anyone already admitted would let one invite quietly invite everybody else.
 
 Whoever runs the decks never needs an invite: admin credentials satisfy the
-listener gate too, and `#admin` is deliberately outside it altogether — needing
+listener gate too, and `#admin` is deliberately outside it altogether, since needing
 an invite to reach the sign-in form would lock the owner out of their own
-station, with no way to issue themselves one. And the console is never advertised to anyone else — the
+station, with no way to issue themselves one. And the console is never advertised to anyone else: the
 Listener/Admin control in the top bar and the mark at the foot of the rail are
 both rendered only for a browser already holding an admin session. That is not
 a lock, and is not doing any security work: `#admin` still reaches the sign-in
@@ -644,10 +646,10 @@ would refuse.
 
 | | |
 |---|---|
-| `GET /api/session` | Open. `{live, since}` — whether the station is broadcasting, and since when. |
+| `GET /api/session` | Open. `{live, since}`: whether the station is broadcasting, and since when. |
 | `POST /api/session` | Admin. `{action: 'start'\|'end'}` → the state it produced. Both idempotent. |
 
-PLAN.md locks availability as session-based — "you go live, you end it" — and
+PLAN.md locks availability as session-based ("you go live, you end it") and
 `POST /api/session` is the whole of it. `{"action":"start"}` opens a session,
 `{"action":"end"}` closes it. Both are behind the admin gate, and both are
 idempotent: an admin double-clicking is the ordinary case, not an error.
@@ -656,8 +658,8 @@ idempotent: an admin double-clicking is the ordinary case, not an error.
 is the first thing a listener's page needs, it is not a secret, and it arrives
 unasked on the socket anyway. What is behind the gate is *changing* it.
 
-A session used to be a run of the process — one opened at boot, closed at
-shutdown — which meant a deploy silently ended the evening and a restart
+A session used to be a run of the process (one opened at boot, closed at
+shutdown) which meant a deploy silently ended the evening and a restart
 silently began a new one. Now the station comes up **off air**, because a
 station that went live the instant it was deployed would put every restart on
 air with an empty queue.
@@ -668,24 +670,24 @@ than resuming last night's, and ending one:
 
 - stops the decks and empties the queue,
 - clears every mute (see below),
-- leaves the rows in the database, tied to a session that is over — nothing is
+- leaves the rows in the database, tied to a session that is over. Nothing is
   deleted, there is simply nothing to read while nothing is open.
 
 Going live deliberately clears *nothing*: queueing a set up and then opening the
 doors is the ordinary way to start an evening.
 
-While off air, `say`, `wish` and `vote_skip` are all refused with `off_air` —
+While off air, `say`, `wish` and `vote_skip` are all refused with `off_air`:
 there is no session for any of them to belong to.
 
 ### Muting a nickname
 
 | | |
 |---|---|
-| `GET /api/mutes` | Admin. `{nicknames}` — who has been asked to stop talking. |
+| `GET /api/mutes` | Admin. `{nicknames}`: who has been asked to stop talking. |
 | `POST /api/mutes` | Admin. `{nickname, muted}` → the whole list as it now stands. |
 
 PLAN.md's last unbuilt admin control. `GET /api/mutes` and `POST /api/mutes`
-with `{nickname, muted}` — where the nickname now *stands*, rather than
+with `{nickname, muted}`, where the nickname now *stands*, rather than
 "toggle", so two of them in a row leave one mute and a retry after a dropped
 response is safe. The console puts the button on the message itself, because the
 moment you want to mute somebody is the moment you are reading what they said.
@@ -695,7 +697,7 @@ would turn a quiet word into a public naming, and hand the room a roster of who
 to needle about it.
 
 A muted listener is **told**, with a `muted` refusal, rather than having the
-message quietly swallowed — a message that vanished would read exactly like one
+message quietly swallowed. A message that vanished would read exactly like one
 that was sent, and somebody would spend the evening talking to a room that
 cannot hear them. It covers wishes as well as chat, since a mute that left the
 book open would only move where somebody was shouting. It costs no rate-limit
@@ -703,7 +705,7 @@ token, so being unmuted does not also leave you throttled. And it does not
 remove anyone from the room: they keep hearing the music, which is what they
 came for.
 
-Muting is by nickname, not by socket — a mute on the connection would last until
+Muting is by nickname, not by socket: a mute on the connection would last until
 the tab was reloaded, which is about as long as it takes to notice. The honest
 limit of that is that somebody can rename themselves out of it, and nothing here
 stops them. Making it stick would need identity, and PLAN.md's decision is
@@ -715,7 +717,7 @@ other, not a ban hammer.
 
 What's coming up lives in memory, not the DB: it's session-scoped and dies with
 the process along with the rest of playback state. Entries are addressed by
-**entry id, not position** — the queue shifts by itself every time a track ends,
+**entry id, not position**, because the queue shifts by itself every time a track ends,
 so "remove the third one" races with auto-advance and removes the wrong track.
 The same track may be queued more than once, and each sitting is its own entry.
 
@@ -727,7 +729,7 @@ The same track may be queued more than once, and each sitting is its own entry.
 | `DELETE /api/queue/:entryId` | Admin. Drops one entry. |
 | `DELETE /api/queue` | Admin. Empties the queue; leaves the current track playing. |
 
-Queueing onto an **idle** station starts that track immediately — with nothing
+Queueing onto an **idle** station starts that track immediately: with nothing
 on the decks there is nothing to wait for. A *paused* station stays paused;
 that's the admin's decision, not an empty deck.
 
@@ -735,51 +737,51 @@ that's the admin's decision, not an empty deck.
 
 When a track ends the server moves to the next one on its own, so a station left
 alone keeps playing. The mechanism is a `setTimeout` for the time remaining,
-rescheduled from PlaybackState's `change` event — so a pause, a resume, a seek
+rescheduled from PlaybackState's `change` event, so a pause, a resume, a seek
 or a hand-picked track all re-arm it correctly.
 
 Behind that is a slower sweep (every 2s) that advances any track whose time is
 up. A `setTimeout` fires late under load, and if the event loop stalls long
 enough it may as well not have fired at all; the failure mode is dead air until
 someone notices. The station clock, not the timer, decides whether a track is
-over — a timer that fires early goes back to sleep for what's actually left.
+over: a timer that fires early goes back to sleep for what's actually left.
 Overrun isn't carried over: the next track always starts at 0:00.
 
 ## Client
 
 React + Vite. The station itself is one page, served at `/listen`: the listener
-names themselves and taps **Tune in** — which is also the user gesture browsers
-require before audio may start — and from then on the page follows the station.
+names themselves and taps **Tune in** (which is also the user gesture browsers
+require before audio may start) and from then on the page follows the station.
 At `/` there is a second, much smaller document in front of it; see [the landing
 page](#the-landing-page).
 
-- `lib/position.ts` — where the needle should be, given the tuple and a server time.
-- `lib/nickname.ts` — the nickname: normalising it, and keeping it in localStorage.
-- `lib/chat.ts` — what is worth sending, and folding a batch into what is shown.
-- `lib/wishes.ts` — what is worth asking for, and what a refused wish should say.
-- `lib/skips.ts` — the skip tally: what it is about, and how it reads.
-- `lib/history.ts` — folding in what has been on, and what counts as *earlier*.
-- `lib/station.ts` — the websocket, with reconnect and backoff.
-- `lib/availability.ts` — whether there is a station there, and what to say when there isn't.
-- `lib/admin.ts` — the admin's side of the HTTP API, and where `#admin` lives.
-- `hooks/useAdminSession.ts` — signs in, and asks the station whether it still counts.
-- `lib/clock.ts` — clock offset estimation from ping/pong samples.
-- `lib/drift.ts` — what to do about an error of a given size.
-- `hooks/useServerClock.ts` — runs the handshake, exposes `serverNow()`.
-- `hooks/usePresence.ts` — says who this listener is, and says it again on reconnect.
-- `hooks/useSyncedAudio.ts` — aligns on every broadcast, and every 2s in between.
-- `AdminPanel.tsx` — the decks, for whoever runs the station.
+- `lib/position.ts`: where the needle should be, given the tuple and a server time.
+- `lib/nickname.ts`: normalising the nickname, and keeping it in localStorage.
+- `lib/chat.ts`: what is worth sending, and folding a batch into what is shown.
+- `lib/wishes.ts`: what is worth asking for, and what a refused wish should say.
+- `lib/skips.ts`: the skip tally, what it is about and how it reads.
+- `lib/history.ts`: folding in what has been on, and what counts as *earlier*.
+- `lib/station.ts`: the websocket, with reconnect and backoff.
+- `lib/availability.ts`: whether there is a station there, and what to say when there isn't.
+- `lib/admin.ts`: the admin's side of the HTTP API, and where `#admin` lives.
+- `hooks/useAdminSession.ts`: signs in, and asks the station whether it still counts.
+- `lib/clock.ts`: clock offset estimation from ping/pong samples.
+- `lib/drift.ts`: what to do about an error of a given size.
+- `hooks/useServerClock.ts`: runs the handshake, exposes `serverNow()`.
+- `hooks/usePresence.ts`: says who this listener is, and says it again on reconnect.
+- `hooks/useSyncedAudio.ts`: aligns on every broadcast, and every 2s in between.
+- `AdminPanel.tsx`: the decks, for whoever runs the station.
 
 ### The landing page
 
-`/` is a second document — `landing.html`, entered at `src/landing/main.tsx` —
+`/` is a second document (`landing.html`, entered at `src/landing/main.tsx`)
 that answers "what is this" for somebody who has not been let in yet. It has no
 socket, no clock and no audio element in its bundle, which is the point: it has
 to describe the station on the days the station is not up.
 
 It stands at the bare address because that is where somebody who has only heard
 the name arrives. The station itself is one name in, at **`/listen`**
-(`STATION_PATH` in `lib/routes.ts`) — nothing inside the app depends on that,
+(`STATION_PATH` in `lib/routes.ts`), and nothing inside the app depends on that,
 since every link the rail and the topbar draw is a bare fragment that works at
 whatever path the document came from. What depends on it is everything
 *outside*: the landing page's two ways in, the invite link the console hands
@@ -787,15 +789,15 @@ out, and the QA scripts.
 
 The one thing the root may not swallow is an invite. A private station's link is
 `/?k=<key>`, and links handed out before the doorway moved are still in people's
-messages — serving those the landing page would hand the key to a document with
+messages, and serving those the landing page would hand the key to a document with
 no code in it to redeem it. So a request for `/` **carrying a key** is sent on
 to `/listen` with the key intact, and only a request without one gets the
 landing page. (`if ($arg_k != "")`, not `if ($arg_k)`: the latter is nginx's own
 idea of truth, and would read a key of literally `0` as no key at all.)
 
-The fragment is the one part of a request nginx never sees, so `/#admin` — the
+The fragment is the one part of a request nginx never sees, so `/#admin` (the
 console's address for the whole of the project so far, and in whatever bookmark
-whoever runs the decks is using — arrives at the landing page looking like any
+whoever runs the decks is using) arrives at the landing page looking like any
 other visit. `src/landing/main.tsx` honours it anyway: any fragment `routeInHash`
 recognises is replaced with the same route on `/listen`. Fragments the page owns,
 like `#clockwork`, name no route and are left alone. `/welcome`, where the
@@ -803,7 +805,7 @@ landing page used to live, is a 301 to `/`.
 
 All of that lives in two places that have to agree: `nginx.conf`, and a small
 plugin in `vite.config.ts` that does the same three things for `npm run dev` and
-`vite preview`. They agree for the same reason the `/api` and `/ws` proxies do —
+`vite preview`. They agree for the same reason the `/api` and `/ws` proxies do:
 the client ships unchanged, so what happens at the front door in front of a dev
 server has to be what happens in production, or the first place anyone notices a
 difference is production. `/listen` itself needs no rule in either: Vite's SPA
@@ -813,7 +815,7 @@ path with the station, which is what it is.
 The one place the station links back to it is the doorway, on the `refused`
 screen: somebody standing outside a private station is the only visitor who does
 not already know what they have been sent. The `unreachable` screen does not
-link to it — an invite that works and a station that is away is somebody
+link to it, because an invite that works and a station that is away is somebody
 waiting, not somebody asking.
 
 The design is shared rather than copied, which is what stops the page in front
@@ -823,27 +825,27 @@ of the product drifting a shade off the product:
 |---|---|
 | `src/tokens.css` | Every colour, radius and face. Imported by both stylesheets and owned by neither. |
 | `src/shared.css` | The objects both pages draw: the turntable, the LIVE badge, the level meter, the wordmark, the white pill. |
-| `src/styles.css` | The station — the shell, the rail, the panels, the console. |
+| `src/styles.css` | The station: the shell, the rail, the panels, the console. |
 | `src/landing/landing.css` | Arrangement only. It specifies no colour, radius or face of its own. |
 
 The record behind the headline is not a picture of the deck; it is
 `Turntable.tsx`'s own `Deck`, and the LIVE badge and level meter further down are
 its `OnAir` and `Waveform`, rendered from the same components the listener page
 uses. Every one of them sits inside an `aria-hidden` block, because each is
-normally a *report* — red means on the air right now, the record turns because
-audio is running — and this page has no station behind it to report on. Shown as
+normally a *report* (red means on the air right now, the record turns because
+audio is running) and this page has no station behind it to report on. Shown as
 a picture of the deck working, they are honest; shown as live instruments beside
 the headline, they would be claiming something the page cannot know.
 
 #### One word that will not sit still
 
 *Music is **infinite** now* uses [Aceternity UI's Squiggly
-Text](https://ui.aceternity.com/components/squiggly-text) — Lucas Bebber's
+Text](https://ui.aceternity.com/components/squiggly-text), Lucas Bebber's
 trick: five SVG filters, each `feTurbulence` noise fed into an
 `feDisplacementMap`, cycled fast enough that the letters appear to wriggle.
 Nothing actually moves; it is five stills shown in turn.
 
-One word rather than the line, and it is the right one — the sentence is about a
+One word rather than the line, and it is the right one: the sentence is about a
 thing that will not hold still or stop, and *infinite* is where that lands.
 Squiggling the whole headline would just be a wobbly headline.
 
@@ -851,7 +853,7 @@ Two departures, both about frames this page has other plans for. The original
 derives the current filter from motion's clock, which is a callback on every one
 of sixty frames a second to pick a value that changes twelve times a second; an
 interval at the step duration writes the same filter at the same moments for a
-twentieth of the cost. And it stops when the section is off screen — an SVG
+twentieth of the cost. And it stops when the section is off screen, since an SVG
 filter swap re-rasterises the text it is applied to, which is not free, and it
 was doing it four screens away. Same `useOnScreen` as the gramophone and the
 globe.
@@ -865,7 +867,7 @@ continuously is near the top of the list of things that setting exists for.
 Reveal](https://ui.aceternity.com/components/sticky-scroll-reveal): three things
 to read down the left of its own scroll container, the one nearest a breakpoint
 at `index / count` brought to full opacity while the others sit at 0.3, and one
-sticky panel held against the right edge showing whatever that item is about — a nickname, then
+sticky panel held against the right edge showing whatever that item is about: a nickname, then
 the room talking, then the room disagreeing. All three panels are real features:
 the join screen, the chat, the skip tally.
 
@@ -890,19 +892,19 @@ behind peek out above the face rather than growing out of the middle of it.
 The one departure is what turns it. The original runs a `setInterval` that moves
 the last card to the front every five seconds, which is right for a stack
 decorating a page on its own. This one is inside a reveal that already knows
-which of its three things you are reading, so the deck is cut to that instead —
+which of its three things you are reading, so the deck is cut to that instead;
 scrolling deals the next card.
 
 Two things it needed that the original does not. The card face has to be
 **opaque**: at `--panel`'s 70% you can read the skip tally and the join screen
 through the conversation sitting on top of them. And the deck sits *inside* the
-sticky box rather than being it — sharing one element meant `.stack` and
+sticky box rather than being it: sharing one element meant `.stack` and
 `.sticky-reveal__panel` both declaring `position` and `width`, and whichever came
 later in the stylesheet won. That collapsed the column of text once and killed
 the stickiness once before I split them.
 
 Two other changes. The original animates the container between three
-slate-to-black backgrounds and the panel between three saturated gradients —
+slate-to-black backgrounds and the panel between three saturated gradients:
 cyan/emerald, pink/indigo, orange/yellow. Unlike the glare card's foil these are
 not a hover; they would be on screen the whole time somebody is reading, so the
 change of state is kept and drawn in the design's own greys. And the panels are
@@ -917,38 +919,38 @@ into the middle together. The container's right padding is zero and the
 scrollbar gets `scrollbar-gutter: stable`, so a scrollbar appearing does not
 shove the panel back in.
 
-The middle panel is drawn as a chat conversation — an avatar, a bubble, a name
+The middle panel is drawn as a chat conversation: an avatar, a bubble, a name
 and the second of the record it was said at, with consecutive lines from one
 person losing the repeated face. The station has no picture of anybody, so the
 avatar is the one thing it can honestly draw: the first letter of the nickname.
 
-The lines land **one at a time**. The playhead says how many are *due* — how
-many the record has gone past — and `useOneByOne` walks the count up to that, a
+The lines land **one at a time**. The playhead says how many are *due* (how
+many the record has gone past) and `useOneByOne` walks the count up to that, a
 line every 420ms. Due is not the same as said: arriving at the section with the
 record already at 2:13 makes five lines due in the same frame, and five bubbles
 appearing together is a transcript rather than a conversation. The same applies
 to a hard scroll, which would otherwise dump four at once. Backwards is not
-paced — scrolling up takes the playhead with it and lines fall back out, and
+paced: scrolling up takes the playhead with it and lines fall back out, and
 running that in reverse a step at a time would be the room un-saying things at a
 stately pace while the reader is already somewhere else. `nextStep` is the pure
 half of it, so the pacing is tested without a clock.
 
 It follows itself down as lines arrive, which needs one non-obvious thing. A
 line opens from `0fr` to `1fr`, so at the moment it is said the row is still
-flat and `scrollHeight` does not include it — scrolling to the bottom lands at a
+flat and `scrollHeight` does not include it, so scrolling to the bottom lands at a
 bottom that has not happened. A timer set to the transition's length works until
 somebody changes it in the stylesheet; a `ResizeObserver` on the rows fires when
 they have actually finished opening, whatever the CSS says, and costs nine
 observations.
 
-(Aceternity's own *Chat Conversation* illustration block is behind Pro —
+(Aceternity's own *Chat Conversation* illustration block is behind Pro:
 `shadcn add` returns *"You are not authorized to access the item"* and the
 registry 401s, where free components on the same endpoint return 200. This is
 built from its public description rather than ported from its source.)
 
 One bug worth remembering, because it is easy to write again. The scroll effect
 must depend on `items.length`, not on `items`. The array is built inline by the
-caller, so it is a new one every render — and this section re-renders on every
+caller, so it is a new one every render, and this section re-renders on every
 scroll frame, because the conversation panel follows the page's playhead. On
 `items`, the listener was torn down and re-added constantly and any scroll event
 landing in the gap was lost: the active item would stop changing until something
@@ -960,7 +962,7 @@ The card is the one from [Aceternity UI's features
 section](https://ui.aceternity.com/components/feature-sections-free): a surface
 grading from the panel colour down into the sheet, a large radius, and a
 suggestion of graph paper in the upper-left corner. The paper is the original's
-two masks doing the work — a linear one fading the grid downward and a radial
+two masks doing the work: a linear one fading the grid downward and a radial
 one fading it away from the top edge, so it reads as a corner rather than a
 texture over the card.
 
@@ -969,7 +971,7 @@ render body, so every re-render re-rolls the pattern. On a page whose sections
 re-render as you scroll, the squares would twitch; `GridPattern` takes a seed
 instead, so each card has an arrangement of its own and keeps it.
 
-Four wishes rather than six, in a 2×2 — each card is large enough to read at a
+Four wishes rather than six, in a 2×2: each card is large enough to read at a
 glance, and four is a wall somebody finishes.
 
 An earlier pass had these cards carrying Aceternity's Canvas Reveal Effect with
@@ -985,13 +987,13 @@ the demo's own pattern: a centred title above a device-frame card that starts
 laid back 20°, comes upright as you scroll it into place, and settles from 1.05
 to 1 while the title drifts up 100px. It is the one centred thing on a
 left-aligned page, which is also why it reads as a moment rather than another
-block — the wishes are the most surprising thing the station does.
+block: the wishes are the most surprising thing the station does.
 
 Two departures. The bezel uses `--raised-soft` and `--raised` rather than the
 original's `#6C6C6C` and `#222222`, so the frame is the same grey as the deck in
 the hero instead of looking like a screenshot of somebody else's site. And the
 card is not a fixed 30/40rem: the original's content is an image, which crops
-happily, and ours is text — text in an `overflow-hidden` box at a height nobody
+happily, and ours is text, and text in an `overflow-hidden` box at a height nobody
 measured is text with its last line sliced off. It takes the height of what is
 in it, with a floor.
 
@@ -1000,7 +1002,7 @@ in it, with a floor.
 re-measures on resize. That is right on a page of fixed height and wrong on this
 one: the room panel opens a row every time the playhead reaches another line, so
 everything below it moves down without a resize ever firing, the cached offsets
-go stale, and the progress comes out as a step — the card sat at 20° through the
+go stale, and the progress comes out as a step: the card sat at 20° through the
 whole section and then snapped flat in one frame. `getBoundingClientRect` on a
 rAF-throttled scroll listener is the same quantity from live geometry, and
 cannot be stale. (This is the second component on the page to hit that; the
@@ -1008,7 +1010,7 @@ floating bar has the same problem and the same answer.)
 
 #### Two objects that were always drawing
 
-Both three.js scenes — the hero gramophone and the globe — rendered every frame
+Both three.js scenes (the hero gramophone and the globe) rendered every frame
 for the entire length of the document, whether or not anybody could see them.
 The cost lands on everything else that wants a frame: the bar's resize, the
 pile, the reveal.
@@ -1024,18 +1026,18 @@ renderer so the absolute numbers are pessimistic but the ratios are real:
 
 The gramophone skips the draw when it is away; the globe uses
 react-three-fiber's `frameloop="never"`, which stops the loop without unmounting
-the scene — rebuilding it would refetch nothing but would cost a stutter every
+the scene, since rebuilding it would refetch nothing but would cost a stutter every
 time it came back. The clock keeps running in both cases, so an object returns
 at the angle it would have reached rather than the one it left at.
 
 The gramophone also draws at 30fps rather than 60. A full turn takes twenty-six
-seconds, so it moves about a seventh of a degree per frame — half of those
+seconds, so it moves about a seventh of a degree per frame, and half of those
 frames are indistinguishable from the one before and every one of them costs the
 same as a real one.
 
 And the sections that do not read the playhead are `memo`ised. `Landing`
 re-renders on every scroll frame, so without it a moving playhead re-rendered
-nine sleeves, twelve glare cards, the globe wrapper and the bar — the last of
+nine sleeves, twelve glare cards, the globe wrapper and the bar, the last of
 which holds a spring that should not be interrupted. Its props are built once at
 the module for the same reason.
 
@@ -1043,7 +1045,7 @@ the module for the same reason.
 
 [Aceternity UI's Resizable Navbar](https://ui.aceternity.com/components/resizable-navbar):
 full width at the top of the page, and past 100px of scroll it animates into a
-floating pill — width, a 20px drop, a backdrop blur and a shadow, all on one
+floating pill: width, a 20px drop, a backdrop blur and a shadow, all on one
 spring. The hovered item is a single pill that slides between the links on a
 shared `layoutId` rather than one background fading in per link.
 
@@ -1051,12 +1053,12 @@ It replaces two things the page used to have separately, a sticky masthead and a
 floating bar that came back on scroll-up. One bar is easier to reason about than
 two that have to agree about which of them is on screen.
 
-**Shrunk, it is glass.** `backdrop-filter: blur(22px) saturate(180%)` — and the
+**Shrunk, it is glass.** `backdrop-filter: blur(22px) saturate(180%)`, and the
 saturate is the half people leave out: blur alone gives you frosted plastic, and
 pushing the colour of whatever is behind gives you glass. What passes under this
 bar is album art and a lit gramophone, which is exactly the sort of thing worth
 saturating. Over that sits a tint at 55% (thinner than it looks like it should
-be — a bar that reads as glass at 55% reads as paint at 80%), a sheen down from
+be: a bar that reads as glass at 55% reads as paint at 80%), a sheen down from
 the top edge and a highlight off the upper-left shoulder, both painted as part of
 the element's own background so they sit under the words rather than across them.
 The edge is three hairlines: a ring all the way round, a brighter line along the
@@ -1065,7 +1067,7 @@ the far edge falls away.
 
 The filter is applied at one strength the whole time rather than animated in. It
 is not composited, so changing it would repaint the bar every frame of the
-resize — and at the top of the page there is nothing behind it but the sheet, so
+resize, and at the top of the page there is nothing behind it but the sheet, so
 a filter there costs nothing and shows nothing either. What arrives with the
 shrink is the tint, the sheen and the edge.
 
@@ -1073,13 +1075,13 @@ shrink is the tint, the sheen and the edge.
 
 The original animates `boxShadow` from `"none"` to a five-part shadow. That pair
 cannot be interpolated, so motion writes one frame and abandons the whole
-`animate` object — the bar never resizes, never drops and never blurs, because
+`animate` object: the bar never resizes, never drops and never blurs, because
 every property in the batch goes down with the shadow. Making the pair
 interpolable gets it working, and then you can see the second problem: a
 box-shadow is not a composited property, so interpolating one repaints the
 element every frame, and one of its five parts is a 1px white `inset` ring. A
 hairline being colour-interpolated *and* re-rasterised at a new width sixty times
-a second shimmers along its edge — a glitchy-looking border, because it is one.
+a second shimmers along its edge, a glitchy-looking border, because it is one.
 So the lift lives on `.navbar__body::after` and arrives on `opacity`, which the
 compositor can do without repainting anything. The blur is on the whole time for
 the same reason: `backdrop-filter` is not composited either, and over a
@@ -1087,7 +1089,7 @@ near-black page there is nothing behind the bar to blur at the top of the
 document anyway.
 
 **And the cap belongs on the wrapper, not the bar.** With `max-width: 1080px` on
-the bar itself, the first quarter of the shrink did nothing — `100%` of a 1440px
+the bar itself, the first quarter of the shrink did nothing: `100%` of a 1440px
 window is 1440, clamped to 1080, so the spring ran from 100% to about 75% with
 the bar visibly frozen and then jumped when the percentage finally fell below the
 cap. On the wrapper the percentages are of a box that is already 1080 wide, so
@@ -1098,19 +1100,19 @@ Two smaller departures. The original imports two icons from `@tabler/icons-react
 for the mobile toggle and does not list it as a dependency, so `shadcn add`
 leaves you with a build error; two nine-line SVGs cost less than the package. And
 it passes `{ target, offset }` to `useScroll` when it only reads `scrollY`, which
-is the window's either way — dropping them removes a measurement this page has
+is the window's either way, so dropping them removes a measurement this page has
 twice been bitten by and changes nothing.
 
 It also shrinks further than the original, which goes to 40% with an 800px floor:
 on most screens the floor wins and the bar barely moves. This page is capped at
-1080px and has no floor, so the shrink is one you can see — 1080px to 626px.
+1080px and has no floor, so the shrink is one you can see: 1080px to 626px.
 
 Which is why the links are **in flow rather than absolutely centred**. The
 original places them with `absolute; inset: 0`, so they are laid out without
 reference to the wordmark or the buttons either side of them. That is fine while
 the bar is wide and wrong the moment it is not: at 626px the centred group ran
 straight into *Run the decks* and the two read as one word. A flex item cannot
-overlap its siblings, and the links are still centred — in the space that is
+overlap its siblings, and the links are still centred, in the space that is
 actually theirs rather than in a box they share with two other things.
 
 The decks label drops to its icon on `[data-shrunk='true']` as well as at a
@@ -1121,7 +1123,7 @@ a 1440px window; no media query can.
 
 *How an evening runs* is six [Aceternity UI Glare
 Cards](https://ui.aceternity.com/components/glare-card) in an [Infinite Moving
-Cards](https://ui.aceternity.com/components/infinite-moving-cards) row — the
+Cards](https://ui.aceternity.com/components/infinite-moving-cards) row: the
 pointer-driven tilt, the white glare that follows the cursor, and the rainbow
 foil under it with its four stacked gradients and its blend modes, going past
 forever. The glare effect is entirely CSS custom properties; all
@@ -1137,14 +1139,14 @@ is in the row rather than preference:
 - **The second lap is rendered, not cloned.** The original walks the DOM and
   `cloneNode(true)`s every card into the same list, which is fine for its own
   cards because they are markup. Ours are `GlareCard`s, and a cloned node has no
-  React on it — half the cards in the row would sit there dead, not tilting, not
+  React on it, and half the cards in the row would sit there dead, not tilting, not
   catching the light, for no reason a visitor could work out.
 - **It pauses on focus and on touch, not only on hover.** A glare card only
   shows you anything while a pointer is on it, so one that slid out from under
   the cursor would be the one thing on the page you cannot look at. `:focus-within`
   covers a keyboard and `:active` covers a finger, which has no hover at all.
 
-The second lap is `aria-hidden` — it is the same six things said twice, and a
+The second lap is `aria-hidden`: it is the same six things said twice, and a
 screen reader being read the evening's six steps twelve times is the loop
 leaking out of the visual layer it belongs in. Under `prefers-reduced-motion`
 the row stops, the duplicate lap is dropped and the container becomes a plain
@@ -1154,25 +1156,25 @@ Two departures. The radius is 18px rather than 48px, because everything on this
 site is drawn at 14–22px and a 48px corner on a 236px card is a lozenge. And
 worth being explicit about the foil: `tokens.css` allows this design one accent
 (white) and one signal (red, meaning on the air right now), and a rainbow is
-neither — but the original already keeps `--opacity` at 0 until hover, so the
+neither, but the original already keeps `--opacity` at 0 until hover, so the
 page a visitor reads is still monochrome and the foil is something they find.
 
 Two things were changed rather than ported. The original blends its *content*
 layer with `soft-light` too, which is right for the artwork in its demo and
-wrong for words — body text over a dark surface goes to something you lean in to
+wrong for words: body text over a dark surface goes to something you lean in to
 read. Only the glare and the foil blend here. And its pointermove handler
 contains a `console.log(state.current)`, which fires on every frame the cursor
 is over a card.
 
-The cards are `div`s and these six are an ordered list — the sequence is the
-content — so each one stays inside its `li` rather than replacing it.
+The cards are `div`s and these six are an ordered list, and the sequence is the
+content, so each one stays inside its `li` rather than replacing it.
 
 #### The globe
 
 Beside the sentence, a globe with twelve listeners' arcs all landing on the one
 station. `World.tsx` is a port of [Aceternity UI's GitHub
-Globe](https://ui.aceternity.com/components/github-globe) — three-globe's hex
-polygons, the dashed animated arcs, the rings firing at their origins — with
+Globe](https://ui.aceternity.com/components/github-globe): three-globe's hex
+polygons, the dashed animated arcs, the rings firing at their origins, with
 four deliberate departures:
 
 - **Colour.** The demo is a blue globe with cyan, blue and indigo arcs. This
@@ -1180,12 +1182,12 @@ four deliberate departures:
   now, which nothing else may borrow). So the globe is monochrome and there is
   no red anywhere near it.
 - **Where the arcs go.** The demo draws a mesh of city-to-city routes, which is
-  the picture of a network. This is not a network — it is one station and one
-  link — so every arc lands on the same point. Twelve of them, because the
+  the picture of a network. This is not a network: it is one station and one
+  link, so every arc lands on the same point. Twelve of them, because the
   limits section says *around thirty listeners, not thirty thousand*, and a
   globe implying otherwise would be advertising a different product.
 - **No drei, and no hand-built camera.** The original spins the globe with an
-  `OrbitControls` that has pan, zoom and rotate all switched off — a whole
+  `OrbitControls` that has pan, zoom and rotate all switched off: a whole
   dependency for `autoRotate`, which is one line in `useFrame`. Its camera is
   built with a hardcoded 1.2 aspect ratio, which draws the sphere as an ellipse
   in any box that is not that shape; described to the `Canvas` instead,
@@ -1196,8 +1198,8 @@ four deliberate departures:
 
 The component imports `@/data/globe.json`, which shadcn does not install and you
 are expected to supply. `npm run assets:countries` builds it: Natural Earth 110m
-(public domain, from three-globe's own examples) with every property stripped —
-the globe reads geometry and nothing else — and coordinates cut to three decimal
+(public domain, from three-globe's own examples) with every property stripped (the
+globe reads geometry and nothing else) and coordinates cut to three decimal
 places, about 100m and far under one hex at resolution 3. 477 KB to 183 KB.
 
 Two of the things that script does are not for size. `hexPolygonsData` runs every
@@ -1218,11 +1220,11 @@ chunk on the site by far, and none of it is in the landing bundle.
 *The Moment* is the globe and one sentence side by side, under them the
 evening's sleeves on a table across the full width of the page, and under those
 the level meter, centred. They can be picked up and thrown. Full width
-because there are nine of them — four sat in a column beside the sentence, and
+because there are nine of them: four sat in a column beside the sentence, and
 nine want a table.
 
 Every sleeve is the same sleeve. The record that is on is the one at the front
-of the pile and nothing else — no badge on it, no clock, no head count. It is a
+of the pile and nothing else: no badge on it, no clock, no head count. It is a
 record, and a record does not report anything; the LIVE mark beside the sentence
 and the bar along the bottom of the page are where this page says what is
 happening, and saying it a third time would be the pile pretending to be an
@@ -1231,9 +1233,9 @@ interface rather than a stack of records on a table.
 `DraggableCard.tsx` is a port of [Aceternity UI's Draggable
 Card](https://ui.aceternity.com/components/draggable-card), which arrives via
 `npx shadcn add` and is written for Tailwind. This is not a shadcn project and
-has no Tailwind, so the physics is kept exactly — the same spring (stiffness
+has no Tailwind, so the physics is kept exactly: the same spring (stiffness
 100, damping 20, mass 0.5), the same ±300px→∓25° tilt, the same glare, the same
-velocity-carried throw — and every utility class is a rule in `landing.css`
+velocity-carried throw, and every utility class is a rule in `landing.css`
 drawn from `tokens.css` instead. It needs `motion`, which is the one dependency
 in the landing bundle rather than behind a dynamic import.
 
@@ -1243,7 +1245,7 @@ is a pile that stops the page scrolling under a thumb. Drag is on for
 `(hover: hover) and (pointer: fine)` and off everywhere else, where the pile is
 a pile of records to look at.
 
-The sleeves are `SLEEVES` — `BEEN_ON` filtered to the records the page has cover
+The sleeves are `SLEEVES`: `BEEN_ON` filtered to the records the page has cover
 art for, rather than a second list. One evening drawn twice, so the pile cannot
 come to disagree with the written-down evening further down the page; the tests
 in `test/session.test.ts` are what hold that. `npm run assets:albums` squares
@@ -1253,7 +1255,7 @@ Where each one lies is `PILE` in `Landing.tsx`, in percentages of the table
 rather than pixels, so one arrangement holds its shape from a phone to a wide
 monitor instead of being three scatters in three media queries. Below 720px the
 table shows the six most recent and below 560px the five, because nine sleeves
-across a phone is not a pile but a heap — every card at its floor size, every
+across a phone is not a pile but a heap: every card at its floor size, every
 one behind another, and nowhere for a caption like *The Miseducation of Lauryn
 Hill* to go. Nothing is lost by it: the whole evening is listed in *What has
 been on* a few screens down, sleeve or no sleeve.
@@ -1261,7 +1263,7 @@ been on* a few screens down, sleeve or no sleeve.
 #### The object in the hero
 
 A gramophone, turned slowly behind the headline, rendered with three.js. It
-replaces the flat `Deck` that used to sit there — but only once it has arrived,
+replaces the flat `Deck` that used to sit there, but only once it has arrived,
 and only on a machine that can draw it. `Gramophone.tsx` checks for WebGL before
 it fetches anything, imports three and the model dynamically so neither is in
 the landing bundle, and keeps the `Deck` on screen until the model is ready. A
@@ -1269,10 +1271,10 @@ machine with no WebGL downloads neither and keeps the deck for good. The page
 has never needed the model, so nothing about the page waits for it, breaks
 without it, or reserves a hole where it would have gone.
 
-The file arrived from Sketchfab at **30.8 MB** — 31k triangles, which is
+The file arrived from Sketchfab at **30.8 MB**: 31k triangles, which is
 nothing, and 25 PNG textures, which was all of it. `npm run assets:models` is
 the command that takes it to ~1 MB: textures to WebP at 1024, geometry
-quantized. Quantization rather than Draco deliberately — Draco needs a decoder
+quantized. Quantization rather than Draco deliberately: Draco needs a decoder
 fetched at runtime, and nothing in this app reaches off its own origin. The
 original lives in `client/assets-src/` and is not copied into the image; the
 optimized one lives in `src/assets/models/` and is imported with `?url`, so
@@ -1286,7 +1288,7 @@ turns because gramophones turn, not because a station is playing.
 
 The document is scrubbed through five and a half minutes of one record: the top
 is 0:00, the bottom is the last bar, and `useScrubbedSession` turns the scroll
-offset into a position. That number drives two things — the slim player fixed to
+offset into a position. That number drives two things: the slim player fixed to
 the bottom of the window, and the room panel in *And the room around it*, whose
 lines arrive as the playhead reaches the second each was said at. By the time
 somebody has read the page they have moved through a song with a room talking
@@ -1294,14 +1296,14 @@ around them, which is the product, felt rather than described. Arriving at the
 room section part-way through the conversation is the point rather than a bug:
 it is what walking into a station mid-song is like.
 
-The arithmetic under it — `scrubbed`, `saidBy`, `clock`, `through` — is pure and
+The arithmetic under it (`scrubbed`, `saidBy`, `clock`, `through`) is pure and
 lives in `landing/session.ts` beside the invented session it operates on, so
 what the page is doing is testable without a window (`test/session.test.ts`).
 
 Everything on that page is made up, and has to be: it cannot ask the station
 anything, which is the whole reason it exists. What it may not do is *look* like
 a report. So the bar is `aria-hidden` and carries the words **sample session**
-next to the badge — on this site a red dot means on the air right now, and a bar
+next to the badge: on this site a red dot means on the air right now, and a bar
 borrowing that meaning to advertise with would be the one thing on the page
 actively lying. The invented head count is checked against the station's real
 ceiling in the tests for the same reason: a landing page boasting five figures
@@ -1313,7 +1315,7 @@ describes two screens further down.
 The join screen asks for a nickname, and the station will not take a listener
 without one: the button stays disabled until the field has something in it, and
 pressing Enter on an empty field is refused the same way. What comes back is
-stored under `chunky.fm:nickname` in localStorage — PLAN.md's identity story in
+stored under `chunky.fm:nickname` in localStorage, PLAN.md's identity story in
 full, with no account and nothing held server-side.
 
 The nickname and the join are deliberately the *same* gesture. Browsers only
@@ -1322,26 +1324,26 @@ start audio from inside a user gesture, so the form's submit handler is where
 would leave the audio starting outside any gesture at all.
 
 A returning listener finds the field already filled and joins without retyping,
-but still has to press the button — a name in localStorage is not a gesture, and
+but still has to press the button: a name in localStorage is not a gesture, and
 a page that tried to start playing on load would be refused by the browser.
 Nicknames are normalised on the way in *and* on the way out: whitespace runs
 collapse, control characters go, and the result is capped at 24 characters, so
 what a listener finds when they come back is a name rather than whatever pasting
-went wrong. A browser that refuses storage — Safari's private mode throws on
-write, and blocked cookies throw on even touching `localStorage` — costs the
+went wrong. A browser that refuses storage (Safari's private mode throws on
+write, and blocked cookies throw on even touching `localStorage`) costs the
 listener a retype next visit and nothing else.
 
 ### Who's listening
 
 Once tuned in, the page shows the room: everyone currently listening, by
 nickname, updating as people arrive and leave. It is the roster the socket
-broadcasts, rendered whole each time — rows keyed on the listener id, so two
+broadcasts, rendered whole each time, with rows keyed on the listener id, so two
 people called "sam" are two chips rather than one.
 
 The nickname reaches the server as a `join` frame sent *after* tuning in, not on
 connect: a socket opens with the page, and a name typed into the field is not
 yet someone in the room. `usePresence` waits for the connection to be open
-rather than merely to exist — a send on a socket that is still opening is thrown
+rather than merely to exist: a send on a socket that is still opening is thrown
 away in silence, and a join lost there would be a listener nobody can see, with
 nothing to retry it. It is the same trap the clock handshake fell into once,
 which is why both hooks are written against `connected` rather than `connection`.
@@ -1359,32 +1361,32 @@ The chat sits under the roster, and nothing in it is rendered optimistically:
 what was typed goes out, and appears when it comes back with the id and
 timestamp the server gave it. On a station where everyone is already connected
 to the same server that costs a round trip, and it buys a list that is the same
-list for everyone in the room — rather than a local-only line that a refused
+list for everyone in the room, rather than a local-only line that a refused
 message would leave sitting there looking sent.
 
 The composer is disabled while the socket is down, for the reason the join frame
 waits for `connected`: a send on a closed socket is thrown away in silence, and
 a message that vanished would be worse than one that could not be typed. What
 arrives is merged by id, so a reconnect fills in what was missed without
-duplicating what is already on screen — `lib/chat.ts` is that merge, and it is
+duplicating what is already on screen. `lib/chat.ts` is that merge, and it is
 the piece worth reading if the chat ever looks doubled or out of order.
 
 ### Wishing
 
 Under the roster, above the chat: one field, no library to browse, and a list of
-what this listener has asked for. Nothing is rendered until the station answers
-— the line that appears is the wish as it was written down, with the station's
+what this listener has asked for. Nothing is rendered until the station answers:
+the line that appears is the wish as it was written down, with the station's
 own timestamp and the name from the roster.
 
 The list is only ever this listener's own, because that is all the station tells
 them. It survives a reconnect (the connection is remade under the same hook) and
 starts empty after a reload, while the wishes themselves are still in the book
-the admin reads. Nothing tells a listener their wish was played, either — a
+the admin reads. Nothing tells a listener their wish was played, either: a
 station that said "played" about a track that never went on would be worse than
 one that says nothing, so the row reads *asked* until the page is reloaded away.
 
 The two composers share one socket, so each is handed only the refusals that
-carry its own `about` — `refusalAbout` in `lib/protocol.ts` is that filter, and
+carry its own `about`. `refusalAbout` in `lib/protocol.ts` is that filter, and
 it is what to look at if a refusal ever appears under the wrong box.
 
 ### What was that?
@@ -1393,7 +1395,7 @@ Under the queue, an **Earlier** list: what has been on this session, newest
 first, so somebody who walked in on the end of something can see what it was.
 
 The station writes a play down when the track *starts*, which makes the newest
-row whatever is on right now — already shown in full at the top of the page — so
+row whatever is on right now (already shown in full at the top of the page) so
 the page drops that one row and shows only what was missed (`playedEarlier` in
 `lib/history.ts`). Only that row, and only while it names the track that is on: a
 track played earlier in the evening and again now is two plays, and the earlier
@@ -1402,26 +1404,26 @@ one belongs in the list.
 This is the one social list that survives a reload. The roster and the skip
 tally are true only while a socket is open, so a refresh starts them again; the
 history is in the database, so a listener who reloads at 10 still sees the
-evening, and one who arrives then sees what they missed — including whatever
+evening, and one who arrives then sees what they missed, including whatever
 went on while they were reconnecting, merged by id.
 
 ### Voting on what's on
 
 Under the track, a line saying how much of the room wants the next one and a
-button to join them — `3 of 4 want the next one`, as a fraction of the roster
+button to join them: `3 of 4 want the next one`, as a fraction of the roster
 rendered below it, because a bare count means nothing. Three out of four is the
 room; three out of thirty is three people.
 
 Nothing here is optimistic. Both the count *and* whether this listener's own vote
 is in come back from the station, so the button never claims a vote the station
-does not hold — including after a reconnect, which drops it. The tally is
+does not hold, including after a reconnect, which drops it. The tally is
 rendered only against the track it names (`tallyFor` in `lib/skips.ts`), so the
 moment between a `state` frame and the `skips` frame that follows it shows no
 count rather than the last song's.
 
 The vote button is the listener page's alone: the admin panel has a Skip button,
 and voting for something you can simply do is theatre. The tally still reaches
-the panel, next to that button — which is the only thing in the system that acts
+the panel, next to that button, which is the only thing in the system that acts
 on it.
 
 ### When there is no station
@@ -1433,17 +1435,17 @@ like something that broke rather than a station that went away.
 The page distinguishes four of those, because they call for four different
 things being said:
 
-- **Never reached it** — nothing has ever answered. The panel says *Can't find
+- **Never reached it.** Nothing has ever answered. The panel says *Can't find
   the station*, and there is no Tune in button at all.
-- **Had it and lost it** — the socket dropped. Whatever the station last said
+- **Had it and lost it.** The socket dropped. Whatever the station last said
   stays on screen, with a line above it saying it is from before the drop.
-- **Off air** — the station answers perfectly well and nobody is broadcasting.
+- **Off air.** The station answers perfectly well and nobody is broadcasting.
   *chunky.fm is off the air*, and no Tune in button: there is nothing to tune
   into, and the click would be spent on silence. See [going live](#going-live).
-- **There, and quiet** — the station is on air with nothing on the decks. The
+- **There, and quiet.** The station is on air with nothing on the decks. The
   page says both halves: nothing is on, and you are tuned in for whatever is.
 
-The last two look identical in a playback snapshot — an empty deck either way —
+The last two look identical in a playback snapshot (an empty deck either way)
 which is exactly why `air` is its own frame rather than something derived from
 `state`. And the first two are about the *socket* while the third is about the
 *station*, so `standing()` folds the two questions into the one sentence a
@@ -1455,8 +1457,8 @@ The distinction that costs something is the first two, and `lib/availability.ts`
 is where it lives. `StationStatus` is about one socket, which is the wrong grain
 for a screen: a page loaded against a dead server cycles `connecting → offline →
 connecting` forever as the backoff runs, so anything keyed on the raw status
-alternates between two messages once per retry while the truth — nothing has
-ever answered — never changes. So availability is a *fold* over the statuses
+alternates between two messages once per retry while the truth (nothing has
+ever answered) never changes. So availability is a *fold* over the statuses
 rather than a mapping of them: `connecting` is not news, and leaves whatever the
 page had already concluded standing until the attempt resolves.
 
@@ -1465,8 +1467,8 @@ connection is already retrying on a backoff and the only thing a button could do
 is what is happening anyway, while implying the page had given up and was
 waiting to be asked. And a drop does not blank the track: a short outage is the
 common one and the audio usually plays through it out of the buffer, so a page
-that cleared a song the listener can still hear would be worse than the outage —
-the line above it is what stops the frozen roster and dead tally from still
+that cleared a song the listener can still hear would be worse than the outage.
+The line above it is what stops the frozen roster and dead tally from still
 reading as live.
 
 Tuning in is refused while the station is unreachable, and not only because the
@@ -1475,7 +1477,7 @@ gesture and nowhere else, so a listener who spends their click on an absent
 station gets a page that says a track is on and no sound when it comes back:
 `play()` would be called from a broadcast handler rather than a click, and
 refused. Better to hold the button back and hand it over when there is a station
-to hand it to — which the page does on its own, without a reload.
+to hand it to, which the page does on its own, without a reload.
 
 ### Admin mode
 
@@ -1483,15 +1485,15 @@ The controls live at **`/listen#admin`** (`/admin` works too, wherever the page
 is served with an SPA fallback). Off that route nothing admin renders, and the
 route alone reveals nothing: the panel shows a password form until the server
 has accepted a session at `/api/admin/session`. A wrong password gets the form
-back, and so does a `401` mid-session — which is what happens when the session
+back, and so does a `401` mid-session, which is what happens when the session
 lapses, or the station restarts with a different password.
 
 **The client keeps no secret at all.** The password is typed, posted once, and
 gone; what remains is the `HttpOnly` cookie, which page script cannot read and
 does not need to, because the browser attaches it. So there is nothing to store,
 nothing to remember across a reload, and nothing an XSS could carry off. A
-reload asks `GET /api/admin/session` once — the only way to know whether a
-cookie is still good is to ask — and the answer decides between the form and the
+reload asks `GET /api/admin/session` once, because the only way to know whether
+a cookie is still good is to ask, and the answer decides between the form and the
 controls.
 
 Signing out waits for the server to drop the cookie before the form comes back,
@@ -1499,14 +1501,14 @@ so "signed out" means the session is over rather than that this tab stopped
 drawing buttons.
 
 The panel keeps no playback or queue state of its own. Both arrive on the
-websocket the listener already has open, so a track ending by itself — or a
-command issued from another tab — moves the panel too.
+websocket the listener already has open, so a track ending by itself, or a
+command issued from another tab, moves the panel too.
 
 A command's own response carries the state it produced, which is the same thing
 the broadcast is about to say, so the panel folds it in immediately
 (`useStation`'s `applyState` / `applyQueue`) rather than sitting unchanged for a
-round trip. If the socket happens to be reconnecting, the command still lands —
-it went over HTTP — and the panel says so instead of quietly showing a queue
+round trip. If the socket happens to be reconnecting, the command still lands
+(it went over HTTP) and the panel says so instead of quietly showing a queue
 that has moved on.
 
 Listeners see the queue too, as a read-only **Up next** list. It is the same
@@ -1523,7 +1525,7 @@ frame the panel reorders, seen from the other side.
 
 The wish book sits above the library, because a wish is read and then answered
 by queueing something from the list below it. It is the one part of the panel
-that is *polled* rather than pushed — every ten seconds, and after every mark.
+that is *polled* rather than pushed: every ten seconds, and after every mark.
 A wish arrives over a socket that carries no privileged frames at all: the
 station deliberately tells a socket holding an admin cookie nothing it would not
 tell a stranger, so the panel asks rather than the station pushing. Ten seconds
@@ -1540,7 +1542,7 @@ Two separate problems, solved separately.
 **The browser's clock is wrong.** Every decision is made against `startedAt`, a
 server timestamp, so the client first measures how far its own clock sits from
 the server's: send `t0`, get back `t1`, note `t2`, then `rtt = t2 - t0` and
-`offset = t1 - (t0 + rtt/2)`. Five probes, 150ms apart — spaced rather than
+`offset = t1 - (t0 + rtt/2)`. Five probes, 150ms apart, spaced rather than
 fired in one burst, because five packets sent at once share a queueing delay,
 which is exactly the contamination that taking the lowest RTT is meant to
 avoid. Samples live in a rolling window, so one slow round trip can never
@@ -1564,12 +1566,12 @@ One note on the constants, which come from PLAN.md: since the smallest error
 that escapes the 50ms dead zone already exceeds the ±2% cap once multiplied by
 the 0.5 gain, the clamp always binds and correction is effectively bang-bang.
 That converges from the worst non-seeking case in under a minute and is
-inaudible, so it is left as specified — but the proportional term only starts
+inaudible, so it is left as specified, but the proportional term only starts
 doing anything if the dead zone drops below 40ms.
 
 ### Verifying it
 
-Sync — and anything else that only happens in a real browser — is what unit
+Sync, and anything else that only happens in a real browser, is what unit
 tests cannot judge, so there are eleven scripts that drive real Chrome. Each
 needs a running server, a running Vite dev server, and at least two uploaded
 tracks (one of them a few minutes long). `qa:offline` is the exception on the
@@ -1596,22 +1598,22 @@ npm run qa:all         # all eleven, restarting the station between each
 Prefer `qa:all` for a full pass. Run back-to-back by hand they interfere with
 each other: the roster, the skip tally, the chat and the evening's history all
 live in the session, and most of these scripts open by asserting on an empty
-one — so whichever goes second fails on the first one's leftovers. `qa:all`
+one, so whichever goes second fails on the first one's leftovers. `qa:all`
 restarts the station before each script, which is the only thing that gives
 them the empty room they are written against.
 
 They read `CLIENT_URL`, `API_URL`, `ADMIN_PASSWORD`, `TRACK_ID`,
 `OTHER_TRACK_ID` and `CHROME_PATH` from the environment. `qa:reconnect`,
 `qa:offline`, `qa:presence` and `qa:chat` also start and stop the server itself,
-so build it first (`cd server && npm run build`) — telling a browser it is offline does *not* drop an
+so build it first (`cd server && npm run build`), because telling a browser it is offline does *not* drop an
 established WebSocket, so taking the station away is the only way to test a
-disconnection for real. `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture —
+disconnection for real. `qa:admin` uploads `QA_UPLOAD_FILE` (default: the short test fixture, so
 point it at something a few minutes long) and drives three tabs at once: an
 admin, a listener, and a second listener that joins after the queue was built.
 It checks that both listeners hear every command, show the same queue as the
 admin without a reload, and never grow a control. `qa:wishes` drives three tabs
 for the property no unit test can see: that a wish reaches the person who asked
-and the admin, and nobody else — with a chat message sent the same second as the
+and the admin, and nobody else, with a chat message sent the same second as the
 control, so "the other listener saw nothing" means something. `qa:skips` drives
 three for the properties that are about the room: one number three pages agree
 on live, each of them with its own answer to "is my vote in?", a vote that leaves
@@ -1622,44 +1624,44 @@ reload and for someone who only just arrived. `qa:offline` is the only one that
 starts with no station at all: it loads the page against a dead server, watches
 the message hold still through several backoff attempts rather than flickering
 once per retry, waits for the page to tune itself in when the server appears,
-and then takes it away again underneath a playing listener — which has to read
+and then takes it away again underneath a playing listener, which has to read
 as a drop rather than as never having found it, and must not blank the track.
 
 Between them these caught five bugs that every unit test passed straight
-through — see `docs/qa-notes.md`.
+through; see `docs/qa-notes.md`.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `master` and every pull
 request, in four jobs:
 
-- **checks** — typecheck, unit tests and build, for both workspaces, on Node 20
+- **checks.** Typecheck, unit tests and build, for both workspaces, on Node 20
   and Node 22. Two versions because `server/package.json` claims `>=20.12` while
   the containers ship 22; testing only one of those leaves the other a guess.
-- **sync check** — `server/npm run sync-check`, the headless version of
+- **sync check.** `server/npm run sync-check`, the headless version of
   `verify:sync`. Two listeners join a real server over real websockets at
   different times and must compute the same playback position. It takes about
   two seconds and it is the thing that must never regress.
-- **docker compose stack** — builds both images, brings the stack up with
+- **docker compose stack.** Builds both images, brings the stack up with
   `--wait` so the Dockerfile healthchecks have to pass, then drives it over the
   published ports: `/health` through nginx and direct, the page plus its hashed
   bundle, `/api/tracks`, and an admin sign-in that has to refuse the wrong
   password before it accepts the right one. This is the only job that sees
   nginx, the native `better-sqlite3` build and the volume.
-- **single image** — builds the root `Dockerfile` and drives it over one port.
+- **single image.** Builds the root `Dockerfile` and drives it over one port.
   It makes the same front-door assertions the compose job makes of nginx, for
   the reason given under [Deploying](#deploying): those rules exist twice in
   production, and a copy nobody checks is a copy that drifts. It also pins the
-  one failure the app-shell fallback could cause — a mistyped API route coming
+  one failure the app-shell fallback could cause: a mistyped API route coming
   back as a page of HTML with a 200 on it.
 
-What CI does not run is the browser QA above — it needs a real Chrome and a
+What CI does not run is the browser QA above: it needs a real Chrome and a
 library with a few minutes of audio in it, neither of which a runner has. Those
 stay manual, which is worth remembering when a change touches seeking or
 reconnection: the suite that would catch it is the one nobody is running for
 you.
 
-Dependency updates come in through `.github/dependabot.yml` — weekly for both
+Dependency updates come in through `.github/dependabot.yml`: weekly for both
 lockfiles with minor and patch bumps grouped into a single PR, monthly for the
 action versions pinned in the workflow.
 
@@ -1670,7 +1672,7 @@ front door.
 
 | | Serves the client | Where |
 |---|---|---|
-| `docker-compose.yml` | nginx, in its own container | your own machine, a VPS — anywhere nothing is in front |
+| `docker-compose.yml` | nginx, in its own container | your own machine, a VPS, anywhere nothing is in front |
 | root `Dockerfile` | Fastify, same process as the API | Railway, or any platform that runs one container behind its own edge |
 
 The application code is identical in both. What switches is `CLIENT_DIR`: unset,
@@ -1679,7 +1681,7 @@ set to the built client, it also owns the front door.
 
 ### The front door exists three times
 
-`/`, `/?k=<key>` and `/welcome` are decided in three separate places — nginx's
+`/`, `/?k=<key>` and `/welcome` are decided in three separate places: nginx's
 config, Vite's dev middleware, and `server/src/lib/doorway.ts`. That is a real
 cost and it is deliberate: each of the three is the only thing listening in the
 environment it serves, and none of them can import from the others (the client
@@ -1688,14 +1690,14 @@ image does not contain the server directory, and vice versa).
 What keeps them honest is that the compose stack and the single image are both
 driven by CI with the same assertions. If you change a rule, change it in all
 three, and the two Docker jobs will tell you if you missed one. The dev server's
-copy has no such net — that one is on you.
+copy has no such net; that one is on you.
 
 ### Railway
 
 `railway.json` points at the root `Dockerfile` and sets three things that are
 not defaults and are all load-bearing:
 
-- **`numReplicas: 1`.** Playback state lives in memory, by design — see
+- **`numReplicas: 1`.** Playback state lives in memory, by design. See
   [the queue](#the-queue). Two replicas is two stations disagreeing with each
   other, with listeners randomly split between them. This is the setting to
   re-check first if the station ever starts behaving impossibly.
@@ -1707,12 +1709,12 @@ not defaults and are all load-bearing:
 The one thing the file cannot do for you is **mount a volume**. Do it in the
 Railway dashboard, mounted at `/data`, which is what `AUDIO_STORAGE_DIR` is set
 to in the image. Without one the filesystem is ephemeral and every deploy
-silently wipes the library *and* `chunky.sqlite` — and because the rows name
+silently wipes the library *and* `chunky.sqlite`, and because the rows name
 files on disk, the two only mean anything together.
 
 Set **both** `ADMIN_PASSWORD` and `STATION_KEY` as service variables. Neither is
-required to boot — the station falls back to the code baked into the source for
-both — and that is exactly why a deployment on the open internet has to set
+required to boot (the station falls back to the code baked into the source for
+both) and that is exactly why a deployment on the open internet has to set
 them: otherwise the decks are behind a code that ships in this repository, and
 behind the same code you hand out to anyone you want to let listen. See
 [`/api/listen`](#apilisten--who-may-hear-the-station).
@@ -1730,6 +1732,6 @@ docker build -t chunky-fm/all-in-one .
 docker run --rm -e ADMIN_PASSWORD=whatever -p 3000:3000 chunky-fm/all-in-one
 ```
 
-The station is then at <http://localhost:3000> — landing page at `/`, the
+The station is then at <http://localhost:3000>: landing page at `/`, the
 station itself at `/listen`, `/listen#admin` to run it. Add `-v chunky:/data` to
 keep the library across runs.

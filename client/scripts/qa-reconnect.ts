@@ -3,8 +3,8 @@
  * page notices, recovers on its own, and resyncs when the station returns.
  *
  * This script owns the server process, so the server must be built first
- * (`cd server && npm run build`). Everything else — including starting and
- * stopping the station — comes from qa-env.
+ * (`cd server && npm run build`). Everything else, including starting and
+ * stopping the station, comes from qa-env.
  */
 import type { ChildProcess } from 'node:child_process'
 import { chromium } from 'playwright-core'
