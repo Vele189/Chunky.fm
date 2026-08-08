@@ -61,6 +61,15 @@ export interface QueueMessage {
 export interface PresenceMessage {
   type: 'presence'
   listeners: Listener[]
+  /**
+   * Heads the decks added to the tally, on top of the roster. Zero unless
+   * somebody with the password says otherwise; see `Padding`.
+   *
+   * Alongside the roster rather than folded into it, so that every name a page
+   * draws is a listener and the invented part of the count is a number with no
+   * name on it. A client shows `listeners.length + padding` as the headcount.
+   */
+  padding: number
 }
 
 /**
@@ -308,8 +317,8 @@ export function queueMessage(entries: QueueEntry[]): QueueMessage {
   return { type: 'queue', entries }
 }
 
-export function presenceMessage(listeners: Listener[]): PresenceMessage {
-  return { type: 'presence', listeners }
+export function presenceMessage(listeners: Listener[], padding = 0): PresenceMessage {
+  return { type: 'presence', listeners, padding }
 }
 
 export function chatMessages(messages: ChatMessage[]): ChatMessagesMessage {

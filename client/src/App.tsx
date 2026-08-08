@@ -233,6 +233,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     air,
     queue,
     listeners,
+    padding,
     messages,
     myWishes,
     history,
@@ -241,6 +242,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     connection,
     applyState,
     applyQueue,
+    applyPadding,
     applyAir,
     schedule,
     applySchedule,
@@ -425,7 +427,10 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
       <div className="station__main">
         <Topbar
           reach={here}
-          listeners={listeners?.length ?? null}
+          // What the room is told: who is here, plus whatever the decks have
+          // added on top. Null until the first roster, since a count nobody
+          // has sent is not zero. See `PresenceMessage`.
+          listeners={listeners === null ? null : listeners.length + padding}
           admin={admin}
           nextSession={
             // Off air only, and only for an announcement that has not gone
@@ -452,12 +457,15 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
             state={state}
             air={air}
             queue={queue}
+            roster={listeners?.length ?? null}
+            padding={padding}
             messages={messages}
             serverNow={clock.serverNow}
             session={session}
             status={status}
             applyState={applyState}
             applyQueue={applyQueue}
+            applyPadding={applyPadding}
             applyAir={applyAir}
             schedule={schedule}
             applySchedule={applySchedule}
@@ -578,7 +586,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
 
                   Who else is here stays: that is not somewhere you go, it is
                   something about the room you are already in. */}
-              {!narrow && <Listeners listeners={listeners} />}
+              {!narrow && <Listeners listeners={listeners} padding={padding} />}
             </section>
 
             {!narrow && (
@@ -607,7 +615,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                 the people as much as the conversation. */}
             {route === 'chat' && (
               <>
-                <Listeners listeners={listeners} />
+                <Listeners listeners={listeners} padding={padding} />
                 {chat}
               </>
             )}
@@ -812,15 +820,22 @@ function Sleeve({ track }: { track: Track }) {
  *
  * Null before the first roster arrives, and empty for the moment between tuning
  * in and this listener's own join landing; neither is worth a heading.
+ *
+ * The count in the heading is the same one the top bar shows, padding and all,
+ * so the two can never disagree; the names are the part of it that is people.
  */
-function Listeners({ listeners }: { listeners: Listener[] | null }) {
-  if (!listeners || listeners.length === 0) return null
+function Listeners({ listeners, padding }: { listeners: Listener[] | null; padding: number }) {
+  if (!listeners) return null
+  const total = listeners.length + padding
+  if (total === 0) return null
 
   return (
     <section className="panel panel--stage" data-testid="listeners">
       <div className="panel__head">
         <h2 className="panel__title">Listening now</h2>
-        <p className="panel__aside">{listeners.length}</p>
+        {/* The whole count, so this agrees with the top bar. The names below
+            are the part of it with people attached. */}
+        <p className="panel__aside">{total}</p>
       </div>
       <ul className="listeners__list">
         {listeners.map((listener) => (
@@ -828,6 +843,15 @@ function Listeners({ listeners }: { listeners: Listener[] | null }) {
             {listener.nickname}
           </li>
         ))}
+        {/* The rest of the count, as one pill rather than as invented names.
+            Nobody is behind this number, so it gets nothing to be greeted by:
+            a row here that read like a nickname would be a stranger the room
+            could say hello to and never hear back from. */}
+        {padding > 0 && (
+          <li className="listeners__name listeners__name--more" data-testid="listeners-more">
+            +{padding} more
+          </li>
+        )}
       </ul>
     </section>
   )

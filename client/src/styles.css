@@ -861,6 +861,14 @@ h2 {
   white-space: nowrap;
 }
 
+/* The rest of the headcount, when the decks have padded it: no pill and no
+   colour, so it reads as a tally at the end of the row rather than as one more
+   person who could be spoken to. */
+.listeners__name--more {
+  background: none;
+  color: var(--faint);
+}
+
 /* --- the chat --------------------------------------------------------------
  *
  * Avatar, name, bubble: the design's shape, with the avatar drawn from the
@@ -1776,6 +1784,82 @@ h2 {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+/* --- padding the headcount ---------------------------------------------------
+ *
+ * The console's own copy of the tally in the top bar, with a way to add to it.
+ * It wears the same pill the listener page's headcount does, on purpose: the
+ * number sitting in it is the number the room is being shown. Underneath, in
+ * the quietest text on the panel, how much of that is people.
+ */
+
+.headpad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.headpad__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 4px;
+  border-radius: var(--pill);
+  background: var(--panel);
+  box-shadow: var(--ring);
+}
+
+.headpad__step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--raised);
+  color: var(--fg-dim);
+  font: 600 14px/1 var(--font);
+  cursor: pointer;
+}
+
+.headpad__step:hover:not(:disabled) {
+  background: var(--raised-soft);
+}
+
+.headpad__step:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+/* Numeric, and wide enough for four figures, so pressing plus moves the count
+   without moving the buttons either side of it. */
+.headpad__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 58px;
+  color: var(--fg);
+  font-family: var(--font-numeric);
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+.headpad__count img {
+  display: block;
+}
+
+.headpad__split {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 16.5px;
+  white-space: nowrap;
 }
 
 /* --- the invite --------------------------------------------------------------

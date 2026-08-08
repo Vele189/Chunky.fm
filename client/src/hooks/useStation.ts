@@ -55,6 +55,14 @@ export interface Station {
   queue: QueueEntry[] | null
   /** Who else is here. Null until the first roster arrives. */
   listeners: Listener[] | null
+  /**
+   * Heads the decks added on top of the roster, and zero until told otherwise.
+   *
+   * Kept beside the roster rather than mixed into it, exactly as it arrives:
+   * the names are people, this is a number. The headcount a page shows is the
+   * two added together. See `PresenceMessage`.
+   */
+  padding: number
   /** The conversation, oldest first. Empty until the first chat frame arrives. */
   messages: ChatMessage[]
   /**
@@ -99,6 +107,8 @@ export interface Station {
    */
   applyState(snapshot: PlaybackSnapshot): void
   applyQueue(entries: QueueEntry[]): void
+  /** Fold in what `POST /api/padding` just answered. See `applyState`. */
+  applyPadding(count: number): void
   /** Fold in what `POST /api/session` just answered. See `applyState`. */
   applyAir(snapshot: AirSnapshot): void
   /** Fold in what `PUT /api/schedule` just answered. See `applyState`. */
@@ -117,6 +127,7 @@ export function useStation(
   const [schedule, setSchedule] = useState<ScheduledSession | null>(null)
   const [queue, setQueue] = useState<QueueEntry[] | null>(null)
   const [listeners, setListeners] = useState<Listener[] | null>(null)
+  const [padding, setPadding] = useState(0)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [myWishes, setMyWishes] = useState<Wish[]>([])
   const [history, setHistory] = useState<Play[]>([])
@@ -147,7 +158,10 @@ export function useStation(
         if (message.type === 'air') setAir({ live: message.live, since: message.since })
         if (message.type === 'schedule') setSchedule(message.schedule)
         if (message.type === 'queue') setQueue(message.entries)
-        if (message.type === 'presence') setListeners(message.listeners)
+        if (message.type === 'presence') {
+          setListeners(message.listeners)
+          setPadding(message.padding)
+        }
         // Merged rather than replaced: a batch is either the history or one new
         // line, and both fold into what is already on screen the same way.
         if (message.type === 'chat') {
@@ -186,6 +200,8 @@ export function useStation(
     [],
   )
   const applyQueue = useCallback((entries: QueueEntry[]) => setQueue(entries), [])
+  /** Fold in what `POST /api/padding` just answered. See `applyState`. */
+  const applyPadding = useCallback((count: number) => setPadding(count), [])
   const applyAir = useCallback((snapshot: AirSnapshot) => setAir(snapshot), [])
   /**
    * Fold in what `PUT /api/schedule` just answered, the way `applyAir` folds in
@@ -203,6 +219,7 @@ export function useStation(
     schedule,
     queue,
     listeners,
+    padding,
     messages,
     myWishes,
     history,
@@ -211,6 +228,7 @@ export function useStation(
     connection,
     applyState,
     applyQueue,
+    applyPadding,
     applyAir,
     applySchedule,
   }

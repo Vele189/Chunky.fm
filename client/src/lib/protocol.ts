@@ -68,10 +68,22 @@ export interface Listener {
   nickname: string
 }
 
-/** Who is listening. Sent on connect and whenever someone joins or leaves. */
+/**
+ * Who is listening. Sent on connect and whenever someone joins or leaves, and
+ * whenever the decks change the padding below.
+ */
 export interface PresenceMessage {
   type: 'presence'
   listeners: Listener[]
+  /**
+   * Heads the decks added to the tally on top of the roster, and zero unless
+   * somebody with the password says otherwise.
+   *
+   * Alongside the roster rather than folded into it, so every name this page
+   * draws is a listener who is really there and the added part is a number
+   * with no name on it. The headcount is `listeners.length + padding`.
+   */
+  padding: number
 }
 
 /** Something someone said. `at` is server epoch ms. */

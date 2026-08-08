@@ -10,11 +10,13 @@ import { emptyLibrary } from './lib/library.js'
 import { ensureStorageDirs } from './lib/storage.js'
 import { LyricsService } from './lyrics.js'
 import { Mutes } from './mutes.js'
+import { Padding } from './padding.js'
 import { PlaybackState } from './playback.js'
 import { type RealtimeHandle, attachRealtime } from './realtime.js'
 import { mayListen } from './lib/auth.js'
 import { adminRoutes } from './routes/admin.js'
 import { mutesRoutes } from './routes/mutes.js'
+import { paddingRoutes } from './routes/padding.js'
 import { sessionRoutes } from './routes/session.js'
 import { type ClientBundle, clientRoutes, doorwayHook, loadClientBundle } from './routes/client.js'
 import { listenRoutes } from './routes/listen.js'
@@ -42,6 +44,8 @@ declare module 'fastify' {
     /** The next session, announced. Outlives every session; see `Schedule`. */
     schedule: Schedule
     mutes: Mutes
+    /** Heads the decks added to the headcount. See `Padding`. */
+    padding: Padding
     lyrics: LyricsService
   }
 }
@@ -165,6 +169,12 @@ export async function buildApp({
   // not find themselves silenced next Tuesday by a rule nobody remembers.
   const mutes = new Mutes()
 
+  // The other half of the headcount: the roster is who is actually here, and
+  // this is whatever the decks have added on top of it. About tonight, like the
+  // mutes and the queue, and cleared with them below, so a station that comes
+  // back up never goes on claiming a crowd from a night that is over.
+  const padding = new Padding()
+
   // Deliberately not wired to the air change below. Everything else in this
   // file is about tonight and goes when tonight does; an announcement is about
   // a night that has not happened, and ending a broadcast is usually the moment
@@ -178,6 +188,7 @@ export async function buildApp({
     station.playback.stop()
     station.queue.clear()
     mutes.clear()
+    padding.clear()
     // And everything written down during it. Scoping already made all three
     // unreadable; this is about the rows. The chat and the book are free text
     // somebody typed, signed with the name they were using, said to a room that
@@ -205,6 +216,7 @@ export async function buildApp({
   await app.register(sessionRoutes({ config, air }))
   await app.register(scheduleRoutes({ config, schedule }))
   await app.register(mutesRoutes({ config, mutes }))
+  await app.register(paddingRoutes({ config, padding }))
   await app.register(listenRoutes({ config }))
   await app.register(uploadRoutes({ config, db, lyrics }))
   await app.register(mediaRoutes({ config, db }))
@@ -223,6 +235,7 @@ export async function buildApp({
     air,
     schedule,
     mutes,
+    padding,
     // The socket is the station: refusing it is what makes a private station
     // private, since everything a listener sees arrives on it.
     admit: (headers) => mayListen(config, headers),
@@ -249,6 +262,7 @@ export async function buildApp({
   app.decorate('air', air)
   app.decorate('schedule', schedule)
   app.decorate('mutes', mutes)
+  app.decorate('padding', padding)
   app.decorate('lyrics', lyrics)
 
   // preClose, not onClose: an upgraded websocket keeps the HTTP server open, so

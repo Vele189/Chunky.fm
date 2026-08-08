@@ -5,6 +5,7 @@ import { type ChatLog, RateLimit } from './chat.js'
 import type { PlayLog } from './history.js'
 import type { PlaybackSnapshot } from './playback.js'
 import type { Mutes } from './mutes.js'
+import type { Padding } from './padding.js'
 import { type Listener, Presence } from './presence.js'
 import {
   type ServerMessage,
@@ -45,6 +46,11 @@ export interface RealtimeOptions {
   schedule?: Schedule
   /** Who has been asked to stop talking. Omit and nobody is muted. */
   mutes?: Mutes
+  /**
+   * Heads the decks added to the headcount. Omit and the roster is the whole
+   * count, which is the station nobody has padded.
+   */
+  padding?: Padding
   /** The session's chat. Omit and the socket refuses `say` frames. */
   chat?: ChatLog
   /** The session's wish book. Omit and the socket refuses `wish` frames. */
@@ -137,6 +143,7 @@ export function attachRealtime({
   air,
   schedule,
   mutes,
+  padding,
   chat,
   wishes,
   plays,
@@ -189,13 +196,19 @@ export function attachRealtime({
     }
   }
 
+  /** Zero on a station with no padding wired in, which is most of the tests. */
+  const padded = (): number => padding?.count ?? 0
+
   function broadcastPresence(): void {
     // Nothing to tell anyone during a shutdown: every socket left on the roster
     // is on its way out, and announcing each departure to the others would be a
     // roster broadcast per listener as the room empties.
     if (draining) return
-    log?.info({ present: presence.size, listeners: wss.clients.size }, 'broadcasting presence')
-    broadcast(presenceMessage(presence.list()))
+    log?.info(
+      { present: presence.size, padding: padded(), listeners: wss.clients.size },
+      'broadcasting presence',
+    )
+    broadcast(presenceMessage(presence.list(), padded()))
   }
 
   /**
@@ -335,7 +348,7 @@ export function attachRealtime({
     send(socket, queueMessage(queue.list()))
     // Who is already here. This socket is not on that list yet, because it has
     // not said who it is, and joins it the moment it does.
-    send(socket, presenceMessage(presence.list()))
+    send(socket, presenceMessage(presence.list(), padded()))
     // What has been on, so a listener who arrives at 9pm can see what they
     // caught the end of. Written down, so this survives a reload, unlike the
     // roster, which is only true while a socket is open.
@@ -409,8 +422,14 @@ export function attachRealtime({
     broadcast(scheduleMessage(next))
   }
 
+  // The padding is not the roster, but it is the other half of the same tally,
+  // so it rides the same frame: one message shape carries the headcount, and a
+  // page never has to reconcile two of them.
+  const onPaddingChange = () => broadcastPresence()
+
   air?.on('change', onAirChange)
   schedule?.on('change', onScheduleChange)
+  padding?.on('change', onPaddingChange)
 
   const onQueueChange = (entries: QueueEntry[]) => {
     log?.info({ queued: entries.length, listeners: wss.clients.size }, 'broadcasting queue')
@@ -442,6 +461,7 @@ export function attachRealtime({
     queue.off('change', onQueueChange)
     air?.off('change', onAirChange)
     schedule?.off('change', onScheduleChange)
+    padding?.off('change', onPaddingChange)
 
     const sockets = [...wss.clients]
     const allClosed = Promise.all(

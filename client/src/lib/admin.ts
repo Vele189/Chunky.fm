@@ -11,6 +11,13 @@ import type {
 /** Where the admin controls live. */
 export const ADMIN_HASH = '#admin'
 
+/**
+ * The most the headcount can be padded by. Mirrors `server/src/padding.ts`;
+ * keep the two in step. Held here so the panel's plus button stops where the
+ * station would refuse it rather than sending a request that comes back 400.
+ */
+export const MAX_PADDING = 9_999
+
 export function isAdminRoute(location: { pathname: string; hash: string }): boolean {
   return location.hash === ADMIN_HASH || location.pathname === '/admin'
 }
@@ -228,6 +235,30 @@ export class AdminApi {
     return (
       await this.#json<{ nicknames: string[] }>('POST', '/api/mutes', { nickname, muted })
     ).nicknames
+  }
+
+  /**
+   * Heads added to the headcount on top of the roster.
+   *
+   * Admin-only in both directions, like the mutes: the room is shown the total,
+   * and publishing the split would tell every listener exactly how much of the
+   * crowd is nobody. This panel is the only thing that reads it back.
+   */
+  async padding(): Promise<number> {
+    return (await this.#json<{ padding: number }>('GET', '/api/padding')).padding
+  }
+
+  /**
+   * Set the padding. Answers with the count the station now holds, which is not
+   * always the one that was asked for: it is clamped into range there.
+   *
+   * Carries where the number now stands rather than a step, the same shape a
+   * mute takes: two of these in a row leave one count, so a plus button that
+   * lost its answer to a dropped connection cannot double the crowd on retry.
+   */
+  async setPadding(count: number): Promise<number> {
+    return (await this.#json<{ padding: number }>('POST', '/api/padding', { padding: count }))
+      .padding
   }
 
   /**
