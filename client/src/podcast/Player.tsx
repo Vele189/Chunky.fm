@@ -394,8 +394,22 @@ export function Player({ episode, onBack }: PlayerProps) {
 
       {/* No `controls`: the transport above is the transport. `preload`
           metadata rather than auto, because an hour of audio downloaded by
-          somebody who was only reading the notes is rude on a phone. */}
-      <audio ref={audio} src={episode.audioUrl} preload="metadata" />
+          somebody who was only reading the notes is rude on a phone.
+
+          `crossOrigin` is not decoration, and it is not about the visualiser
+          being pretty: Blob.tsx routes this element through a Web Audio graph,
+          and a graph is only allowed to emit sound it is allowed to *read*. On
+          a station with R2 the audio is served from Cloudflare rather than from
+          this origin, so without this the element is CORS-cross-origin, the
+          graph outputs silence, and the transport runs anyway — the clock
+          advances, the blob sits still, and nothing plays. It costs nothing on
+          a station serving its own audio, where the request is same-origin.
+
+          The other half of this lives in the bucket's CORS policy, which has to
+          allow GET from the station's origin. Both or neither: with this
+          attribute and no policy the audio does not load at all, which is a
+          louder failure than the silent one but still a failure. */}
+      <audio ref={audio} src={episode.audioUrl} crossOrigin="anonymous" preload="metadata" />
     </article>
   )
 }
