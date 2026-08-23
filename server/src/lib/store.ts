@@ -136,6 +136,22 @@ function r2Store(config: NonNullable<Config['r2']>): MediaStore {
     region: 'auto',
     endpoint: config.endpoint ?? `https://${config.accountId}.r2.cloudflarestorage.com`,
     forcePathStyle: config.forcePathStyle,
+    /**
+     * Don't hash a body this process does not have.
+     *
+     * The SDK defaults to `WHEN_SUPPORTED`, which computes a CRC32 over the
+     * request body and, for a *presigned* URL, hoists it into the query string
+     * as `x-amz-checksum-crc32`. There is no body at signing time, so the value
+     * it bakes in is the CRC32 of nothing — `AAAAAA==` — and the store then
+     * compares that against the 8 MiB the browser actually PUT and refuses the
+     * part. Every part, every upload.
+     *
+     * `WHEN_REQUIRED` drops it: UploadPart does not mandate a checksum, so the
+     * signed URL carries no claim about bytes this server never sees. The
+     * receipt that matters is still the ETag the store answers with, which the
+     * console hands back at completion.
+     */
+    requestChecksumCalculation: 'WHEN_REQUIRED',
     credentials: {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,

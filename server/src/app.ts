@@ -175,6 +175,12 @@ export async function buildApp({
     // exchanging addresses at all. See `Config.logLevel`.
     logger: logger ?? { level: config.logLevel },
     bodyLimit: 1024 * 1024,
+    // Fastify's default is 100 characters, and R2 hands out multipart upload
+    // ids of two to three hundred — so `DELETE /api/episodes/uploads/:uploadId`
+    // answered 414 rather than routing, and an abandoned upload could never be
+    // cleaned up. Invisible against the disk backend, whose upload id is a
+    // 36-character uuid, which is why the tests are green on it.
+    maxParamLength: 512,
     trustProxy: config.trustProxy,
   })
 
