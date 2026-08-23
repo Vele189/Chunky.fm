@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>chunky.fm · the podcast</title>
+    <meta
+      name="description"
+      content="Conversations from chunky.fm, kept. A session ends and takes its tracklist and its chat with it; these are the nights that were worth holding on to."
+    />
+
+    <!-- Unlike the station and the co-host's page, this one is *for* being
+         found. It is public, it is true on every day of the week, and it is a
+         thing to read rather than an application shell. robots.txt allows it,
+         and the sitemap names every published episode by hand, because the grid
+         draws itself from JavaScript and a crawler that does not run it would
+         otherwise never see an episode. See routes/crawl.ts. -->
+    <link rel="canonical" href="%ORIGIN%/podcast" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0a0a0a" />
+
+    <!-- The card a link turns into. The archive's own, which is what an
+         episode link unfurls as too: a per-episode card would have to be
+         rendered on the server, and this document is static. The poster is the
+         better picture but the page is the honest one. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="chunky.fm" />
+    <meta property="og:url" content="%ORIGIN%/podcast" />
+    <meta property="og:title" content="chunky.fm · the podcast" />
+    <meta
+      property="og:description"
+      content="Conversations from the station, kept. The nights that were worth holding on to."
+    />
+    <meta property="og:image" content="%ORIGIN%/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="chunky.fm — the podcast." />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/podcast/main.tsx"></script>
+  </body>
+</html>

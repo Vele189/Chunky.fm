@@ -30,12 +30,13 @@ describes the system as built.
 13. [Voice: mic, call-in and co-host](#voice-mic-call-in-and-co-host)
 14. [Session lifecycle](#session-lifecycle)
 15. [Uploads, library and lyrics](#uploads-library-and-lyrics)
-16. [Configuration reference](#configuration-reference)
-17. [Running the station](#running-the-station)
-18. [Testing and CI](#testing-and-ci)
-19. [Deployment](#deployment)
-20. [System invariants](#system-invariants)
-21. [Repository layout](#repository-layout)
+16. [The podcast archive](#the-podcast-archive)
+17. [Configuration reference](#configuration-reference)
+18. [Running the station](#running-the-station)
+19. [Testing and CI](#testing-and-ci)
+20. [Deployment](#deployment)
+21. [System invariants](#system-invariants)
+22. [Repository layout](#repository-layout)
 
 ---
 
@@ -134,7 +135,7 @@ docker run --rm -v chunky-fm_data:/data -v "$PWD:/out" busybox \
 
 ## The front door
 
-Four documents are served, and the routing rules that decide which one answers
+Five documents are served, and the routing rules that decide which one answers
 an address exist in **three** independent implementations:
 
 ```mermaid
@@ -146,11 +147,13 @@ flowchart TD
     Root -- "/listen, /admin" --> Station["index.html<br/>the station app"]
     Root -- "/cohost" --> CoHost["cohost.html<br/>the co-host surface"]
     Root -- "/how-it-works" --> How["how-it-works.html<br/>prose, no bundle"]
+    Root -- "/podcast, /podcast/*" --> Pod["podcast.html<br/>the archive and the player"]
     Root -- "/welcome" --> R1["301 to /"]
     Root -- "/landing.html" --> R2["301 to /"]
     Root -- "/index.html" --> R3["301 to /listen"]
     Root -- "/cohost.html" --> R4["301 to /cohost"]
     Root -- "/how-it-works.html" --> R5["301 to /how-it-works"]
+    Root -- "/podcast.html" --> R6["301 to /podcast"]
     Root -- "/api/*, /ws" --> Api["Fastify"]
     Root -- "robots.txt, sitemap.xml, llms.txt" --> Crawl["Fastify crawl routes"]
     Root -- "a real file in the bundle" --> Static["favicon, og.png, apple-touch-icon"]
@@ -167,7 +170,7 @@ None of the three can import from the others: the client image does not contain
 the server directory, and vice versa. They are kept honest by CI, which drives
 the compose stack and the single image with the same set of assertions.
 
-Two rules are worth calling out:
+Three rules are worth calling out:
 
 - **An invite must never reach the landing page.** A private station's link is
   `/?k=<key>`, and older invites still say exactly that. The landing document
@@ -175,6 +178,14 @@ Two rules are worth calling out:
   forwarded to `/listen` with the key intact. The nginx test is `if ($arg_k != "")`
   rather than `if ($arg_k)`, because nginx's own notion of truth reads a key of
   literally `0` as absent.
+- **`/podcast/` is the one prefix rule.** Every other address is matched
+  exactly, because every other address is known. An episode's is not: the slug
+  is part of the path and no front door has a list of them to check against. So
+  the rule is `/podcast` exactly, plus anything under `/podcast/` — which stops
+  at the separator, so `/podcastly` is still nothing, the same way `/welcomely`
+  is not `/welcome`. Being the only prefix rule makes it the only one that can
+  go missing while every other check still passes, so CI drives an episode
+  address by name against both nginx and the single image.
 - **Unknown addresses are a real 404.** An app-shell fallback (`try_files ... /index.html`)
   answers every typo with the station and a `200`, which is a soft 404: it
   advertises `/whatevr` as a real page and offers unlimited duplicates of the
@@ -376,9 +387,20 @@ audio_storage/
   audio/     <sha256>.mp3    uploaded files, named by content hash
   artwork/   <sha256>.jpg    artwork extracted from tags at upload time
   posters/   <id>.<ext>      session posters, public
+  episodes/
+    audio/   <sha256>.mp3    podcast episodes, public
+    posters/ <id>.<ext>      episode posters, public, always 1080x1350
   tmp/                       in-flight uploads, cleaned on completion
   chunky.sqlite
 ```
+
+`episodes/` is deliberately not under `audio/`, and the separation is
+load-bearing rather than tidy. Ending a broadcast deletes every row in `tracks`
+and every file behind it (see [Session lifecycle](#session-lifecycle)): the
+station is an evening, not a back catalogue. The archive is the one thing here
+meant to survive that, so it shares no table and no directory with any of it,
+and there is no path by which ending a session can reach it. See
+[The podcast archive](#the-podcast-archive).
 
 ---
 
@@ -567,6 +589,34 @@ Upload statuses:
 | `415` | Not audio, or a container the station does not serve. |
 
 Supported containers: MP3, FLAC, Ogg/Opus, WAV, MP4/M4A, AIFF.
+
+### The podcast archive
+
+The one part of this API whose **reads are open on a private station**. See
+[The podcast archive](#the-podcast-archive) for why.
+
+| Route | Gate | Description |
+|---|---|---|
+| `GET /api/episodes` | open | Published episodes, newest first. |
+| `GET /api/episodes/:slug` | open | One episode. A draft is `404` here, and visible to an admin. |
+| `GET /api/episode-audio/:filename` | open | Audio with `Range` support, `immutable`. |
+| `GET /api/episode-poster/:filename` | open | The poster, `immutable`. |
+| `GET /api/admin/episodes` | admin | Everything, drafts included. The console's list. |
+| `POST /api/episodes` | admin | `multipart/form-data`: an `audio` part, a `poster` part, and the fields. |
+| `PATCH /api/episodes/:id` | admin | Partial. Absent means "leave it"; an explicit `null` clears. |
+| `DELETE /api/episodes/:id` | admin | Row first, then both files. |
+
+Upload statuses:
+
+| Status | When |
+|---|---|
+| `201` | Stored. Body is `{episode}`. |
+| `400` | No audio part, no poster part, an empty file, or no title. |
+| `401` | Missing or refused admin credentials. |
+| `409` | That audio is already an episode. Body carries the existing `episode`. |
+| `413` | Audio over `MAX_UPLOAD_BYTES`, or a poster over 8 MiB. |
+| `415` | Not audio, or a poster that is not a JPEG, PNG or WebP. |
+| `422` | The poster is not 1080x1350. The message names the size received. |
 
 ### Voice and the room
 
@@ -1104,6 +1154,7 @@ no Tailwind, so utility classes become rules drawn from `tokens.css`):
 | `GlareCard` in `InfiniteMovingCards` | Glare Card, Infinite Moving Cards | The second lap is rendered, not `cloneNode`d, because a cloned node has no React on it. Pauses on focus and touch, not only hover. |
 | `MacbookScroll` | Container Scroll Animation | Progress comes from `getBoundingClientRect` on a rAF-throttled listener, because the page's height changes without a resize event. |
 | `DraggableCard` | Draggable Card | Drag is enabled only for `(hover: hover) and (pointer: fine)`, so a pile does not swallow a thumb's scroll. |
+| `TiltCard` (the archive) | 3D Card Effect | Rotation divided by 60 rather than 25: this is a grid of cards, not one hero, and a page where every card is visibly askew will not sit still. Handlers are `onPointer*` and ignore anything that is not a mouse, because `onMouseMove` fires once on a tap and leaves a phone's card stuck at whatever angle the finger landed at. |
 | `SquigglyText` | Squiggly Text | Driven by an interval at the step duration rather than a per-frame callback, stopped off screen, and disabled under `prefers-reduced-motion`. |
 | `World` (globe) | GitHub Globe | Monochrome, twelve arcs all landing on one point, no `drei`, and the camera aspect is described to the `Canvas` rather than hardcoded. |
 
@@ -1535,6 +1586,292 @@ is the same "now" everything else already agrees on.
 
 ---
 
+## The podcast archive
+
+Everything else in this project is about tonight. A session ends and takes its
+tracklist, its chat and its wish book with it, and the library is emptied down
+to the last file — the station is an evening, not a back catalogue. The archive
+is the deliberate exception, and every structural decision about it follows from
+being the one thing here meant to still be true in a year.
+
+It lives at `/podcast`, a fifth document with its own bundle:
+
+| | The station | The archive |
+|---|---|---|
+| Address | `/listen`, views on the fragment | `/podcast/<slug>`, real paths |
+| Who may read | behind the door on a private station | anyone, always |
+| Lifetime | deleted when the session ends | kept |
+| Clock | everyone inside the same second | yours; scrub it, nobody else is there |
+| Bundle | globe, gramophone, three.js | 25 kB, none of that |
+
+**Why a separate document.** The same reason the co-host's page is one: what the
+bundle has to carry. This is the page strangers arrive at cold, from a link in a
+message, usually on a phone, and the station's bundle carries a globe and a
+gramophone that have nothing to do with reading show notes and pressing play.
+
+**Why paths rather than fragments.** The station is one document deciding what
+to show from `location.hash`, which is right for an application behind a door
+whose views nobody shares. An episode is the opposite: it is public, it is meant
+to be pasted into a message, and it is the one address in this project a crawler
+should read. A fragment never reaches the server, so `/listen#podcast/12` could
+never have a title of its own or appear in a sitemap. The cost is that
+client-side routing now owns the back button, which `Podcast.tsx` handles with
+`popstate` and a `pushState` on every navigation.
+
+**Why its own table.** `episodes` shares nothing with `tracks`. The columns
+could have been made to agree; what could not is the lifetime. Filing an episode
+under `tracks` would mean an archive that deleted itself the first time somebody
+pressed "end broadcast" — see the `air.on('change')` handler in `app.ts`, which
+calls `emptyLibrary`. There is a test named for exactly this
+(`test/podcast.test.ts`, "the archive outlives the evening"), and it is the
+assertion the whole file exists for.
+
+### Drafts, and what a stranger may know
+
+`status` is `draft` or `published`, and draft is the default: an episode is an
+audio file, a poster and five fields typed into a form, and the gap between the
+upload finishing and the description being right is exactly the window in which
+somebody would otherwise find it.
+
+A draft is invisible to the open reads at every level. It is missing from
+`GET /api/episodes`, and its own address answers **404 rather than 403** — a 403
+on a slug confirms the slug is real, and whether an unpublished episode exists is
+not a stranger's business. An admin asking directly gets it, so "View" in the
+console lands on the real page rather than a 404 for something visible in the
+list beside the button.
+
+### Addresses
+
+A slug is derived from the title, folded to ASCII (`Sé` becomes `se`) because a
+slug is read off a screen and typed into a phone, and percent-escapes in a
+shared link are how an address stops being something anybody can repeat out
+loud. Collisions count up — `leaving-johannesburg-2` — rather than taking a
+random suffix, because these are read by people.
+
+The slug **follows the title only while the episode is a draft**. Once it is
+published it is frozen: a published episode has been sent to people, and
+re-slugging it to fix a typo would break every link already in a message thread,
+which is worse than an address that reads slightly wrong. Correcting a title
+before publishing corrects the address too, which is the moment anybody actually
+wants that.
+
+### The poster is exactly 1080x1350
+
+The one place this station is strict about an image, and the reason is the grid:
+the cards are a fixed 4:5, and a poster that is not that ratio is either
+letterboxed or cropped with no say from whoever chose the framing. Both look
+like a bug on the page whose whole job is showing artwork.
+
+Dimensions are read from the file's own header — `lib/poster.ts` parses PNG,
+JPEG and WebP by hand rather than adding `sharp`, which is 30 MB of platform
+binaries in the server image to read twenty bytes. The refusal names the size
+received, and the console checks the same thing in the browser before sending,
+because finding out after eighty megabytes of audio have crossed a phone's
+connection that the poster was square is a genuinely bad minute.
+
+The session poster in `routes/schedule.ts` deliberately has **no** such rule: it
+is whatever somebody made in a hurry an hour before the doors open, and refusing
+it then would be the tool getting in the way of the night. The two share
+`lib/poster.ts` for format sniffing and the byte ceiling, and disagree only
+about size.
+
+### One viewport, two columns
+
+Every page of the archive is exactly one viewport tall and never scrolls
+itself. On a desk each is two columns; below 900px the same regions stack.
+What scrolls is always a named region *inside* the layout — the card grid, the
+show notes, each of the console's two columns — so the things that orient you
+stay where they were:
+
+| Page | Left | Right | What scrolls |
+|---|---|---|---|
+| `/podcast` | the words, and the footer | the cards | the cards |
+| `/podcast/<slug>` | the artwork | title, transport, notes | the notes, under a transport that does not move |
+| `/podcast#admin` | the upload form | the archive it changes | each column, on its own |
+
+Two details carry this, and both are easy to lose:
+
+- **`100dvh`, not `100vh`.** `vh` is the *largest* the viewport ever gets — it
+  does not shrink while a phone's address bar is showing — so a `100vh` layout
+  on iOS puts its bottom edge under the browser chrome, which on this page is
+  the play button. `100vh` is still declared first, as the fallback for
+  anything that has not heard of `dvh`, where being slightly too tall is the
+  better failure.
+- **`min-height: 0` on every pane.** A grid or flex child defaults to
+  `min-height: auto`, meaning "as tall as my content" — so a scrolling region
+  inside one makes the *parent* grow instead of scrolling, and the page quietly
+  becomes taller than the viewport again. This is the single declaration that
+  the whole arrangement rests on.
+
+The layout is pinned by a browser check rather than by eye: every view at six
+viewport sizes, asserting the document does not scroll in either axis, that the
+play button is inside the viewport, and — the half that matters more — that
+each scrolling region actually *reaches* its last card, paragraph and row.
+Fitting the screen by clipping content unreachably would pass the first
+assertion and fail the second.
+
+### Where the audio lives, and how it gets there
+
+An hour of conversation is a 500 MB to 1 GB master, and neither end of that
+works naively: it will not fit in one request, and no listener should download
+it. Two independent pieces solve those.
+
+**The upload never touches this server.** The console asks for a chunked
+upload, gets a presigned URL per 8 MiB part, and PUTs each one straight to
+Cloudflare R2. Railway sees the metadata and nothing else. A part that fails is
+retried on its own — dropping at 90% costs the last 8 MiB, not 450 — and
+cancelling aborts the upload so the parts already sent are not left in the
+bucket being billed for.
+
+| | Through the server | Direct to R2 |
+|---|---|---|
+| 500 MB crosses Railway | yes | no |
+| Proxy body limit applies | yes | no |
+| Drop at 90% | starts over | resumes at the last part |
+
+**Listeners get a re-encode, not the master.** After the upload answers, a
+background job pulls the master, encodes it to 96 kbps mono AAC with
+`faststart`, and points the episode at that. Measured on a real hour:
+
+| | Size |
+|---|---|
+| master (1 hr, 24-bit/48k stereo WAV) | 988.8 MB |
+| serving copy (96 kbps mono AAC) | 42.0 MB |
+| what a listener downloads | **95.8% less** |
+
+The master is **kept**, under `masters/`, and never served. It is the thing that
+cannot be recreated: re-encoding from a lossy copy later, for a different
+bitrate or codec, is a generation of quality nobody gets back.
+
+The encode is an *errand*, not a step. The episode is created pointing at the
+master, so it is playable the instant the upload answers, and every later state
+is an improvement on that or a note explaining why there wasn't one:
+
+| `transcode_status` | What it means | Plays? |
+|---|---|---|
+| `pending` | the master is the serving copy; the encode is queued | yes, large |
+| `ready` | the small copy is the serving copy | yes |
+| `failed` | ffmpeg refused this file; the master is served | yes, large |
+| `none` | this station has no ffmpeg | yes, large |
+
+There is deliberately no state in which an episode exists and cannot be played.
+
+**Neither piece requires R2.** With the five `R2_*` variables unset the archive
+lives on the storage volume and *the same chunked protocol* runs against this
+server instead — `lib/store.ts` implements begin/sign/put/complete/abort against
+a directory. That is not a degraded mode; it is what `docker compose` and
+`npm run dev` do, and it means the upload path exercised in development is the
+one production runs. The only thing the console does differently is which URL it
+PUTs a part to, and it is handed that URL either way.
+
+Two details that are easy to get wrong:
+
+- **The bucket needs `ExposeHeaders: ["ETag"]` in its CORS policy.** Without it
+  every part uploads successfully and the browser cannot read the receipt, which
+  presents as an upload that reaches 100% and then fails. The upload says so by
+  name when it happens.
+- **The content hash is computed in the browser**, because the server never sees
+  the bytes. `crypto.subtle` is one-shot and cannot hash a gigabyte without
+  holding it in memory, so `lib/episodes.ts` carries a small incremental
+  SHA-256 — checked against the platform's own implementation at every block and
+  padding boundary, and for independence from the slice size, since a hash that
+  depended on `PART_SIZE` would silently break dedupe the day that constant
+  changed.
+
+### The player
+
+Apple Music's transport, with the departures a podcast needs: the outer buttons
+are **skips** (15 back, 30 forward) rather than track changes, because there is
+nowhere to go and the reasons are "I missed that" and "get past this bit"; and
+the remaining time counts down negative, which is the question somebody deciding
+whether to start an hour actually has. How far each skip goes is in its label
+and its tooltip rather than drawn inside the arrow — at 26px a two-digit number
+inside a circle is a smudge, and the arrows already say which way they point.
+
+Three things are deliberately absent, and the first two were built and then
+removed. A **speed control**: it is a preference, and this is a page for
+listening to one conversation rather than a client for getting through a
+backlog. A **volume slider**: every device this runs on already has one that
+works, and on iOS `audio.volume` is read-only, so the slider was inert on
+exactly the devices where it cost the most room. A **queue**, for a different
+reason — an archive is browsed rather than played through, and autoplaying the
+next episode of a conversation because somebody let one finish is presumptuous.
+
+The three glyphs are [Phosphor](https://phosphoricons.com), fill weight,
+vendored inline from `phosphor-icons/core` (`assets/fill/`) with upstream's
+paths untouched. The rest of the project uses Phosphor too, but through
+`client/src/assets/icons/` as Figma exports loaded with `<img src=…>`, and that
+could not work here: those files carry a hardcoded `#171717` or `white`, because
+an `<img>` has no access to the colour of the thing it sits in. These sit inside
+buttons that change colour on hover and invert entirely on the play button, so
+they are inline SVG keeping upstream's `fill="currentColor"`.
+
+One thing to know if the skip icons are ever revisited: `skip-back` and
+`skip-forward` are the *track* skip glyph, and these buttons do not change
+track. Nothing is reachable by pressing one that the icon misrepresents — there
+is no next episode from here — and the label and tooltip both carry the
+duration. `arrow-counter-clockwise` is what a seconds-jump usually wears.
+
+The play glyph gets **no optical nudge**, which is the opposite of the usual
+advice: a triangle centred on its bounding box reads left of centre in a circle,
+so it is normally pushed a few pixels right. Phosphor's `play-fill` already
+carries that offset — the path spans 64..240 on a 256 grid — and adding the
+customary correction on top pushes it visibly past the middle.
+
+Position is remembered per episode in `localStorage`, restored on
+`loadedmetadata` (seeking an element that does not yet know its duration is
+ignored or clamped depending on the browser), and cleared within fifteen seconds
+of the end — somebody who reached the outro has heard it, and restoring them to
+59:57 is a bug with good intentions. It is kept in the browser rather than on
+the server because the archive is public: a server-side position would mean the
+station knowing what strangers listen to, which it has no reason to want.
+
+### The blob
+
+The shape behind the artwork is driven by **the actual audio**, not a keyframe
+loop. An `AnalyserNode` is tapped off the playing element and every frame writes
+three custom properties — `--level`, `--deform`, `--wobble` — from three bands
+of the spectrum. A single amplitude would only ever make it bigger and smaller,
+which reads as a volume meter; splitting it lets the *shape* change, so a vowel
+and a consonant look different, which is the whole illusion.
+
+A CSS-only version was the alternative and it looks wrong within about four
+seconds of watching it, because it is plainly not listening: it keeps pulsing
+through silences and sits still through a laugh.
+
+The hazard to know about before touching `Blob.tsx`:
+`createMediaElementSource` **permanently reroutes an element's audio through the
+graph**. From that moment it reaches the speakers only via
+`context.destination`, and a suspended context is not quiet audio, it is
+silence. So the graph is built lazily on the first play — which is a click, and
+therefore a gesture that can resume a context — never on mount. A browser that
+refuses the graph gets audio playing normally and a blob that breathes on a slow
+default; the sound is never sacrificed for the decoration. This is the same
+trap, in a much smaller room, that `lib/audio-graph.ts` documents at length.
+
+Under `prefers-reduced-motion` the blob stops entirely rather than slowing: it
+is large, organic and continuous, which is precisely what that setting is for.
+The card lift and brightness stay, because they say "this is the one you are
+pointing at", which is information rather than decoration.
+
+### The console
+
+At `/podcast#admin`, behind the same password and the same signed cookie as the
+decks — the same person, and a second credential would be a second credential to
+lose. A **fragment** rather than a path, because every path under `/podcast/` is
+an episode slug and a console at `/podcast/admin` would be competing with an
+episode somebody could legitimately name "Admin". `slugify` refuses to mint
+`admin` anyway; two locks, because a slug is permanent the moment somebody links
+to it.
+
+`PATCH` is genuinely partial, which is the opposite of what `PUT /api/schedule`
+does with its text fields, and the difference is what the request is: announcing
+a session is a form filled in from scratch each time, while this is a list with
+a publish button on every row. A handler that cleared the show notes because the
+caller only wanted to flip the status would be a trap.
+
+---
+
 ## Configuration reference
 
 Server variables, read once at boot by `loadConfig`.
@@ -1779,11 +2116,15 @@ checking against any change that touches its area.
 | Exactly one replica | `railway.json`, and playback living in memory | Two stations disagreeing, listeners split at random |
 | The station clock is the only clock | `playback.now()` stamps plays, leases, air and pong | Two timebases disagreeing about one instant |
 | The three front doors agree | nginx, Vite middleware, `doorway.ts`, checked by two CI jobs | Rules that only fail in production |
+| A published slug never moves | `PATCH /api/episodes/:id` re-slugs only while `status = 'draft'` | Every link already sent to somebody breaks on a typo fix |
 | One code path for join and rejoin | Presence hangs off `connected`, and every list merges by id | Duplicated chat lines, listeners nobody can see |
 | Nothing is optimistic | Chat, wishes and raised hands all render only what came back | A refused message left on screen looking sent |
 | A note cannot break what it notes | `plays.track_id` has no foreign key; the lyrics errand is fire-and-forget; the library wipe is caught and logged | An admin command answering 500 after the track already changed |
 | Domain separation between cookies | Three HMAC labels in `lib/auth.ts` | On an unconfigured station, a listener cookie would verify as an admin cookie |
 | Ephemeral state ends with the session | The `air` change handler in `app.ts` | A mute from October silencing somebody next Saturday |
+| The archive outlives the session | `episodes` shares no table and no directory with `tracks`; pinned by a test named for it | Ending a broadcast would delete the entire back catalogue |
+| An episode is always playable | `audio_key` is set to the master at creation; the encode only ever replaces it | An episode that exists with no audio behind it |
+| A master is never thrown away | Only the derived copy is replaced; deletion removes both keys | A re-encode at a different bitrate would be a second generation of loss |
 | Voices never hear themselves | One mix-minus bus per voice in `lib/mixer.ts` | Delayed auditory feedback, which stops people mid-sentence |
 
 ---
@@ -1830,7 +2171,9 @@ checking against any change that touches its area.
 │   │   ├── padding.ts         heads added to the tally
 │   │   ├── lyrics.ts          LRCLIB, memoised
 │   │   ├── turn.ts            Cloudflare relay credentials, minted and shared
-│   │   ├── lib/               auth, doorway, storage, errors, library, track
+│   │   ├── lib/               auth, doorway, storage, errors, library, track,
+│   │   │                      episode, poster, store (R2/disk), transcode,
+│   │   │                      publish (the background encode)
 │   │   └── routes/            one plugin per surface
 │   └── test/                  vitest, including a real ws server
 └── client/
@@ -1838,6 +2181,7 @@ checking against any change that touches its area.
     ├── landing.html           the page in front of it
     ├── cohost.html            the co-host surface
     ├── how-it-works.html      prose, no bundle
+    ├── podcast.html           the archive: the grid, the player, the console
     ├── nginx.conf             the front door, copy one of three
     ├── vite.config.ts         entry points, dev proxy, front door copy two
     ├── src/
@@ -1846,9 +2190,10 @@ checking against any change that touches its area.
     │   ├── CallIn.tsx         the listener's end of a call
     │   ├── cohost/            the third document, phone-sized
     │   ├── landing/           the public page and its ported components
+    │   ├── podcast/           the archive: TiltCard, EpisodeGrid, Player, Blob, Console
     │   ├── hooks/             everything stateful
     │   ├── lib/               everything pure, and therefore tested
-    │   └── *.css              tokens, shared objects, station, landing
+    │   └── *.css              tokens, shared objects, station, landing, podcast
     ├── scripts/               the browser QA suite
     └── test/                  vitest over lib/
 ```

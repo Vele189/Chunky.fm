@@ -41,6 +41,17 @@ export interface ClientBundle {
    */
   cohost: Buffer
   /**
+   * The podcast archive. Vite's `podcast.html` entry.
+   *
+   * Required like the other four, for the reason the co-host's page is: it is a
+   * document with a bundle behind it, and a build that shipped without it would
+   * come up healthy and answer every episode link with a 404. These are the one
+   * class of address here that strangers hold — they are public, they are in the
+   * sitemap, and they are what somebody was sent — so failing quietly on them is
+   * the worst version of this failure, not the mildest.
+   */
+  podcast: Buffer
+  /**
    * What an address that is nothing gets, or null if the build predates it.
    *
    * Optional where the three documents above are required, and for the same
@@ -89,11 +100,12 @@ export async function loadClientBundle(clientDir: string): Promise<ClientBundle>
       )
     }
   }
-  const [index, landing, how, cohost] = await Promise.all([
+  const [index, landing, how, cohost, podcast] = await Promise.all([
     read('index.html'),
     read('landing.html'),
     read('how-it-works.html'),
     read('cohost.html'),
+    read('podcast.html'),
   ])
 
   // See `notFound` above for why this one is allowed to be absent.
@@ -119,7 +131,7 @@ export async function loadClientBundle(clientDir: string): Promise<ClientBundle>
     }),
   )
 
-  return { index, landing, how, cohost, notFound, root }
+  return { index, landing, how, cohost, podcast, notFound, root }
 }
 
 /**
@@ -164,6 +176,11 @@ export function doorwayHook(bundle: ClientBundle) {
         return
       case 'cohost':
         void sendDocument(reply, bundle.cohost)
+        return
+      // Both `/podcast` and `/podcast/<slug>`: one document that reads the slug
+      // out of its own address bar. See the `podcast` kind in `lib/doorway.ts`.
+      case 'podcast':
+        void sendDocument(reply, bundle.podcast)
         return
       case 'pass':
         return done()

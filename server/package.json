@@ -12,13 +12,18 @@
     "start": "node --env-file-if-exists=.env dist/index.js",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "sync-check": "tsx scripts/sync-check.ts"
+    "sync-check": "tsx scripts/sync-check.ts",
+    "//check:r2": "Is the object storage actually usable? Answers the four questions that account for essentially every R2 misconfiguration, the important one being whether the API token can *write* — a read-only token passes every connection check and then fails the first upload.",
+    "check:r2": "tsx --env-file-if-exists=.env scripts/check-r2.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1116.0",
+    "@aws-sdk/s3-request-presigner": "^3.1116.0",
     "@fastify/multipart": "^9.0.3",
     "@fastify/static": "^10.1.2",
     "better-sqlite3": "^11.8.1",
     "fastify": "^5.2.1",
+    "ffmpeg-static": "^5.3.0",
     "music-metadata": "^11.0.0",
     "ws": "^8.21.1"
   },

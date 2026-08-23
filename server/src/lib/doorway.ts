@@ -24,6 +24,11 @@
  *   /cohost?k=<key>     a co-host link, which is the same document: the page
  *                       reads the key out of its own address bar, so unlike an
  *                       invite there is nowhere else to send it
+ *   /podcast            the archive, its own document
+ *   /podcast/<slug>     one episode, the same document: the page reads the slug
+ *                       out of its own address bar. A real path rather than a
+ *                       fragment because an episode is the one thing here meant
+ *                       to be linked to from outside and read by a crawler
  *   /*.html             the documents' own filenames, sent to the address the
  *                       canonical links and the sitemap actually name
  *
@@ -49,6 +54,18 @@ export type Doorway =
   | { kind: 'how' }
   /** The co-host's control surface. Its own bundle; see `CO_HOST_PATH`. */
   | { kind: 'cohost' }
+  /**
+   * The podcast archive, or one episode of it. Its own bundle.
+   *
+   * One kind for both, because they are one document: the grid and the player
+   * are the same bundle deciding what to draw from the address bar, exactly as
+   * the station decides from its fragment. The difference is that these are
+   * paths rather than fragments, and the reason is that an episode is the one
+   * address in this project meant to be pasted into a message and read by a
+   * crawler — and a fragment never reaches a server, so `/listen#podcast/12`
+   * could never have an `og:title` of its own.
+   */
+  | { kind: 'podcast' }
   /** Not the doorway's business: a route, an asset, or the app itself. */
   | { kind: 'pass' }
 
@@ -63,6 +80,15 @@ export const HOW_PATH = '/how-it-works'
  * imports across the two workspaces.
  */
 export const CO_HOST_PATH = '/cohost'
+
+/**
+ * The address of the podcast archive, spelled the same in all four copies.
+ *
+ * Kept in step with `PODCAST_PATH` in the client's `src/lib/episodes.ts` by
+ * hand, for the reason `CO_HOST_PATH` is kept in step with the client's:
+ * nothing imports across the two workspaces.
+ */
+export const PODCAST_PATH = '/podcast'
 
 /**
  * Where a request at the front door goes.
@@ -95,6 +121,18 @@ export function doorway(url: string): Doorway {
     return { kind: 'cohost' }
   }
 
+  // The archive, and every episode under it. A prefix match rather than an
+  // exact one — the only prefix rule in this file — because the slug is part of
+  // the address and the server has no list of them to check against. The
+  // trailing-slash form is included so `/podcast/` is the archive rather than
+  // an episode whose slug is the empty string.
+  //
+  // `/podcastly` is deliberately not caught, the same way `/welcomely` is not
+  // `/welcome`: the boundary is the separator, not the letters.
+  if (path === PODCAST_PATH || path.startsWith(`${PODCAST_PATH}/`)) {
+    return { kind: 'podcast' }
+  }
+
   // The documents' own filenames. Every address that matters names them without
   // the extension — the canonical links, the sitemap, every link the pages draw
   // — so the filename is a second address for a page that already has one, and
@@ -109,6 +147,9 @@ export function doorway(url: string): Doorway {
   }
   if (path === '/cohost.html') {
     return { kind: 'redirect', status: 301, location: CO_HOST_PATH }
+  }
+  if (path === '/podcast.html') {
+    return { kind: 'redirect', status: 301, location: PODCAST_PATH }
   }
   if (path === '/index.html') {
     return { kind: 'redirect', status: 301, location: '/listen' }

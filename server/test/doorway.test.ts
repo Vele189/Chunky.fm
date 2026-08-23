@@ -18,6 +18,8 @@ const INDEX = '<!doctype html><title>station</title><div id="root"></div><script
 const LANDING = '<!doctype html><title>chunky.fm</title><div id="root"></div><script src="/assets/landing-abc.js">'
 const HOW = '<!doctype html><title>How chunky.fm works</title><h1>How chunky.fm works</h1>'
 const COHOST = '<!doctype html><title>chunky.fm \u00b7 co-host</title><div id="root"></div>'
+const PODCAST =
+  '<!doctype html><title>chunky.fm \u00b7 the podcast</title><div id="root"></div><script src="/assets/podcast-abc.js">'
 const NOT_FOUND = '<!doctype html><title>Not a page</title><h1>Nothing at this address</h1>'
 
 describe('doorway rules', () => {
@@ -33,6 +35,31 @@ describe('doorway rules', () => {
 
   it('keeps the query off the /welcome decision', () => {
     expect(doorway('/welcome?utm=x')).toEqual({ kind: 'redirect', status: 301, location: '/' })
+  })
+
+  it('answers the archive and every episode with the podcast document', () => {
+    // One document for both: the grid and the player are the same bundle
+    // reading the slug out of its own address bar.
+    expect(doorway('/podcast')).toEqual({ kind: 'podcast' })
+    expect(doorway('/podcast/')).toEqual({ kind: 'podcast' })
+    expect(doorway('/podcast/leaving-johannesburg')).toEqual({ kind: 'podcast' })
+    // The console is a fragment, which never reaches here at all.
+    expect(doorway('/podcast?utm=x')).toEqual({ kind: 'podcast' })
+  })
+
+  it('stops the podcast rule at the separator, not the letters', () => {
+    // The only prefix rule in the file, so this is the one that could swallow
+    // a future path. `/welcomely` is not `/welcome` and this is the same shape.
+    expect(doorway('/podcastly')).toEqual({ kind: 'pass' })
+    expect(doorway('/podcasts')).toEqual({ kind: 'pass' })
+  })
+
+  it('sends the podcast document filename to the address it actually has', () => {
+    expect(doorway('/podcast.html')).toEqual({
+      kind: 'redirect',
+      status: 301,
+      location: '/podcast',
+    })
   })
 
   it('answers the bare root with the landing page', () => {
@@ -165,6 +192,7 @@ describe('serving the client from the server', () => {
     await fs.writeFile(path.join(clientDir, 'landing.html'), LANDING)
     await fs.writeFile(path.join(clientDir, 'how-it-works.html'), HOW)
     await fs.writeFile(path.join(clientDir, 'cohost.html'), COHOST)
+    await fs.writeFile(path.join(clientDir, 'podcast.html'), PODCAST)
     await fs.writeFile(path.join(clientDir, '404.html'), NOT_FOUND)
     await fs.writeFile(path.join(clientDir, 'assets', 'station-abc.js'), 'console.log(1)')
     harness = await startHarness({ clientDir })
@@ -219,6 +247,17 @@ describe('serving the client from the server', () => {
     expect(res.headers['content-type']).toContain('text/html')
     expect(res.body).toContain('How chunky.fm works')
     expect(res.body).not.toContain('/assets/station-abc.js')
+  })
+
+  it('answers the archive and an episode with the same document', async () => {
+    for (const url of ['/podcast', '/podcast/leaving-johannesburg']) {
+      const res = await harness.app.inject({ method: 'GET', url })
+      expect(res.statusCode, url).toBe(200)
+      expect(res.body, url).toContain('/assets/podcast-abc.js')
+      // Not the station's bundle: this is a separate document precisely so an
+      // episode page does not carry the globe and the gramophone.
+      expect(res.body, url).not.toContain('/assets/station-abc.js')
+    }
   })
 
   it('answers an address that is nothing with a page and a 404', async () => {

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
+import type { Db } from '../db.js'
 
 /**
  * The three files a crawler asks for before it asks for anything else.
@@ -66,6 +67,10 @@ function robots(base: string): string {
     // be inviting somebody to go looking for one. The document says the same
     // thing in a `noindex` of its own; this is the half a crawler reads first.
     'Disallow: /cohost',
+    // The archive is deliberately *not* disallowed, unlike everything else on
+    // this list. It is the one part of the station that is meant to be found by
+    // somebody who has never heard of it: public, true on every day of the
+    // week, and an actual thing to read rather than an application shell.
     '',
     `Sitemap: ${base}/sitemap.xml`,
     '',
@@ -73,24 +78,44 @@ function robots(base: string): string {
 }
 
 /**
- * Two URLs, and it is not for discovery.
+ * Three fixed pages, and then every episode.
  *
- * Nothing here needs finding: there are three pages and one of them is
- * disallowed above. What a sitemap is for at this size is `lastmod` — the one
- * way to tell a crawler that the page it read six weeks ago has changed,
- * without waiting for it to come back and find out.
+ * This used to be two URLs and an argument that a sitemap at this size is not
+ * for discovery — there were three pages, one of them disallowed, and what the
+ * file actually bought was `lastmod`. The archive changes that, and it is worth
+ * saying how rather than quietly growing the list. An episode page is reachable
+ * from exactly one place, the grid at `/podcast`, and the grid draws itself from
+ * JavaScript. A crawler that does not run it sees an empty page and leaves, and
+ * every episode ever published is invisible. So these entries are doing the
+ * thing sitemaps are nominally for, and the earlier note no longer applies to
+ * the whole file.
  *
  * `/how-it-works` is `monthly` because it describes a mechanism rather than an
  * evening: it changes when the clock code changes, which is rarely, and saying
  * `weekly` about a page that does not move is how a sitemap teaches a crawler
- * to stop believing it.
+ * to stop believing it. An episode is `yearly` for a stronger version of the
+ * same reason: it is finished. It was recorded, it was published, and the only
+ * thing that will ever change about it is a typo in the notes.
  */
-function sitemap(base: string): string {
+function sitemap(base: string, episodes: EpisodeStub[]): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     `  <url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>`,
     `  <url><loc>${base}/how-it-works</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
+    `  <url><loc>${base}/podcast</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>`,
+    // Every published episode by name. This is the one place in this file where
+    // a sitemap is doing what a sitemap is nominally for — discovery — rather
+    // than carrying a `lastmod`: an episode is reachable only from the grid,
+    // and a crawler that never renders the grid's JavaScript would otherwise
+    // never see one. `lastmod` is the date the episode claims, which is the
+    // only date about it that means anything to a reader.
+    ...episodes.map(
+      ({ slug, publishedAt }) =>
+        `  <url><loc>${base}/podcast/${slug}</loc><lastmod>${new Date(publishedAt)
+          .toISOString()
+          .slice(0, 10)}</lastmod><changefreq>yearly</changefreq><priority>0.7</priority></url>`,
+    ),
     '</urlset>',
     '',
   ].join('\n')
@@ -136,17 +161,49 @@ they arrive and it is kept in their own browser. Listening is free.
 - [The station, and what it is](${base}/): what chunky.fm is, why it exists, and when the next session is.
 - [How it works](${base}/how-it-works): how every listener is held inside the same second — the clock offset, the playback-rate correction — and the questions people ask before turning up.
 - [Tune in](${base}/listen): the station itself. An application; there is nothing to read here.
+- [The podcast](${base}/podcast): episodes, kept. Conversations recorded on talk nights and published afterwards, each on its own page with the audio and what was said about it.
 
 ## Notes
 
 - chunky.fm is one station and one room, on purpose. It is not a platform, it
   hosts no other broadcasters, and it takes no uploads from listeners.
+- The podcast is the one part of this that is kept. A session ends and takes
+  its tracklist, its chat and its wish book with it; an episode is published
+  deliberately, afterwards, and stays.
 - The station may be private. When it is, a link with a key in it is needed to
   hear it, and the page above still describes it to anybody.
 `
 }
 
-export function crawlRoutes(): FastifyPluginAsync {
+/** Just enough of an episode to put it in a sitemap. */
+interface EpisodeStub {
+  slug: string
+  publishedAt: number
+}
+
+export interface CrawlDeps {
+  db: Db
+}
+
+export function crawlRoutes({ db }: CrawlDeps): FastifyPluginAsync {
+  /**
+   * Published episodes, for the sitemap.
+   *
+   * Read per request rather than cached, and it is cheap enough not to matter:
+   * an indexed scan of a table that holds tens of rows, behind an hour of
+   * `Cache-Control`. Caching it in the process would mean an episode published
+   * on Tuesday missing from the sitemap until the next deploy, which is exactly
+   * the sort of staleness a sitemap exists to prevent.
+   */
+  const listPublished = db.prepare(
+    "SELECT slug, published_at FROM episodes WHERE status = 'published' ORDER BY published_at DESC",
+  )
+  const episodes = (): EpisodeStub[] =>
+    (listPublished.all() as { slug: string; published_at: number }[]).map((row) => ({
+      slug: row.slug,
+      publishedAt: row.published_at,
+    }))
+
   return async function routes(app: FastifyInstance) {
     // An hour. Long enough that a crawler asking twice in a morning is answered
     // from a cache, short enough that a station which has just moved to its own
@@ -158,7 +215,10 @@ export function crawlRoutes(): FastifyPluginAsync {
     )
 
     app.get('/sitemap.xml', async (request, reply) =>
-      reply.type('application/xml; charset=utf-8').header('cache-control', cache).send(sitemap(origin(request))),
+      reply
+        .type('application/xml; charset=utf-8')
+        .header('cache-control', cache)
+        .send(sitemap(origin(request), episodes())),
     )
 
     app.get('/llms.txt', async (request, reply) =>

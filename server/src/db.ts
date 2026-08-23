@@ -102,6 +102,98 @@ export interface PlayRow {
   played_at: number
 }
 
+/**
+ * Whether an episode is on the podcast page yet.
+ *
+ * A closed set of two rather than a boolean called `isPublished`, for the
+ * reason `SessionKind` is not `isTalk`: the column outlives every process that
+ * wrote to it, and a third value nothing can render is an episode the page
+ * would draw as neither up nor down.
+ *
+ * Draft is the default and that is the whole point of having it. An episode is
+ * an audio file, a poster and five fields typed into a form, and the gap
+ * between the upload finishing and the description being right is exactly the
+ * window in which somebody would otherwise find it.
+ */
+export type EpisodeStatus = 'draft' | 'published'
+
+/**
+ * One episode of the podcast. See the schema note, and `routes/podcast.ts`.
+ *
+ * Deliberately not a `TrackRow`, and the reason is not that the columns differ
+ * — they could have been made to agree. It is that a track belongs to the
+ * library, and the library is emptied every time a broadcast ends: the station
+ * is an evening, and everything filed under it is about tonight. An episode is
+ * the opposite claim. Sharing the table would have meant an archive that
+ * quietly deleted itself the first time somebody pressed "end broadcast".
+ */
+/**
+ * Where an episode's serving copy has got to.
+ *
+ * `pending` is the window between the master landing and the encode finishing:
+ * minutes, for an hour of audio. `ready` means there is a small copy to serve.
+ * `failed` means ffmpeg would not have it, and the master is served instead —
+ * which is why a failed transcode does not stop an episode being published. It
+ * is a note about size, not about whether the episode works.
+ *
+ * `none` is a station with no ffmpeg at all, where the master *is* the serving
+ * copy and always was. Distinguished from `failed` because one is a deployment
+ * without the tool and the other is a file the tool refused, and a console that
+ * showed them the same way would send somebody looking for a broken upload.
+ */
+export type TranscodeStatus = 'pending' | 'ready' | 'failed' | 'none'
+
+export interface EpisodeRow {
+  id: number
+  /** What the episode is reached by: `/podcast/<slug>`. Unique, server-chosen. */
+  slug: string
+  title: string
+  /** The show notes, as typed. Null for an episode with nothing written about it. */
+  notes: string | null
+  /** Who was on it, as one line of free text, or null for nobody but the host. */
+  guests: string | null
+  /** The number on the card ("Ep. 12"), or null for an archive that doesn't count. */
+  episode_number: number | null
+  /**
+   * When it is dated, which is not when it was uploaded.
+   *
+   * Two columns rather than one because they answer different questions and
+   * only one of them is editable: `uploaded_at` is when the bytes arrived, and
+   * this is the date the episode claims. An archive being back-filled needs to
+   * be able to say an episode is from March without lying about when the file
+   * was sent, and the grid is ordered on this one.
+   */
+  published_at: number
+  status: EpisodeStatus
+  duration_ms: number
+  /**
+   * The key the *master* is stored under: what was uploaded, untouched.
+   *
+   * Kept forever and never served to a listener. It is the thing that cannot be
+   * recreated — re-encoding from a lossy copy for a different bitrate later is
+   * a generation of quality nobody gets back — so it survives even when the
+   * serving copy is thrown away and remade.
+   */
+  master_key: string
+  /** How big the master is, so the console can say what it is holding. */
+  master_bytes: number
+  /**
+   * The key a listener actually fetches, which is usually a much smaller
+   * re-encode of the master and is the master itself when there is no encode.
+   */
+  audio_key: string
+  audio_bytes: number
+  /** What the serving copy is, so a URL can be served with the right type. */
+  audio_type: string
+  transcode_status: TranscodeStatus
+  /** Why the encode failed, for the console. Null unless `failed`. */
+  transcode_error: string | null
+  /** Basename inside `<storage>/episodes/posters`, or null before one is set. */
+  poster: string | null
+  content_hash: string
+  uploaded_at: number
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tracks (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -220,6 +312,60 @@ CREATE TABLE IF NOT EXISTS plays (
 -- Read as "the last N of this session", newest first, the same shape the chat
 -- is read in, and for the same reason.
 CREATE INDEX IF NOT EXISTS plays_session_id ON plays (session_id, id);
+
+-- The podcast archive.
+--
+-- Every other table in this file is about tonight, and the ones that are not
+-- (schedule) are about one night that has not happened yet. This is the only
+-- thing here that is meant to still be true in a year, which is why it is a
+-- table of its own rather than a flag on the tracks table: ending a broadcast deletes
+-- every row in tracks and every file behind them (see the air handler in
+-- app.ts), and an archive that shared that table would delete itself the first
+-- time somebody ended a session.
+--
+-- No session_id, for the same reason. An episode does not belong to a night.
+CREATE TABLE IF NOT EXISTS episodes (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- What the address says: /podcast/<slug>. Unique because it is the address,
+  -- and a second episode answering to the same one is a link that means two
+  -- things. Derived from the title and then made unique; see uniqueSlug in lib/episode.ts.
+  slug            TEXT    NOT NULL UNIQUE,
+  title           TEXT    NOT NULL,
+  notes           TEXT,
+  guests          TEXT,
+  episode_number  INTEGER,
+  -- The date the episode claims, which is not uploaded_at. See EpisodeRow.
+  published_at    INTEGER NOT NULL,
+  -- Constrained here as well as in the type, the same argument the wishes'
+  -- status column makes. Draft by default: an episode nobody has finished
+  -- describing should not already be on the page.
+  status          TEXT    NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+  -- Provisional until the encode measures it. The browser reports what its own
+  -- decoder made of the file at upload time, which is right often enough to
+  -- put on a card and is replaced by ffmpeg's answer when the encode lands.
+  duration_ms     INTEGER NOT NULL,
+  -- What was uploaded, kept and never served. See EpisodeRow.
+  master_key      TEXT    NOT NULL UNIQUE,
+  master_bytes    INTEGER NOT NULL DEFAULT 0,
+  -- What listeners fetch. The same as master_key until an encode replaces it,
+  -- which is what makes a station with no ffmpeg work without a special case.
+  audio_key       TEXT    NOT NULL,
+  audio_bytes     INTEGER NOT NULL DEFAULT 0,
+  audio_type      TEXT    NOT NULL DEFAULT 'audio/mpeg',
+  transcode_status TEXT   NOT NULL DEFAULT 'none'
+    CHECK (transcode_status IN ('pending', 'ready', 'failed', 'none')),
+  transcode_error TEXT,
+  poster          TEXT,
+  -- The same dedupe the library has, and it earns more here: an archive is
+  -- added to one file at a time over months, and uploading March's episode
+  -- twice is a thing somebody actually does.
+  content_hash    TEXT    NOT NULL UNIQUE,
+  uploaded_at     INTEGER NOT NULL
+);
+
+-- The one read the page makes: published episodes, newest first. The status
+-- leads because every public read filters on it before it orders on anything.
+CREATE INDEX IF NOT EXISTS episodes_published ON episodes (status, published_at DESC);
 `
 
 /**

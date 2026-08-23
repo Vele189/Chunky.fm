@@ -171,6 +171,34 @@ jobs:
           grep -q 'How chunky.fm works' <<<"$page" || { echo "not the explaining page"; exit 1; }
           grep -q 'application/ld+json' <<<"$page" || { echo "no schema on it"; exit 1; }
 
+      # The archive, and one episode under it. Both are the same document, and
+      # the second is the assertion that matters: `/podcast/<slug>` is the only
+      # prefix rule among the front doors, so it is the only one that can be
+      # missing while every other check here still passes — in which case an
+      # episode link, the one address strangers actually hold, is answered by
+      # the 404 below.
+      #
+      # Checked for the podcast bundle by name rather than for any bundle at
+      # all, for the reason the landing page is: answering with the station
+      # would still have `id="root"` in it and would still be wrong.
+      - name: /podcast is the archive, and an episode is the same document
+        run: |
+          for path in /podcast /podcast/some-episode-slug; do
+            page=$(curl -fsS "http://localhost:$WEB_PORT$path")
+            grep -q 'id="root"' <<<"$page" || { echo "$path has no mount point"; exit 1; }
+            grep -q '/assets/podcast-' <<<"$page" || {
+              echo "$path is not the podcast entry"; exit 1
+            }
+          done
+
+      # The archive is public, and that is the whole point of it: an episode is
+      # for somebody who was never in the room and has no key to present. This
+      # station has STATION_KEY set, so the library right below refuses an
+      # anonymous caller — and this must not.
+      - name: The archive is readable with no credential at all
+        run: |
+          curl -fsS "http://localhost:$WEB_PORT/api/episodes" | grep -q 'episodes'
+
       # An address that is nothing must say so, with a status that says so. This
       # was `try_files … /index.html` for a long time: every typo answered with
       # the station and a 200, which is a soft 404 — a crawler told that
@@ -200,6 +228,9 @@ jobs:
           loc=$(curl -fsS -o /dev/null -D - "http://localhost:$WEB_PORT/landing.html" \
                 | tr -d '\r' | awk 'tolower($1) == "location:" { print $2; exit }')
           test "$loc" = "/" || { echo "/landing.html went to '$loc'"; exit 1; }
+          loc=$(curl -fsS -o /dev/null -D - "http://localhost:$WEB_PORT/podcast.html" \
+                | tr -d '\r' | awk 'tolower($1) == "location:" { print $2; exit }')
+          test "$loc" = "/podcast" || { echo "/podcast.html went to '$loc'"; exit 1; }
 
       # The unhashed files that answer on their own name. These are the reason
       # this step exists: they live in client/public, they are copied into the
@@ -309,6 +340,17 @@ jobs:
         run: |
           curl -fsS http://localhost:13000/ | grep -q '/assets/landing-'
           curl -fsS "http://localhost:13000/?utm=x" | grep -q '/assets/landing-'
+
+      # The same pair the `stack` job makes of nginx. This is the second copy of
+      # the prefix rule, in `lib/doorway.ts`, and the two drift silently.
+      - name: /podcast is the archive, and an episode is the same document
+        run: |
+          for path in /podcast /podcast/some-episode-slug; do
+            curl -fsS "http://localhost:13000$path" | grep -q '/assets/podcast-' || {
+              echo "$path is not the podcast entry"; exit 1
+            }
+          done
+          curl -fsS "http://localhost:13000/api/episodes" | grep -q 'episodes'
 
       - name: An invite at the root still reaches the station
         run: |
