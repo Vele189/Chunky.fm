@@ -599,10 +599,11 @@ The one part of this API whose **reads are open on a private station**. See
 |---|---|---|
 | `GET /api/episodes` | open | Published episodes, newest first. |
 | `GET /api/episodes/:slug` | open | One episode. A draft is `404` here, and visible to an admin. |
+| `GET /api/episodes/:slug/transcript` | open | `{transcript}`, whole. `404` when there is none, and for a draft a stranger asked about. |
 | `GET /api/episode-audio/:filename` | open | Audio with `Range` support, `immutable`. |
 | `GET /api/episode-poster/:filename` | open | The poster, `immutable`. |
 | `GET /api/admin/episodes` | admin | Everything, drafts included. The console's list. |
-| `POST /api/episodes` | admin | `multipart/form-data`: an `audio` part, a `poster` part, and the fields. |
+| `POST /api/episodes` | admin | `multipart/form-data`: an `audio` part, a `poster` part, and the fields (`transcript` among them, as text). |
 | `PATCH /api/episodes/:id` | admin | Partial. Absent means "leave it"; an explicit `null` clears. |
 | `DELETE /api/episodes/:id` | admin | Row first, then both files. |
 
@@ -614,7 +615,7 @@ Upload statuses:
 | `400` | No audio part, no poster part, an empty file, or no title. |
 | `401` | Missing or refused admin credentials. |
 | `409` | That audio is already an episode. Body carries the existing `episode`. |
-| `413` | Audio over `MAX_UPLOAD_BYTES`, or a poster over 8 MiB. |
+| `413` | Audio over `MAX_UPLOAD_BYTES`, a poster over 8 MiB, or a transcript over 200,000 characters. |
 | `415` | Not audio, or a poster that is not a JPEG, PNG or WebP. |
 | `422` | The poster is not 1080x1350. The message names the size received. |
 
@@ -1686,8 +1687,17 @@ stay where they were:
 | Page | Left | Right | What scrolls |
 |---|---|---|---|
 | `/podcast` | the words, and the footer | the cards | the cards |
-| `/podcast/<slug>` | the artwork | title, transport, notes | the notes, under a transport that does not move |
+| `/podcast/<slug>` | the artwork, title, transport — and the notes when the other column is taken | the transcript, or the show notes | the right column, under a transport that does not move |
 | `/podcast#admin` | the upload form | the archive it changes | each column, on its own |
+
+The episode page's split is the station's own: **the thing on the left, the
+words on the right**, the same shape `.station__columns` gives the deck and the
+lyric sheet beside it. Which is why everything you press is in the left column
+with the poster rather than above the reading pane — what is being played and
+what is being said are two different things to look at, and neither belongs
+underneath the other. `data-beside` on the article says what the right column
+is (`transcript`, `notes`, or `none`, which collapses the page to one centred
+column), and the CSS lays the page out from that.
 
 Two details carry this, and both are easy to lose:
 
@@ -1818,6 +1828,10 @@ so it is normally pushed a few pixels right. Phosphor's `play-fill` already
 carries that offset — the path spans 64..240 on a 256 grid — and adding the
 customary correction on top pushes it visibly past the middle.
 
+The transport sits in the left column under the poster, and it is the one thing
+on the page that never scrolls at either width: the right column moves, and the
+buttons stay where they were put.
+
 Position is remembered per episode in `localStorage`, restored on
 `loadedmetadata` (seeking an element that does not yet know its duration is
 ignored or clamped depending on the browser), and cleared within fifteen seconds
@@ -1825,6 +1839,80 @@ of the end — somebody who reached the outro has heard it, and restoring them t
 59:57 is a bug with good intentions. It is kept in the browser rather than on
 the server because the archive is public: a server-side position would mean the
 station knowing what strangers listen to, which it has no reason to want.
+
+### The transcript
+
+An episode may carry the words that were said, and when it does they are the
+right-hand column: the station's own lyric sheet applied to a conversation —
+the line being spoken at full brightness, the rest at a quarter of it, the sheet
+drifting up through them, faded at both ends and with no scrollbar, because a
+scrollbar makes it look like a panel and it is not one. It is the same code
+answering the same question, `activeLineIndex` from
+`client/src/lib/lyrics.ts`, because a lyric line and a spoken line are a list in
+time order and a playhead; and the same numbers, down to the 0.45s a line takes
+to come up.
+
+The one thing that is *not* the lyric sheet's is the size. There a line is eight
+sung words set at 30px; here it is forty spoken ones, and at 30px a single
+answer is six lines of shouting. So the type is the largest a paragraph can
+honestly take and everything else — the dimming, the lift, the timing — is the
+station's, unchanged.
+
+Two things are different, and both follow from what a conversation is. **Every
+line is a button**: pressing one takes the episode to that moment, which the
+station refuses to let a listener do for a very good reason and which is exactly
+what somebody wants here, since nobody else is in the room. And **it stops
+following when you start reading**: a lyric is four seconds long and a spoken
+paragraph is forty, long enough to read ahead and be dragged back by a pane that
+thinks it knows best. A wheel, a finger or an arrow key hands the sheet over,
+and a button appears to hand it back.
+
+**On a phone the sheet is behind a button.** Stacked, an hour of talk, a 4:5
+poster and a transport cannot share a screen, and a transcript that begins below
+the fold is one nobody finds. So *Read the transcript* takes the room from where
+the room is: the poster becomes a 64px thumbnail with the title beside it, the
+show notes step out of the way, and the words get everything that is left. The
+transport does not shrink — a transcript is read *while listening*, so the play
+button is the last thing that may give. It is the station's answer at this width
+arrived at from the other end: there the lyric sheet falls under the deck and is
+capped so it stays a panel you read from rather than a second page. Closed, the
+transcript is not merely hidden but unmounted, so a reader who never opens it
+never fetches a hundred kilobytes of text — which is why `Player.tsx` reads the
+900px breakpoint with `matchMedia` as well as in CSS.
+
+The format is what a transcription tool actually writes:
+
+```
+Untitled - August 23, 2026
+
+00:00:00 Speaker 1: All right, there we go.
+
+00:04:31 Speaker 2: So for anyone who is listening but isn't familiar…
+```
+
+`client/src/lib/transcript.ts` is deliberately forgiving around that, because
+"the transcript format" is not a standard and the next tool will write it
+slightly differently: the hour is optional, the timestamp may be bracketed the
+way an LRC line is, a fraction of a second is read and ignored, the speaker is
+optional, and a line with no timestamp is treated as more of what was being said
+above it rather than dropped — which is what makes a hard-wrapped paragraph
+arrive as a paragraph. The one guard worth knowing about is the speaker: a name
+is short, is a handful of words and carries no sentence punctuation, so
+"So here is the thing: it was fine" is one person talking rather than somebody
+called *So here is the thing*.
+
+A transcript with **no timestamps at all** is not a failure. It parses to
+nothing, and the pane reads that as words to read rather than words to follow
+and lays them out as paragraphs under a note saying so — the same fallback the
+station's lyric sheet makes for an untimed sheet.
+
+The words are **not part of the episode**. An hour of talk is around a hundred
+kilobytes of text and `GET /api/episodes` hands back sixty episodes at once, so
+an episode carries `hasTranscript` — enough to decide whether to draw the tab —
+and the text lives at its own address, fetched when a reader opens the pane. It
+is stored as uploaded, byte for byte: the parse is what decides how it is drawn,
+and a server that pre-chewed it into cues would have to be redeployed to change
+a rendering decision.
 
 ### The blob
 
@@ -1869,6 +1957,17 @@ does with its text fields, and the difference is what the request is: announcing
 a session is a form filled in from scratch each time, while this is a list with
 a publish button on every row. A handler that cleared the show notes because the
 caller only wanted to flip the status would be a trap.
+
+A **transcript** can be attached at upload time, as an optional third file on
+the form, and from the row of an episode that is already up — which is the way
+it usually happens, because an episode goes out on the night it is finished and
+is transcribed the week after. It is read in the browser and sent as *text*
+rather than as a file part: the multipart parser is configured for exactly one
+file and the poster is it, and reading it here means the console can say what
+the player will make of it ("375 timed lines, 6 speakers, up to 1 hr 28 min")
+before anything is sent. A file with no timestamps in it is not refused — it is
+still what was said — but somebody who thought they were uploading a timed
+transcript finds out at the form rather than from a pane that does not move.
 
 ---
 
@@ -2190,7 +2289,8 @@ checking against any change that touches its area.
     │   ├── CallIn.tsx         the listener's end of a call
     │   ├── cohost/            the third document, phone-sized
     │   ├── landing/           the public page and its ported components
-    │   ├── podcast/           the archive: TiltCard, EpisodeGrid, Player, Blob, Console
+    │   ├── podcast/           the archive: TiltCard, EpisodeGrid, Player, Blob,
+    │   │                      Transcript, Console
     │   ├── hooks/             everything stateful
     │   ├── lib/               everything pure, and therefore tested
     │   └── *.css              tokens, shared objects, station, landing, podcast

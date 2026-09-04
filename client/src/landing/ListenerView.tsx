@@ -8,7 +8,7 @@ import wishesIcon from '../assets/icons/shooting-star.svg'
 import usersIcon from '../assets/icons/users.svg'
 import volumeIcon from '../assets/icons/volume.svg'
 import { Deck, OnAir, Waveform } from '../Turntable.js'
-import { BEEN_ON, SESSION } from './session.js'
+import { BEEN_ON, SESSION, SHEET } from './session.js'
 
 /**
  * The listener's page, drawn small.
@@ -61,28 +61,14 @@ const RAIL = [
 /**
  * The sheet on the screen, mid-verse.
  *
- * Invented, like everything else in the sample session. These are not the
- * words to the record on the platter, because the record is a real one and its
- * words are somebody's property. What the drawing needs is the *shape* of a
- * lyric sheet: short lines, a bright one past the middle, a timestamped
- * silence rendered the way the real sheet renders one.
+ * The words are `SHEET` in session.ts, which is also what the session grid
+ * further up the page lights a line of as you scroll. They used to be written
+ * out again here, which was two copies of an invented verse and one of the two
+ * things that file warns about keeping in step.
+ *
+ * What is different here is the playhead: this is a still picture of a station,
+ * so the bright line is a fixed index rather than a function of the scroll.
  */
-const WORDS = [
-  'Static settles on the evening air',
-  'A needle drops into the quiet',
-  'Every window leaning on the same slow song',
-  '· · ·',
-  'Miles apart and humming along',
-  'Nobody ahead and nobody behind',
-  'Hold the moment while it plays',
-  'It only comes around the once',
-  'The chorus lands on every roof at once',
-  'And the room goes quiet together',
-  '· · ·',
-  'Somebody writes the hour down',
-  'So sing it soft and sing it slow',
-  'The night is long and the night knows',
-]
 
 /** The line the song is on when this is drawn. */
 const BRIGHT = 6
@@ -160,14 +146,14 @@ export function ListenerView() {
               ends of the screen. */}
           <section className="listener__aside">
             <div className="listener__lyrics">
-              {WORDS.map((line, index) => (
+              {SHEET.map((line, index) => (
                 <p
                   className={`listener__lyric${index === BRIGHT ? ' listener__lyric--bright' : ''}${
-                    line === '· · ·' ? ' listener__lyric--hum' : ''
+                    line.says === '· · ·' ? ' listener__lyric--hum' : ''
                   }`}
                   key={index}
                 >
-                  {line}
+                  {line.says}
                 </p>
               ))}
             </div>

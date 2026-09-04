@@ -384,7 +384,15 @@ body {
  *                   right
  *
  * `1fr` on the second row and `min-height: 0` on both panes is what keeps the
- * whole thing inside one viewport: the notes scroll, and nothing else moves.
+ * whole thing inside one viewport: the right column scrolls, and nothing else
+ * moves.
+ *
+ * The columns are the station's, deliberately: `.station__columns` in
+ * styles.css is a fixed-ish left for the deck and a wider right for the words,
+ * because a proportional split leaves the record floating in the middle of
+ * nothing while the sheet is pushed to the far side of a monitor. Here the left
+ * is the poster and everything you press, and it is capped rather than given a
+ * share; the transcript takes what is left, up to a measure you can read across.
  */
 
 .player {
@@ -392,11 +400,21 @@ body {
   grid-template-areas:
     'bar bar'
     'left right';
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, 420px) minmax(0, 760px);
+  justify-content: center;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0 clamp(24px, 4vw, 64px);
   flex: 1;
   min-height: 0;
+}
+
+/* Nothing to read: no second column, and the one that is left holds the middle
+   of the page rather than one side of it. */
+.player[data-beside='none'] {
+  grid-template-areas:
+    'bar'
+    'left';
+  grid-template-columns: minmax(0, 520px);
 }
 
 .player__bar {
@@ -405,23 +423,36 @@ body {
   align-items: center;
 }
 
+/* The poster and everything you press, in one column.
+ *
+ * A flex stack rather than a centred cell, because it is no longer one thing:
+ * the artwork, the title, the transport and — when the other column is a
+ * transcript — the show notes. Centred as a group against the taller column
+ * beside it, and every child allowed to shrink rather than push the page past
+ * one viewport, which is what `min-height: 0` on the column and `flex-shrink`
+ * on the poster are between them for. */
 .player__left {
   grid-area: left;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 2.2vh, 24px);
   min-height: 0;
-  /* The artwork is centred in whatever is left after the bar, and shrinks
-     rather than pushing the layout taller. */
   padding: clamp(8px, 2vh, 24px) 0;
 }
 
 .player__right {
   grid-area: right;
+  /* For the one thing that floats over the sheet: the button that gives it back
+     to the audio after somebody has scrolled away from it. */
+  position: relative;
+  grid-area: right;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* Vertically centred against the artwork when the notes are short, and
-     top-aligned the moment they are long enough to scroll — which is what
+  /* Vertically centred against the artwork when there is little to read, and
+     top-aligned the moment there is enough to scroll — which is what
      `justify-content: center` plus a `flex: 1` scroller does on its own. */
   justify-content: center;
   padding: clamp(8px, 2vh, 24px) 0;
@@ -460,7 +491,34 @@ body {
      the viewport's height, and a ceiling past which a poster stops gaining
      anything by being larger. */
   width: min(100%, 58vh, 440px);
+  /* It is the one thing here that can give: the transport and the title cannot
+     be made shorter, so on a short window the poster is what yields. */
+  flex: 0 1 auto;
   isolation: isolate;
+}
+
+/* Sharing the column with the title, the transport and the notes rather than
+   having it to itself.
+ *
+ * Sized by *height* here, where everywhere else on this page a poster is sized
+ * by width, and the swap is what makes the column fit a short window rather
+ * than run off the bottom of one. A width-driven poster has a height derived
+ * from its aspect ratio, and a derived height cannot be shrunk by flex: the
+ * column overflows and the show notes are cut off by the edge of the screen. A
+ * height *is* a flex base size, so with `min-height: 0` beside it the poster is
+ * the thing that gives on a laptop, which is exactly what should give — the
+ * transport and the title cannot be made shorter, and a slightly smaller sleeve
+ * costs nothing. The image follows it rather than the other way round. */
+.player[data-beside='transcript'] .player__stage {
+  width: auto;
+  height: min(38vh, 300px);
+  min-height: 0;
+}
+
+.player[data-beside='transcript'] .player__art {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
 }
 
 .player__art {
@@ -828,14 +886,48 @@ body {
  * artwork, the heading and the transport, and no more. When the notes are
  * short it is simply short; when they are an hour's worth it scrolls, and the
  * transport above it does not move. */
-.player__notes {
+/* --- what there is to read -------------------------------------------------
+ *
+ * Two things can end up in the scrolling region, and they are laid out
+ * differently because they are different sizes of thing. The show notes are a
+ * paragraph or two with a heading over them, at a reading measure. The
+ * transcript is an hour of talk and takes the whole column; its own rules are
+ * further down.
+ *
+ * `.player__pane` is the scroller both of them share — the overflow, the
+ * scrollbar and the fade at the foot — and it carries `min-height: 0`, which is
+ * the property that makes a flex child scroll instead of growing.
+ */
+
+.player__notes-region {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
   max-width: 62ch;
-  margin: clamp(16px, 3vh, 32px) auto 0;
-  padding-top: clamp(14px, 2.4vh, 28px);
+  margin: 0 auto;
+}
+
+/* The heading is fixed; the paragraphs under it are what shrinks. */
+.player__pane-heading {
+  flex: 0 0 auto;
+}
+
+/* Under the transport rather than in a column of its own, because the other
+   column is a transcript. Capped and ruled off: it is an introduction sitting
+   beside the controls now, not the thing you came to read, and left uncapped a
+   long set of notes would push the transport off a laptop screen. */
+.player[data-beside='transcript'] .player__notes-region {
+  flex: 0 1 auto;
+  max-height: 26vh;
+  padding-top: clamp(10px, 1.8vh, 20px);
   border-top: 1px solid rgb(255 255 255 / 6%);
+}
+
+.player__pane {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -845,22 +937,54 @@ body {
   mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
 }
 
-.player__notes::-webkit-scrollbar {
+.player__pane::-webkit-scrollbar {
   width: 10px;
 }
 
-.player__notes::-webkit-scrollbar-track {
+.player__pane::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.player__notes::-webkit-scrollbar-thumb {
+.player__pane::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: var(--pill);
   background: var(--raised-soft);
   background-clip: content-box;
 }
 
-.player__notes-heading {
+/* The way in to the transcript, on a phone.
+ *
+ * Never drawn on a desk — see the media query, where it is turned on — because
+ * there the transcript is the other column and a button to reveal something
+ * already on screen is a button that does nothing. Quiet: it sits under the
+ * transport, which is the one thing on this page allowed to be loud. */
+.player__reveal {
+  display: none;
+  padding: 0 14px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--raised);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.player__reveal:hover {
+  background: var(--raised-soft);
+  color: var(--fg);
+}
+
+/* What the pane is called when there is only one thing it can be. Same words,
+   same weight and same colour as an unchosen tab, so an episode with a
+   transcript and one without do not look like two different designs. */
+.player__pane-heading {
   margin-bottom: 16px;
   color: var(--faint);
   font-size: 12px;
@@ -879,6 +1003,210 @@ body {
 .player__notes p:last-child {
   /* Clears the fade at the foot of the scroller, so the last line is readable
      rather than half-masked. */
+  margin-bottom: 28px;
+}
+
+/* --- what was said ---------------------------------------------------------
+ *
+ * The station's lyric sheet, beside a poster instead of beside a deck. See
+ * `.lyrics` in styles.css, which this follows deliberately and closely: no
+ * card, no border, no headings — lines of text with the one being spoken at
+ * full brightness and the rest at a quarter of it, the sheet drifting up
+ * through them, faded at both ends, and no scrollbar, because a scrollbar makes
+ * it look like a panel and it is not one.
+ *
+ * The one thing that is not the lyric sheet's is the size. There, a line is
+ * eight sung words and is set at 30px; here it is forty spoken ones, and at
+ * 30px a single answer is six lines of shouting. So the type is the largest a
+ * paragraph can honestly take and everything else — the dimming, the lift on
+ * the line being spoken, the timing of both — is the station's, unchanged.
+ *
+ * Every line is also a button, because pressing one moves the episode to it.
+ * Which means the usual work of making a button not look like one: no border,
+ * no background, and the text left exactly where a paragraph would have it.
+ */
+
+.transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Faded at both ends rather than only at the foot, which is the difference
+     between a sheet the words drift through and a box with a shadow on it. The
+     stops are the station's own. */
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 14%,
+    #000 84%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 84%, transparent 100%);
+}
+
+.transcript::-webkit-scrollbar {
+  display: none;
+}
+
+/* Room under the last line so it can reach the middle of the sheet, where the
+   bright one lives. Of the sheet rather than of the window — this is a column
+   beside the artwork, not the screen. */
+.transcript__breath {
+  height: 45%;
+}
+
+/* The one above the first line is deliberately not the same, and it is the
+   difference between a sheet and a stuck page: a transcript is looked at before
+   anything has been played about as often as during, and a matching 45% at the
+   top means opening one shows half a column of nothing with the first line
+   stranded in the middle of it. A hand's width instead. The cost is that the
+   opening line cannot quite reach the centre while it is being spoken, which
+   nobody has ever noticed about the first ten seconds of anything. */
+.transcript__breath--first {
+  height: 10%;
+}
+
+.transcript__turn {
+  display: block;
+  width: 100%;
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  opacity: 0.25;
+  cursor: pointer;
+  /* The station's numbers, to the millisecond: a line comes up over the same
+     0.45s there and here, because it is the same event — the thing you are
+     listening to reaching a line of what you are reading. */
+  transform-origin: left center;
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s ease;
+}
+
+/* Pointed at, but not being spoken: enough to say it can be pressed, not enough
+   to be mistaken for the line the episode is on. */
+.transcript__turn:hover {
+  opacity: 0.55;
+}
+
+.transcript__turn[data-active='true'] {
+  opacity: 1;
+  transform: scale(1.02);
+}
+
+.transcript__turn:focus-visible {
+  outline: 1px solid var(--raised-soft);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+/* Who is talking, and from when. Drawn once per turn rather than once per line,
+   which is what makes this read as a conversation rather than as a list. */
+.transcript__head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.transcript__who {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.transcript__at {
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.transcript__said {
+  display: block;
+  font-size: clamp(17px, 1.5vw, 21px);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.45;
+}
+
+/* Sits over the foot of the sheet, where the fade is, and only exists once
+   somebody has scrolled away from the audio. Centred rather than in a corner
+   because it is not a setting: it is the way back. */
+.transcript__follow {
+  position: absolute;
+  bottom: clamp(10px, 2vh, 22px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 0 14px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--fg);
+  color: #171717;
+  font: 600 12px/30px var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+}
+
+/* One line, and not a sheet: no fade at either end, because the fades exist to
+   hand lines to a bright line and there are no lines. */
+.transcript--quiet {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.transcript__waiting {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* No clock on any of it: a transcript to read rather than one to follow.
+ *
+ * The station's untimed lyric sheet, again: nothing moves, so it is laid out
+ * for the eye instead — evenly lit, a narrower measure, no fade at the top,
+ * which exists to hand lines to a bright line that is not coming. */
+.transcript--plain {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 88%, transparent 100%);
+  padding-bottom: 32px;
+}
+
+/* Says what the sheet is before the first paragraph does, and stays said while
+   it scrolls, since an unmoving transcript with no explanation reads as a stuck
+   one. */
+.transcript__untimed {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 20px;
+  padding: 2px 0 10px;
+  background: linear-gradient(to bottom, var(--bg) 70%, transparent);
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.transcript__plain {
+  max-width: 52ch;
+  margin: 0 0 18px;
+  opacity: 0.72;
+  font-size: clamp(16px, 1.3vw, 18px);
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.transcript__plain:last-child {
   margin-bottom: 28px;
 }
 
@@ -1351,6 +1679,63 @@ body {
   cursor: default;
 }
 
+/* --- a transcript, on a row that already exists ---------------------------
+ *
+ * The label is a `.row__toggle` and sits in the row like every other control;
+ * what is unusual is that it is a `<label>` wrapping a file input, because a
+ * file picker cannot be opened by anything else. The input is laid over the
+ * whole label and made transparent rather than hidden with `display: none`,
+ * which would take it out of the accessibility tree and off the keyboard's
+ * path: what a reader sees is the label, and what is focused and clicked is the
+ * input itself. See `TranscriptControl` in Console.tsx. */
+
+.row__transcript {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.row__transcript .row__toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.row__file {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.row__file:disabled {
+  cursor: default;
+}
+
+/* Quieter than the pill beside it: taking a transcript off is a thing somebody
+   does once, by mistake, and it should not sit in the row shouting. */
+.row__clear {
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.row__clear:hover {
+  color: var(--live-text);
+}
+
+.row__clear:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* --- phones ---------------------------------------------------------------
  *
  * Two changes, and both are about what a finger can do rather than about width.
@@ -1410,7 +1795,20 @@ body {
     margin-top: 6px;
   }
 
-  /* --- the player, stacked --- */
+  /* --- the player, stacked ---
+   *
+   * One column, and the thing that has to be decided at this width is what to
+   * do about the transcript: an hour of talk, the poster and the transport
+   * cannot share a phone screen, and stacking them just means the words start
+   * below the fold and are never found.
+   *
+   * So the words are behind a button, and opening them takes the room from
+   * where the room is — the poster shrinks to a thumbnail, the heading goes to
+   * one line beside it, and the notes step out of the way entirely. Which is
+   * the station's own answer at this width, arrived at from the other end: its
+   * sheet falls under the deck and is capped there so it is a panel you read
+   * from rather than a second page grafted onto the first.
+   */
   .player {
     grid-template-areas:
       'bar'
@@ -1421,18 +1819,41 @@ body {
        rest, and the notes inside it take what is left after the transport. */
     grid-template-rows: auto auto minmax(0, 1fr);
     gap: 0;
+    justify-content: stretch;
+  }
+
+  .player[data-beside='none'] {
+    grid-template-areas:
+      'bar'
+      'left';
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .player__left {
     padding: clamp(6px, 1.6vh, 16px) 0;
   }
 
-  .player__stage {
-    /* Shorter here: the transport and the heading are below it now rather than
-       beside it, and all three have to fit the same screen. Led by `vh` rather
-       than by a flat pixel cap, so a tablet in this layout is not handed a
-       phone-sized poster on a screen with room for a real one. */
+  /* Shorter here: the transport and the heading are below it now rather than
+     beside it, and all three have to fit the same screen. Led by `vh` rather
+     than by a flat pixel cap, so a tablet in this layout is not handed a
+     phone-sized poster on a screen with room for a real one.
+   *
+   * Back to being sized by width, which undoes the height-driven poster the
+   * two-column layout needs. Up there the poster is what gives when the column
+   * is too tall; down here nothing is competing for that height — the
+   * transcript is behind a button — and a width the sleeve is drawn from is
+   * simpler and cannot squash it. Both properties are named because both are
+   * set above; leaving `height` at its desktop value is exactly how a 4:5
+   * poster ends up 64px wide and 300px tall. */
+  .player__stage,
+  .player[data-beside='transcript'] .player__stage {
     width: min(100%, 34vh, 340px);
+    height: auto;
+  }
+
+  .player[data-beside='transcript'] .player__art {
+    width: 100%;
+    height: auto;
   }
 
   .player__right {
@@ -1450,6 +1871,140 @@ body {
 
   .player__transport {
     gap: 22px;
+  }
+
+  /* The way in to the words, which exists only at this width. */
+  .player__reveal {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Closed: the transcript is not on the page at all — it is not rendered
+     either, see `useStacked` in Player.tsx — and the row it would have had goes
+     to the column above it, which now holds everything: the poster, the
+     heading, the transport and the notes.
+   *
+   * That column becomes the page's one scroller while it does, and it has to:
+   * `.page` is exactly one viewport by design, a poster is 4:5, and a phone
+   * that is 667 tall cannot fit a sleeve, a title, a transport and a paragraph
+   * of notes at once. Left to overflow, the flex column shrinks the poster's
+   * box without shrinking the image inside it, and the artwork is drawn over
+   * the title — which is what this looked like before the rule existed. */
+  .player[data-beside='transcript'][data-reading='false'] {
+    grid-template-areas:
+      'bar'
+      'left';
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .player[data-beside='transcript'][data-reading='false'] .player__right {
+    display: none;
+  }
+
+  .player[data-beside='transcript'][data-reading='false'] .player__left {
+    justify-content: flex-start;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+
+  .player[data-beside='transcript'][data-reading='false'] .player__left::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Nothing in that column may be squeezed: it scrolls instead. */
+  .player[data-beside='transcript'][data-reading='false'] .player__stage,
+  .player[data-beside='transcript'][data-reading='false'] .player__notes-region {
+    flex: 0 0 auto;
+  }
+
+  /* And the notes stop being a scroller of their own, because a scroller inside
+     a scroller on a phone is two things a thumb can drag and one of them is
+     always the wrong one. */
+  .player[data-beside='transcript'] .player__left .player__notes-region {
+    max-height: none;
+  }
+
+  .player[data-beside='transcript'] .player__left .player__pane {
+    overflow: visible;
+    mask-image: none;
+  }
+
+  /* Open: everything above the words gives up what it can.
+   *
+   * The poster to a thumbnail with the title beside it rather than under it,
+   * which is where the screen actually comes from — a 4:5 poster at a phone's
+   * width is two thirds of the viewport on its own. The transport stays exactly
+   * as it is: it is the reason the page is one viewport, and a transcript is
+   * read *while listening*, so the play button is the last thing that may
+   * shrink. */
+  .player[data-reading='true'] .player__left {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'art words'
+      'controls controls'
+      'reveal reveal';
+    align-items: center;
+    gap: 12px 14px;
+    padding-bottom: 4px;
+  }
+
+  .player[data-reading='true'] .player__stage {
+    grid-area: art;
+    width: 64px;
+    height: auto;
+  }
+
+  /* The blob is a glow around a record sleeve; around a 64px thumbnail it is a
+     smudge behind the title. */
+  .player[data-reading='true'] .player__blob {
+    display: none;
+  }
+
+  .player[data-reading='true'] .player__heading {
+    grid-area: words;
+    margin-bottom: 0;
+    text-align: left;
+  }
+
+  .player[data-reading='true'] .player__title {
+    font-size: 17px;
+    -webkit-line-clamp: 1;
+  }
+
+  .player[data-reading='true'] .player__subtitle,
+  .player[data-reading='true'] .player__date {
+    font-size: 11px;
+  }
+
+  .player[data-reading='true'] .player__date {
+    display: none;
+  }
+
+  .player[data-reading='true'] .player__controls {
+    grid-area: controls;
+  }
+
+  .player[data-reading='true'] .player__reveal {
+    grid-area: reveal;
+    justify-self: center;
+  }
+
+  /* An introduction to a conversation somebody is now in the middle of reading
+     the whole of. It is one tap away again. */
+  .player[data-reading='true'] .player__notes-region {
+    display: none;
+  }
+
+  /* The sheet's ends, on a screen where the whole sheet is about six lines
+     tall: a 45% breath under the last line would be most of the panel. */
+  .player[data-reading='true'] .transcript__breath {
+    height: 30%;
+  }
+
+  .player[data-reading='true'] .transcript__breath--first {
+    height: 6%;
   }
 
   /* --- the console, stacked --- */

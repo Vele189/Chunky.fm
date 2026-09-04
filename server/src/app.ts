@@ -213,7 +213,7 @@ export async function buildApp({
        * was split in two: finishing one now carries the episode's own fields
        * *and* the five that say where its audio already is (`uploadId`, `key`,
        * `contentHash`, `parts`, `contentType`), which is nine before anybody
-       * types a guest list.
+       * types a guest list. Thirteen with a transcript on it.
        *
        * Worth knowing how that failed, because it was not obvious: exceeding
        * this limit makes busboy destroy the request stream, which surfaces as
@@ -221,6 +221,18 @@ export async function buildApp({
        * all about field counts.
        */
       fields: 16,
+      /**
+       * How large one *field* may be, which is not `fileSize`.
+       *
+       * Stated rather than left to busboy's default, which happens to be this
+       * number, because one field in this API is now genuinely large: an
+       * episode's transcript is an hour of talk, arrives as a form field rather
+       * than as a file part, and `TRANSCRIPT_MAX_LENGTH` (200k characters) is
+       * chosen to sit inside this even at three bytes a character. A default
+       * that agreed with that by coincidence is a default somebody could change
+       * upstream, and the failure would be a truncated transcript.
+       */
+      fieldSize: 1024 * 1024,
     },
   })
 

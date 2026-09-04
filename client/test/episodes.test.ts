@@ -34,6 +34,7 @@ function makeEpisode(overrides: Partial<Episode> = {}): Episode {
     audioBytes: 42 * 1024 * 1024,
     transcodeStatus: 'ready',
     poster: 'b7f3.png',
+    hasTranscript: false,
     uploadedAt: Date.UTC(2026, 2, 14, 12),
     ...overrides,
   }

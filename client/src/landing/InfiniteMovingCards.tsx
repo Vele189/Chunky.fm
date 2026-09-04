@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef } from 'react'
+import { useStill } from './useStill.js'
 
 /**
  * A row of cards that never stops going past, unless you take hold of it.
@@ -189,20 +190,4 @@ export function InfiniteMovingCards({
       </ol>
     </div>
   )
-}
-
-/** Whether this visitor has asked for things to hold still. */
-function useStill() {
-  const [still, setStill] = useState(false)
-
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const read = () => setStill(query.matches)
-
-    read()
-    query.addEventListener('change', read)
-    return () => query.removeEventListener('change', read)
-  }, [])
-
-  return still
 }

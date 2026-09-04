@@ -46,6 +46,15 @@ export interface Episode {
   audioBytes: number
   transcodeStatus: TranscodeStatus
   poster: string | null
+  /**
+   * Whether there is a transcript to ask for, rather than the transcript.
+   *
+   * An hour of talk is a hundred kilobytes of text and the archive hands back
+   * sixty episodes at once, so the words live at their own address and are
+   * fetched only when a reader opens the pane. Mirrors the server's `Episode`;
+   * see `lib/transcript.ts`, which is what does the asking.
+   */
+  hasTranscript: boolean
   uploadedAt: number
 }
 
@@ -219,6 +228,15 @@ export function paragraphs(notes: string | null): string[] {
     .map((block) => block.trim())
     .filter((block) => block.length > 0)
 }
+
+/**
+ * How long a transcript may be, in characters.
+ *
+ * Mirrors `TRANSCRIPT_MAX_LENGTH` on the server; keep the two in step. Held
+ * here so the console can refuse a file that is plainly too big before it sends
+ * it, and say so in the same words the station would have.
+ */
+export const TRANSCRIPT_MAX_LENGTH = 200_000
 
 /**
  * A number of bytes, the way a person reads it.
@@ -593,6 +611,14 @@ export interface EpisodePatch {
   episodeNumber?: number | null
   publishedAt?: number
   status?: EpisodeStatus
+  /**
+   * The words that were said, whole, or null to take them off again.
+   *
+   * The ordinary way a transcript arrives: an episode goes up on the night it
+   * is finished and is transcribed the week after, so this rather than the
+   * upload is what the console mostly uses. See `TRANSCRIPT_MAX_LENGTH`.
+   */
+  transcript?: string | null
 }
 
 /** What an upload needs, alongside the two files. */

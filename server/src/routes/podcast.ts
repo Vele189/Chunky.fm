@@ -9,12 +9,14 @@ import { looksLikeAudioUpload } from '../lib/audio.js'
 import { hasAdminCredentials, requireAdmin } from '../lib/auth.js'
 import {
   type Episode,
+  TRANSCRIPT_MAX_LENGTH,
   slugTaken,
   toAdminEpisode,
   toEpisode,
   toGuests,
   toNotes,
   toTitle,
+  toTranscript,
   uniqueSlug,
 } from '../lib/episode.js'
 import { POSTER_MAX_BYTES, POSTER_TYPES, dimensions, sniff } from '../lib/poster.js'
@@ -164,6 +166,26 @@ function checkPoster(buffer: Buffer, mimetype: string): { extension: string } | 
   return { extension: actual }
 }
 
+/**
+ * A transcript from a form field or a PATCH body, or a refusal.
+ *
+ * The length is checked on what arrived rather than on what the cleaner made of
+ * it, so the number in the message is the number somebody can see in their own
+ * file. Absent and blank are the same thing — null, no transcript — because the
+ * console sends the field either way and an empty one means "there isn't one".
+ */
+function checkTranscript(value: unknown): { transcript: string | null } | Refusal {
+  if (typeof value !== 'string') return { transcript: null }
+  if (value.length > TRANSCRIPT_MAX_LENGTH) {
+    return {
+      status: 413,
+      error: 'transcript_too_long',
+      message: `a transcript has to be under ${TRANSCRIPT_MAX_LENGTH.toLocaleString('en')} characters; that one is ${value.length.toLocaleString('en')}`,
+    }
+  }
+  return { transcript: toTranscript(value) }
+}
+
 /** An integer from a form field, or null for absent, blank or nonsense. */
 function toInt(value: unknown): number | null {
   if (typeof value !== 'string' || value.trim() === '') return null
@@ -190,11 +212,11 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
     INSERT INTO episodes (
       slug, title, notes, guests, episode_number, published_at, status,
       duration_ms, master_key, master_bytes, audio_key, audio_bytes, audio_type,
-      transcode_status, poster, content_hash, uploaded_at
+      transcode_status, poster, transcript, content_hash, uploaded_at
     ) VALUES (
       @slug, @title, @notes, @guests, @episode_number, @published_at, @status,
       @duration_ms, @master_key, @master_bytes, @audio_key, @audio_bytes, @audio_type,
-      @transcode_status, @poster, @content_hash, @uploaded_at
+      @transcode_status, @poster, @transcript, @content_hash, @uploaded_at
     )
   `)
 
@@ -329,6 +351,43 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
         return reply.code(404).send({ error: 'no_episode', message: 'no episode at that address' })
       }
       return { episode: toEpisode(row, store) }
+    })
+
+    /**
+     * What was said, for the episode at that address.
+     *
+     * Its own route rather than a field on the episode, and the reason is size:
+     * an hour of talk is a hundred kilobytes of text and the archive hands back
+     * sixty episodes at once. See `Episode.hasTranscript`, which is what tells
+     * the page there is anything here to ask for.
+     *
+     * The same visibility rule as the episode itself, spelled out again rather
+     * than shared, because getting it wrong in either direction is bad: a draft
+     * answers 404 to a stranger — a 403 would confirm the slug is real — and an
+     * admin gets it, so "view" from the console shows the whole page.
+     *
+     * A 404 for an episode that exists and has no transcript, which is the same
+     * answer the station's lyrics route gives for a song nobody has written the
+     * words to, and for the same reason: it is not an error, it is the
+     * considered answer, and the page draws nothing rather than a broken panel.
+     *
+     * JSON rather than `text/plain`, so a refusal here reads like a refusal
+     * anywhere else in this API and the console's one error path can report it.
+     */
+    app.get('/api/episodes/:slug/transcript', async (request, reply) => {
+      const { slug } = request.params as { slug: string }
+      const row = findBySlug(slug)
+      const visible =
+        row && (row.status === 'published' || hasAdminCredentials(config, request.headers))
+      if (!row || !visible) {
+        return reply.code(404).send({ error: 'no_episode', message: 'no episode at that address' })
+      }
+      if (!row.transcript) {
+        return reply
+          .code(404)
+          .send({ error: 'no_transcript', message: 'nobody has written down what was said here' })
+      }
+      return { transcript: row.transcript }
     })
 
     /** The whole archive including drafts. The console's list. */
@@ -601,6 +660,8 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
       if (title === '') {
         return refuse({ status: 400, error: 'no_title', message: 'an episode needs a title' })
       }
+      const transcript = checkTranscript(fields.get('transcript'))
+      if ('status' in transcript) return refuse(transcript)
       if (posterBuffer === null) {
         return refuse({
           status: 400,
@@ -665,6 +726,11 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
           audio_type: fields.get('contentType') || 'audio/mpeg',
           transcode_status: publisher.enabled ? 'pending' : 'none',
           poster: posterName,
+          // Optional, and absent for most episodes: a transcript is made after
+          // the fact, so the ordinary way one arrives is the PATCH below rather
+          // than this. Accepted here as well because an episode that already has
+          // one at upload time should not need a second request to say so.
+          transcript: transcript.transcript,
           content_hash: contentHash,
           uploaded_at: now,
         })
@@ -718,6 +784,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
         published_at: row.published_at,
         status: row.status,
         slug: row.slug,
+        transcript: row.transcript,
       }
 
       if (has('title') && typeof body.title === 'string') {
@@ -763,11 +830,34 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
         if (at !== null) next.published_at = at
       }
       if (has('status')) next.status = toStatus(body.status)
+      /**
+       * The usual way a transcript arrives.
+       *
+       * An episode is uploaded on the night it is finished and transcribed
+       * afterwards — a machine transcription takes as long as the conversation
+       * did, and then somebody reads it — so the common case is an episode that
+       * has been on the page for a week gaining its words. Which is why this is
+       * here as well as on the upload, and why an explicit null clears it: a
+       * transcript uploaded against the wrong episode has to be removable.
+       *
+       * `bodyLimit` is a megabyte for the whole app (see app.ts) and a
+       * transcript at the ceiling is comfortably inside it.
+       */
+      if (has('transcript')) {
+        const transcript = checkTranscript(body.transcript)
+        if ('status' in transcript) {
+          return reply
+            .code(transcript.status)
+            .send({ error: transcript.error, message: transcript.message })
+        }
+        next.transcript = transcript.transcript
+      }
 
       db.prepare(`
         UPDATE episodes SET
           slug = @slug, title = @title, notes = @notes, guests = @guests,
-          episode_number = @episode_number, published_at = @published_at, status = @status
+          episode_number = @episode_number, published_at = @published_at, status = @status,
+          transcript = @transcript
         WHERE id = @id
       `).run({ ...next, id: row.id })
 

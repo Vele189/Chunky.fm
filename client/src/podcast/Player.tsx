@@ -16,6 +16,7 @@ import {
   subtitleFor,
 } from '../lib/episodes.js'
 import { Blob } from './Blob.js'
+import { Transcript } from './Transcript.js'
 
 /**
  * One episode, and the controls to listen to it.
@@ -51,11 +52,26 @@ import { Blob } from './Blob.js'
  * station, where a listener may not seek because seeking is how you stop being
  * in the same second as everybody else. Nobody else is here.
  *
- * The page is one viewport and does not scroll. On a desk the artwork is the
- * left column and everything you read or press is the right one; on a phone
- * the same three regions stack. The show notes are the only thing that moves,
- * which is what keeps the transport on screen while they are being read. See
- * `.player` in podcast.css.
+ * The page is one viewport and does not scroll, and it is laid out the way the
+ * station's listening view is: **the thing on the left, the words on the
+ * right**. There, that is the deck and the lyric sheet beside it; here it is
+ * the artwork with the transport under it, and the transcript in the other
+ * column. The same shape for the same reason — what is being played and what is
+ * being said are two different things to look at, and neither should be
+ * underneath the other.
+ *
+ * So everything you press is in the left column with the poster: the title, the
+ * scrubber, the transport, and the show notes when the other column is taken.
+ * The right column is one thing, whichever of the two there is to read — the
+ * transcript if the episode has one, the show notes if it does not — and it is
+ * the only region on the page that scrolls, which is what keeps the transport
+ * where it was while somebody reads.
+ *
+ * On a phone the two columns stack, and there is not room for both: the
+ * transcript is behind a button, and pressing it shrinks the poster and the
+ * heading to a header strip so the words get the screen. Again the station's
+ * own answer — its sheet falls under the deck and is capped there rather than
+ * being a second page. See `.player` in podcast.css, and `Transcript.tsx`.
  */
 
 /** How far the back button goes. The podcast convention: "I missed that." */
@@ -123,10 +139,41 @@ export function Player({ episode, onBack }: PlayerProps) {
   const [duration, setDuration] = useState(episode.durationMs / 1000)
   const [scrubbing, setScrubbing] = useState(false)
   const [failed, setFailed] = useState(false)
+  /**
+   * Whether the transcript has been asked for, which only matters on a phone.
+   *
+   * On a desk it is simply the other column and this is ignored. Stacked, the
+   * poster and the transport and an hour of talk cannot share a screen, so the
+   * words are behind a button and pressing it takes the room back off the
+   * artwork. Closed to begin with: somebody arriving at an episode is deciding
+   * whether to listen to it, and the picture and the play button are what that
+   * decision is made of.
+   */
+  const [reading, setReading] = useState(false)
 
   const poster = episodePosterUrl(episode)
   const subtitle = subtitleFor(episode)
   const notes = useMemo(() => paragraphs(episode.notes), [episode.notes])
+  const stacked = useStacked()
+
+  /**
+   * What the right column is: the transcript, the notes, or nothing at all.
+   *
+   * Three shapes rather than two, because an episode with neither would
+   * otherwise be a page with an empty half. `podcast.css` reads this off the
+   * element and lays the page out accordingly — including collapsing to one
+   * centred column when there is nothing to read.
+   */
+  const beside: 'transcript' | 'notes' | 'none' = episode.hasTranscript
+    ? 'transcript'
+    : notes.length > 0
+      ? 'notes'
+      : 'none'
+
+  // A new episode closes the transcript again: the poster and the play button
+  // are what somebody deciding whether to listen is looking at.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the slug is the point
+  useEffect(() => setReading(false), [episode.slug])
 
   // The element only exists after the first render, and the blob needs it.
   useEffect(() => setElement(audio.current), [])
@@ -222,6 +269,23 @@ export function Player({ episode, onBack }: PlayerProps) {
   }, [])
 
   /**
+   * Straight to a moment, because somebody pressed a line of the transcript.
+   *
+   * Not clamped against `duration`, unlike `skip`: these come from timestamps
+   * inside the episode's own transcript, and a browser clamps a seek past the
+   * end anyway. What it does do is *play* — pressing a line of a paused
+   * transcript means "let me hear this", and leaving it paused on the right
+   * second would be an odd sort of obedience.
+   */
+  const jumpTo = useCallback((seconds: number) => {
+    const media = audio.current
+    if (!media) return
+    media.currentTime = seconds
+    setPosition(seconds)
+    if (media.paused) void media.play().catch(() => setFailed(true))
+  }, [])
+
+  /**
    * Keyboard, the way every player does it.
    *
    * Bound to the document rather than to the player, because the thing somebody
@@ -259,15 +323,44 @@ export function Player({ episode, onBack }: PlayerProps) {
   // painted with a gradient rather than an extra element inside the input.
   const progress = duration > 0 ? (position / duration) * 100 : 0
 
+  /**
+   * The show notes, wherever they end up.
+   *
+   * Written once and placed in one of two columns: on the right when there is
+   * no transcript to put there, and under the transport on the left when there
+   * is. A paragraph or two of introduction can sit beside the controls; an hour
+   * of transcript cannot, which is the whole reason the two swap.
+   */
+  const showNotes =
+    notes.length > 0 ? (
+      <section className="player__notes-region">
+        <h2 className="player__pane-heading">Show notes</h2>
+        <div className="player__pane player__notes">
+          {notes.map((block, index) => (
+            // Index as key: these are paragraphs of one immutable block of
+            // text, they have no identity of their own, and nothing reorders.
+            // biome-ignore lint/suspicious/noArrayIndexKey: paragraphs have no id
+            <p key={index}>{block}</p>
+          ))}
+        </div>
+      </section>
+    ) : null
+
   return (
     /*
       Three regions, laid out by named grid areas so one DOM order serves both
-      shapes: on a desk the artwork is the left column and everything you read
-      or press is the right one; on a phone the same three stack. The page
-      itself never scrolls — the notes are the only thing that does, which is
-      what keeps the transport on screen while somebody reads them.
+      shapes: on a desk the poster and everything you press are the left column
+      and what there is to read is the right one; on a phone the same three
+      stack. The page itself never scrolls — the right column is the only thing
+      that does, which is what keeps the transport on screen while somebody
+      reads.
+
+      The two data attributes are the layout's switches, and both are read only
+      by podcast.css: `data-beside` says what the right column is (and whether
+      there is one at all), `data-reading` says whether a phone has asked for
+      the transcript, which is what shrinks the poster.
     */
-    <article className="player">
+    <article className="player" data-beside={beside} data-reading={reading ? 'true' : 'false'}>
       <div className="player__bar">
         <button type="button" className="player__back" onClick={onBack}>
           <span aria-hidden="true">&larr;</span> All episodes
@@ -295,9 +388,7 @@ export function Player({ episode, onBack }: PlayerProps) {
             <div className="player__art player__art--none" aria-hidden="true" />
           )}
         </div>
-      </div>
 
-      <div className="player__right">
         <header className="player__heading">
           <h1 className="player__title">{episode.title}</h1>
           {subtitle && <p className="player__subtitle">{subtitle}</p>}
@@ -311,8 +402,9 @@ export function Player({ episode, onBack }: PlayerProps) {
           </p>
         )}
 
-        {/* Never scrolls away. The notes below are the only thing on this page
-            that moves, so the transport is always where it was. */}
+        {/* Never scrolls away, at either width: it is the reason the page is
+            one viewport, and a transport you have to scroll back to is a
+            transport somebody stops using. */}
         <div className="player__controls">
           <div className="player__scrub">
             <input
@@ -377,18 +469,40 @@ export function Player({ episode, onBack }: PlayerProps) {
           </div>
         </div>
 
-        {/* The one scrolling region on the page. `min-height: 0` on it is what
-            makes that work inside a grid; see podcast.css. */}
-        {notes.length > 0 && (
-          <section className="player__notes">
-            <h2 className="player__notes-heading">Show notes</h2>
-            {notes.map((block, index) => (
-              // Index as key: these are paragraphs of one immutable block of
-              // text, they have no identity of their own, and nothing reorders.
-              // biome-ignore lint/suspicious/noArrayIndexKey: paragraphs have no id
-              <p key={index}>{block}</p>
-            ))}
-          </section>
+        {/* The way in to the words on a phone, and drawn nowhere else: at any
+            width with room for two columns the transcript is simply the other
+            one, and a button to reveal a thing that is already on screen would
+            be a button that does nothing. `aria-expanded` rather than
+            `aria-pressed` because that is what this is — a region that is or is
+            not there. */}
+        {beside === 'transcript' && (
+          <button
+            type="button"
+            className="player__reveal"
+            aria-expanded={reading}
+            aria-controls="player-reading"
+            onClick={() => setReading((was) => !was)}
+          >
+            {reading ? 'Hide the transcript' : 'Read the transcript'}
+          </button>
+        )}
+
+        {/* Under the transport only when the other column is a transcript.
+            Otherwise they *are* the other column. */}
+        {beside === 'transcript' && showNotes}
+      </div>
+
+      <div className="player__right" id="player-reading">
+        {beside === 'transcript' ? (
+          /* Not mounted on a phone until it is asked for: a transcript is a
+             hundred kilobytes of text, and a reader who never opens it should
+             not be made to fetch it. On a desk it is on screen from the start,
+             so it is fetched from the start. */
+          (!stacked || reading) && (
+            <Transcript slug={episode.slug} positionSeconds={position} onSeek={jumpTo} />
+          )
+        ) : (
+          showNotes
         )}
       </div>
 
@@ -412,6 +526,39 @@ export function Player({ episode, onBack }: PlayerProps) {
       <audio ref={audio} src={episode.audioUrl} crossOrigin="anonymous" preload="metadata" />
     </article>
   )
+}
+
+/**
+ * Whether the page is in its stacked shape rather than its two-column one.
+ *
+ * The width is a layout decision and lives in podcast.css; this exists because
+ * one thing about it is *not* only a layout decision. A transcript that is off
+ * screen behind a button should not be fetched — it is a hundred kilobytes —
+ * and `display: none` does not stop a component that has been rendered from
+ * asking for it. So the breakpoint is read here too, and it has to be the same
+ * number: see the `@media (max-width: 900px)` block in podcast.css, which is
+ * where the columns actually stack.
+ *
+ * `matchMedia` rather than a resize listener, which fires on every pixel of a
+ * drag and on a phone's address bar sliding away. Subscribed rather than read
+ * once, so turning a tablet from portrait to landscape does the right thing.
+ */
+const STACKED = '(max-width: 900px)'
+
+function useStacked(): boolean {
+  const [stacked, setStacked] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(STACKED).matches,
+  )
+
+  useEffect(() => {
+    const query = window.matchMedia(STACKED)
+    const answer = (event: MediaQueryListEvent) => setStacked(event.matches)
+    setStacked(query.matches)
+    query.addEventListener('change', answer)
+    return () => query.removeEventListener('change', answer)
+  }, [])
+
+  return stacked
 }
 
 /* --- the icons -------------------------------------------------------------

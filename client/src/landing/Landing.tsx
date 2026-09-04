@@ -1,39 +1,42 @@
-import chatIcon from '../assets/icons/chat.svg'
-import scheduleIcon from '../assets/icons/schedule.svg'
+import ndamulelo from '../assets/ndamulelo.webp'
 import slidersIcon from '../assets/icons/sliders.svg'
 import { memo, useEffect, useRef, useState } from 'react'
+import { PODCAST_PATH } from '../lib/episodes.js'
+import { kindPromise } from '../lib/kind.js'
 import { stationUrl } from '../lib/routes.js'
 import { Waveform } from '../Turntable.js'
+import { CardPanel, Carousel } from './AppleCardsCarousel.js'
+import { BackgroundLines } from './BackgroundLines.js'
+import { BentoCell, BentoGrid } from './BentoGrid.js'
+import { ContainerScroll } from './ContainerScroll.js'
 import { DraggableCard, DraggableCardStage } from './DraggableCard.js'
 import { FeyCards } from './FeyCards.js'
+import { FlipWords } from './FlipWords.js'
 import { FlipBoard } from './FlipBoard.js'
-import { GlareCard } from './GlareCard.js'
 import { Globe } from './Globe.js'
 import { Gramophone } from './Gramophone.js'
 import { ResizableNavbar } from './ResizableNavbar.js'
 import { Spotlight } from './Spotlight.js'
 import { SquigglyText } from './SquigglyText.js'
-import { Timeline } from './Timeline.js'
 import { TracingBeam } from './TracingBeam.js'
-import { InfiniteMovingCards } from './InfiniteMovingCards.js'
 import { ListenerView } from './ListenerView.js'
 import { NextSession } from './NextSession.js'
 import { MacbookScroll } from './MacbookScroll.js'
-import { MaskContainer } from './MaskContainer.js'
 import { MovingColumns } from './MovingColumns.js'
-import { StickyScroll } from './StickyScroll.js'
 import {
+  BEEN_ON,
   clock,
   initial,
   ROOM,
   saidBy,
   SESSION,
+  SHEET,
   SLEEVES,
   WISHES,
 } from './session.js'
-import { useOneByOne } from './useOneByOne.js'
+import { type ArchiveCard, useArchive } from './useArchive.js'
 import { useOnScreen } from './useOnScreen.js'
-import { useScrubbedSession } from './useScrubbedSession.js'
+import { useStill } from './useStill.js'
 
 /**
  * The page in front of the station.
@@ -55,14 +58,16 @@ import { useScrubbedSession } from './useScrubbedSession.js'
  * comes from tokens.css, so what a visitor sees before tuning in is the thing
  * they get afterwards, not an artist's impression of it.
  *
- * And one thing it does that a page of prose could not: the whole document is
- * scrubbed through a song. See `useScrubbedSession`. By the time somebody
- * reaches the bottom they have moved through five and a half minutes with a
- * room talking around them, which is the product, felt rather than described.
+ * Nothing on it is driven by the scroll any more, and that is a change worth
+ * knowing about. The whole document used to be scrubbed through a song: the
+ * top of the page was 0:00, the bottom was the last bar, and a chat panel and a
+ * transcript filled as you read them. Both of those sections have gone, and
+ * what replaced the first of them — the room and the sheet in the session grid
+ * — runs on a loop of its own, because a record plays whether or not anybody is
+ * reading. So the page has one clock, it is in `Inside`, and scrolling is
+ * scrolling.
  */
 export function Landing() {
-  const at = useScrubbedSession(SESSION.duration)
-
   return (
     <div className="landing">
       {/* One bar that is both: full width at the top of the page, and a floating
@@ -77,12 +82,15 @@ export function Landing() {
         <NextSession />
         <Moment />
         <Creed />
-        <Works />
-        <Guide />
-        <Room at={at} />
+        {/* One section where there were two. See `Inside`: `Works` was the
+            five steps of an evening and `Guide` was a feature nobody built, and
+            what replaced both is the screen a listener actually gets. */}
+        <Inside />
         <Talks />
+        {/* Straight after the conversations, because it is what becomes of
+            them. See `Archive`. */}
+        <Archive />
         <Wishes />
-        <Live />
         <BeenOn />
         <Dj />
         <Limits />
@@ -93,16 +101,39 @@ export function Landing() {
   )
 }
 
-/** The two ways off this page, named once. See STATION_PATH in lib/routes.ts. */
+/**
+ * The ways off this page, named once. See STATION_PATH in lib/routes.ts and
+ * PODCAST_PATH in lib/episodes.ts.
+ *
+ * The archive is the one of the three that is worth something when the station
+ * is dark. `TUNE_IN` on an evening with nobody on the decks lands on a page
+ * that says so, and the visitor who read this far has nothing to do about it;
+ * the podcast is nights that already happened, so it is the destination that
+ * always has something behind it. That is why it is in the bar and in the foot
+ * rather than only mentioned in the prose.
+ */
 const TUNE_IN = stationUrl()
 const DECKS = stationUrl('admin')
+const PODCAST = PODCAST_PATH
 
-/** Where the bar can take you. The same four the foot repeats. */
+/**
+ * Where the bar can take you, and all but one of them again in the foot.
+ *
+ * Four fragments and one address. The fragments are in the order the sections
+ * are in, and the podcast is last because it is the only one that leaves: a
+ * link that unloads the document sitting between two that scroll it would be
+ * the odd one out in the middle of the row rather than at the end of it.
+ *
+ * Adding this fifth one moved a number in landing.css. See the note on
+ * `.navbar__body[data-shrunk='true']`: the pill's floor is measured against the
+ * words that are actually in it, and a link added here without moving it puts
+ * the first one back on top of the wordmark.
+ */
 const NAV = [
-  { name: 'The room', link: '#room' },
   { name: 'Conversations', link: '#talks' },
   { name: 'What has been on', link: '#been-on' },
   { name: 'The DJ', link: '#dj' },
+  { name: 'The podcast', link: PODCAST },
 ]
 
 /**
@@ -117,6 +148,31 @@ const WORDMARK = (
     chunky<span className="wordmark__tld">.fm</span>
   </p>
 )
+/**
+ * The two kinds of night, as the station itself promises them.
+ *
+ * Built from `kindPromise` rather than written out, so the words on the page in
+ * front of the station are the words on the poster and in the console. The
+ * order is records first because that is what most evenings are and what
+ * somebody arriving already half expects; the surprise goes second.
+ *
+ * Lowercased and given a full stop, which is a rendering decision rather than a
+ * different vocabulary: `kindPromise` writes what a poster says, and a poster
+ * says it at the start of a line. Here the same words are the end of a
+ * sentence.
+ *
+ * The full stop is **inside** the flipped word on purpose. The box reserves the
+ * width of the longer night so the line never reflows (see FlipWords), which
+ * means anything after it sits at the far edge of that box whichever night is
+ * showing — a comma stranded a centimetre out in the open on the shorter one.
+ * With the punctuation carried by the word and nothing after it, the reserved
+ * space is trailing whitespace at the end of a line, which is invisible.
+ */
+const NIGHTS = (['set', 'talk'] as const).map((kind) => {
+  const said = kindPromise(kind)
+  return `${said[0]?.toLowerCase() ?? ''}${said.slice(1)}.`
+})
+
 const TUNE_IN_ACTION = { name: 'Tune in', link: TUNE_IN }
 const DECKS_ASIDE = {
   name: 'Run the decks',
@@ -149,8 +205,12 @@ const DECKS_ASIDE = {
  * and forever on a machine that cannot draw it, this is the flat deck instead.
  */
 const Hero = memo(function Hero() {
+  const stage = useRef<HTMLElement>(null)
+  const near = useOnScreen(stage)
+  const still = useStill()
+
   return (
-    <section className="hero">
+    <section className="hero" ref={stage}>
       <div className="hero__stage" aria-hidden="true">
         <Gramophone />
       </div>
@@ -160,20 +220,55 @@ const Hero = memo(function Hero() {
         <p className="hero__line">Every session begins with a question.</p>
         <p className="hero__blurb">
           The room chooses the theme. I spend the day curating the story. When the broadcast begins,
-          everyone hears the same song at the same moment. With context, annotations, and the
-          chance to discover something they would never have searched for themselves.
+          everyone hears the same song at the same moment. With the words to it on screen, a room
+          talking around them, and the chance to discover something they would never have searched
+          for themselves.
         </p>
         {/* The other half of what the station is, said once at the top and
             argued properly further down. See `Talks`: an evening here is not
             always records, and a page that only ever said "music" would be
-            describing half of the thing somebody is about to walk into. */}
-        <p className="hero__blurb hero__blurb--also">
-          Other nights there is somebody on the mic instead, and the room listens in on the
-          conversation.
+            describing half of the thing somebody is about to walk into.
+
+            It was a sentence about somebody being on the mic. It is the two
+            kinds of night, turning over, which is the same claim in a third of
+            the words and is the one thing on this screen that moves.
+
+            The words are the station's own. `kindPromise` is what the poster
+            for a night says and what the console offers when one is announced,
+            and a page in front of the station promising something in different
+            words would read as a third kind of evening. See lib/kind.ts, which
+            exists for exactly this. */}
+        <p className="hero__also">
+          An evening here is{' '}
+          {still ? (
+            // A word that changes on a timer is content updating by itself.
+            // Asked to hold still the page does not slow it down, it stops
+            // having one: both nights, in one sentence, nothing moving.
+            <>a set of records, or a conversation.</>
+          ) : (
+            <FlipWords className="hero__night" words={NIGHTS} running={near} />
+          )}
         </p>
-        <a className="button button--large" href={TUNE_IN}>
-          Join tonight’s session
-        </a>
+        {/* Two, where there was one, and they are not the same offer.
+
+            The first is the station, which is dark more often than it is on: a
+            visitor who presses it on a Tuesday afternoon gets a page that says
+            so, and that is the honest cost of the thing being live. The second
+            is the archive, which is never dark. Putting it here rather than
+            only in the bar is the page admitting, in the first screen, that
+            half of what it is describing already happened and can be heard
+            right now. See `Archive`, which is that half argued properly.
+
+            The quiet pill rather than a second white one: they are both worth
+            pressing and only one of them is what this screen is about. */}
+        <div className="hero__ways">
+          <a className="button button--large" href={TUNE_IN}>
+            Join tonight’s session
+          </a>
+          <a className="button button--large button--quiet" href={PODCAST}>
+            Listen to the podcast
+          </a>
+        </div>
       </div>
 
     </section>
@@ -359,11 +454,20 @@ const Creed = memo(function Creed() {
           <p className="creed__line">They need better introductions.</p>
         </div>
 
+        {/* The two statements that are being quoted rather than argued, and the
+            only marks of their kind in this section.
+
+            A quotation across two lines opens on the first and closes on the
+            second, so the mark is on the line it belongs to rather than a pair
+            of them wrapped round each `p`. The opening one hangs — see
+            `.creed__said--opens` — because a section set one thought a line has
+            its whole shape in the left margin, and a line that starts a third
+            of a character in is the one line that looks wrong. */}
         <div className="creed__stack">
-          <p className="creed__said">
-            I didn’t fall in love with Pink Floyd because an algorithm recommended them.
+          <p className="creed__said creed__said--opens">
+            “I didn’t fall in love with Pink Floyd because an algorithm recommended them.
           </p>
-          <p className="creed__said">I fell in love because someone explained who they were.</p>
+          <p className="creed__said">I fell in love because someone explained who they were.”</p>
         </div>
 
         <div className="creed__stack">
@@ -373,8 +477,10 @@ const Creed = memo(function Creed() {
         </div>
 
         <div className="creed__stack">
-          <p className="creed__said">When I listened again, I wasn’t hearing different sounds.</p>
-          <p className="creed__said">I was hearing different meaning.</p>
+          <p className="creed__said creed__said--opens">
+            “When I listened again, I wasn’t hearing different sounds.
+          </p>
+          <p className="creed__said">I was hearing different meaning.”</p>
         </div>
 
         <p className="creed__turn">That’s what chunky.fm is built to do.</p>
@@ -384,367 +490,310 @@ const Creed = memo(function Creed() {
 })
 
 /**
- * What a session is, in five steps.
+ * How long a line is held before the next one comes up.
  *
- * Each one is a heading and a few fragments under it. It is the setting `Creed`
- * uses, applied five times. The page has settled on one thought a line for
- * anything that is an argument rather than a description, and this is the
- * argument for the shape of an evening rather than a description of a feature.
- *
- * Each step used to close with a line saying what its fragments were for, and
- * every one of those lines is said better elsewhere on the page: step 3's was
- * `Moment`, step 4's was `Guide`, step 5's was `Creed`, and step 2's was the
- * heading standing directly over the row. A card that states its own moral is
- * the page reading itself out, and five of them in a row is why this section
- * felt like homework. The heading carries the step; the fragments are what it
- * is made of; nothing here needs a verdict under it.
+ * Not the sheet's own gaps, which are fourteen to twenty-two seconds apart
+ * because they are a real song's worth of spacing. At that rate a reader who
+ * stopped at this cell would watch one line change and conclude it was a
+ * picture. Two seconds is a lie about the record and the truth about the
+ * feature, which is the trade every drawing on this page makes.
  */
-const STEPS = [
-  {
-    title: 'The room chooses the question.',
-    lines: ['Not songs.', 'A theme.'],
-    /* The two examples, which are the only place this section says what a theme
-       actually sounds like. Quoted, like the wishes further down the page, and
-       for the same reason: they are things somebody would type. */
-    like: ['Songs that sound like forgiveness.', 'Albums that changed music forever.'],
-  },
-  {
-    title: 'I curate the journey.',
-    lines: ['Hours of listening.', 'Research.', 'Context.'],
-  },
-  {
-    title: 'We listen together.',
-    lines: ['One room.', 'One broadcast.', 'One timeline.'],
-  },
-  {
-    title: 'Follow the Listening Guide.',
-    lines: [
-      'Open the notes whenever you want.',
-      'See why a lyric matters.',
-      'Why a guitar solo hurts.',
-      'Why this song comes before the next one.',
-    ],
-  },
-  {
-    title: 'Leave with something.',
-    lines: ['Export the playlist.', 'Keep the annotations.', 'Take your own notes.'],
-  },
-]
+const A_LINE = 2000
 
 /**
- * The five of them, going past.
+ * How many lines light in place before the sheet starts moving under them.
  *
- * The same row the six shorter steps were in: `InfiniteMovingCards`, holding a
- * `GlareCard` each. A row rather than a column because they are a sequence and a
- * column of five reads as a feature list, and because below the width five fit
- * in, a row keeps the order that a reflowing grid would quietly lose by putting
- * step 4 under step 1.
- *
- * The card is up to 320 wide and has no ratio: the row is a flex row and every
- * card comes out as tall as the tallest, so the shape follows the longest step
- * rather than being declared. See `.scroller__item` in landing.css.
+ * A sheet that scrolled from the first line would be a sheet whose top line is
+ * never readable. Two, and it is the *third* line's offset that says how far
+ * that is rather than a number of pixels, so a line that wraps on a narrow cell
+ * takes its own height with it.
  */
-const Works = memo(function Works() {
-  return (
-    <section className="works">
-      <h2 className="section__title">Every session tells a story.</h2>
-
-      {/* The five of them, going past forever. Slow, because they are steps to
-          be read rather than a row of logos, and paused the moment a pointer, a
-          finger or a keyboard lands on one, which is the only way a card that
-          reveals itself on hover can be looked at at all. */}
-      <InfiniteMovingCards
-        className="works__row"
-        speed="slow"
-        items={STEPS.map((step, index) => ({
-          key: step.title,
-          node: (
-            <GlareCard>
-              <span className="step__n" aria-hidden="true">
-                {String(index + 1).padStart(2, '0')}
-              </span>
-              <h3 className="step__title">{step.title}</h3>
-
-              <div className="step__stack">
-                {step.lines.map((line) => (
-                  <p className="step__line" key={line}>
-                    {line}
-                  </p>
-                ))}
-              </div>
-
-              {step.like ? (
-                <div className="step__stack">
-                  <p className="step__line">Something like:</p>
-                  <p className="step__like">“{step.like[0]}”</p>
-                  <p className="step__or">or</p>
-                  <p className="step__like">“{step.like[1]}”</p>
-                </div>
-              ) : null}
-            </GlareCard>
-          ),
-        }))}
-      />
-    </section>
-  )
-})
+const RESTS_AT = 2
 
 /**
- * Three notes, at the second of the record they belong to.
+ * The sheet beside the deck, playing.
  *
- * Written as timestamps rather than as bullet points because the timestamp is
- * half of what a note is: the same sentence at no particular moment is a review,
- * and at 2:14 it is somebody leaning over and telling you to listen to the next
- * bit. The three of them are also a shape (one about the playing, one about the
- * writing, one about why it is on tonight) which is the range the guide covers
- * said without a sentence saying it.
+ * It used to be lit from the page's own playhead — the scroll — which made it
+ * one more thing that only moved while somebody was moving, and this is the one
+ * cell in the grid where that was wrong: a lyric sheet keeping up with a record
+ * is the whole claim, and a sheet that holds still until you scroll is a claim
+ * you have to take on trust. So it runs on its own clock now, and the section
+ * holds that clock because the meter beside it is on the same one.
+ *
+ * The sheet lifts so the line being sung stays where the eye already is,
+ * measured off the line itself rather than assumed from a line height: three of
+ * these wrap at the cell's width and a sheet stepped by a constant would walk
+ * further out of true with every one it passed.
+ *
+ * The seam is a restart rather than a rewind. Scrolling fourteen lines
+ * backwards in half a second is the one motion here that would say nothing
+ * true; a record reaching the end and starting again is exactly what has
+ * happened, so at the top of the loop the lift is taken off with no transition
+ * and the sheet comes back up from nothing. See `.sheet[data-again]`.
  */
-const NOTES = [
-  { at: '2:14', says: 'Listen to how the guitar hesitates before resolving.' },
-  { at: '4:31', says: 'This lyric was written after…' },
-  { at: '5:02', says: 'This is why I chose this song tonight.' },
-]
+function Sheet({ sung }: { sung: number }) {
+  const lines = useRef<HTMLDivElement>(null)
+  const [lift, setLift] = useState(0)
 
-/**
- * What the notes are, and what they are not.
- *
- * Straight after `Works`, which is where the guide is named: step 04 says to
- * follow it and this is the section that says what following it is like. The two
- * denials come first on purpose: everybody arriving at the phrase "listening
- * guide" is already imagining commentary over the top of the record, and the
- * section has to get rid of that before it can say what it means.
- *
- * The timestamps are not `aria-hidden`, unlike every other clock on this page.
- * The others are pictures of a playhead; these are the content, and a note without
- * the second it belongs to is a different and much worse thing.
- *
- * The notes are on a rail rather than in a list. See `Timeline`: they were
- * always three positions in a record and an `ol` is the one shape that says
- * they are in order without saying they are at points, which is half of what a
- * listening note is.
- */
-const Guide = memo(function Guide() {
-  return (
-    <section className="guide">
-      <h2 className="section__title">The Listening Guide</h2>
-
-      <div className="guide__stack">
-        <p className="guide__line">Not commentary.</p>
-        <p className="guide__line">Not analysis.</p>
-      </div>
-
-      <p className="guide__close">Just small pieces of context that make you hear differently.</p>
-
-      <p className="guide__label">Example</p>
-
-      <Timeline className="guide__rail" items={NOTES} />
-    </section>
-  )
-})
-
-/**
- * The room, talking, and the one section that moves.
- *
- * The lines arrive as the page's playhead reaches them, so a reader who has
- * scrolled this far is somewhere in particular in a song and the room is
- * somewhere in particular with them. That is the entire product in one panel,
- * and it is doing it rather than saying it.
- *
- * Every line is in the DOM from the first render and only its appearance is
- * withheld, so a screen reader gets the conversation whole rather than a
- * transcript that depends on how far somebody scrolled. The playhead chip is
- * `aria-hidden` for the same reason the bar at the bottom is: it is a picture of
- * a clock, not a clock.
- *
- * The three of them are a `StickyScroll`, so what is beside the words changes as
- * you read down them: a name, then the room talking, then the room disagreeing.
- */
-function Room({ at }: { at: number }) {
-  return (
-    <section className="room" id="room">
-      <div className="section__head">
-        <span className="section__mark" aria-hidden="true">
-          <img src={chatIcon} alt="" width={18} height={18} />
-        </span>
-        <h2 className="section__title">And the room around it</h2>
-      </div>
-
-      {/* The framing, before any of the mechanics below it. What the panels show
-          is a chat window, and a chat window is what everybody has already
-          decided this is by the time they get here, so the section says what
-          the talking is for before it shows any of it. The claim is not that
-          people talk during the music; it is that there is only one point in the
-          record for all of them, which is what makes a sentence about the next
-          eight bars worth typing at all.
-
-          Two stacks, where there were four. The two that went were the worked
-          examples — somebody calling the second guitar, the room going quiet —
-          and both of them are demonstrated rather than described a few inches
-          below, in a panel that fills with the room saying exactly that kind of
-          thing as you scroll. Telling a reader what they are about to be shown
-          is the one thing this section can afford least. */}
-      <div className="room__creed">
-        <div className="room__stack">
-          <p className="room__line">You’re not listening beside people.</p>
-          <p className="room__line room__line--said">You’re listening with them.</p>
-        </div>
-
-        <div className="room__stack">
-          <p className="room__line">The conversation isn’t happening around the music.</p>
-          <p className="room__line room__line--said">It’s happening inside it.</p>
-        </div>
-      </div>
-
-      <StickyScroll
-        className="room__reveal"
-        items={[
-          {
-            title: 'Just a nickname',
-            description: (
-              <p>
-                No account, no profile, nothing kept once the tab closes. You type what everyone
-                should call you, you press one thing, and you are in the room.
-              </p>
-            ),
-            panel: <JoinPanel />,
-          },
-          {
-            title: 'The room, talking',
-            description: (
-              <>
-                <p>
-                  Everything anyone says lands at the same point in the song for everyone, because
-                  there is only one point in the song.
-                </p>
-                <p>
-                  Which you can watch happen. That conversation is arriving as you scroll the page,
-                  each line at the second of the record it was said at. Some of it had already been
-                  said when you got here, which is what walking into a station mid-song is like.
-                </p>
-              </>
-            ),
-            panel: <TalkPanel at={at} />,
-          },
-        ]}
-      />
-    </section>
-  )
-}
-
-/** What joining looks like: a name, and one thing to press. */
-const JoinPanel = memo(function JoinPanel() {
-  return (
-    <div className="panel panel--join" aria-hidden="true">
-      <p className="panel__label">What should everyone call you?</p>
-      <p className="panel__field">thandi</p>
-      <span className="button button--large panel__go">Tune in</span>
-      <p className="panel__note">Nothing else is asked for, and nothing is kept.</p>
-    </div>
-  )
-})
-
-/**
- * The conversation, filling as the page's playhead advances.
- *
- * Mounted for as long as the section is, whichever item is active. See the
- * note in StickyScroll about not unmounting the panels. A conversation that
- * started again every time somebody scrolled past it would not be one.
- */
-function TalkPanel({ at }: { at: number }) {
-  /*
-   * Due, and then said.
-   *
-   * The playhead says how many lines have been reached; `useOneByOne` lets them
-   * land one at a time. Arriving here with the record already at 2:13 makes five
-   * of them due in the same frame, and five bubbles appearing together is a
-   * transcript rather than a conversation.
-   */
-  const due = saidBy(ROOM, at).length
-  const shown = useOneByOne(due)
-  const lines = useRef<HTMLOListElement>(null)
-
-  /*
-   * Follow the conversation down, the way a chat window does.
-   *
-   * In bubbles the nine lines are taller than the panel, so without this the one
-   * that just arrived lands below the fold and the whole effect happens where
-   * nobody can see it. Keyed on how many have been said rather than on the
-   * playhead, so it only moves when there is actually something new: a panel
-   * that re-scrolled every second of the song would fight anyone reading back
-   * through it.
-   *
-   * Watching the rows rather than waiting a fixed time. A line arrives by
-   * opening from `0fr` to `1fr`, so at the moment a new one is said the row is
-   * still flat and `scrollHeight` does not include it yet, so scrolling to the
-   * bottom lands at a bottom that has not happened. A timer set to the length of
-   * that transition works until somebody changes it in the stylesheet. A
-   * `ResizeObserver` on the rows fires when they have actually finished opening,
-   * whatever the CSS says, and costs nine observations.
-   */
   useEffect(() => {
-    const box = lines.current
-    if (!box) return
+    const measure = () => {
+      const box = lines.current
+      const line = box?.children[sung]
+      if (!box || !(line instanceof HTMLElement)) return
+      // Where the sheet holds the line it is on. The third line's own top,
+      // which is two lines down whatever those two lines turned out to be.
+      const rest = box.children[RESTS_AT]
+      const held = rest instanceof HTMLElement ? rest.offsetTop : 0
+      setLift(Math.max(0, line.offsetTop - held))
+    }
 
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const toBottom = () =>
-      box.scrollTo({ top: box.scrollHeight, behavior: still ? 'auto' : 'smooth' })
-
-    const watcher = new ResizeObserver(toBottom)
-    for (const row of box.children) watcher.observe(row)
-    toBottom()
-
-    return () => watcher.disconnect()
-  }, [])
+    measure()
+    // A narrower window rewraps the lines and moves every offset under us, and
+    // the next tick is up to two seconds away.
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [sung])
 
   return (
-    <div className="talk">
-      <div className="talk__top">
-        <span className="talk__where" aria-hidden="true">
-          {clock(at)}
-        </span>
-        <span className="talk__of">{SESSION.title}</span>
+    <div className="sheet" aria-hidden="true" data-again={sung === 0 ? 'true' : 'false'}>
+      <div className="sheet__lines" ref={lines} style={{ transform: `translateY(${-lift}px)` }}>
+        {SHEET.map((line, index) => (
+          <p
+            className="sheet__line"
+            key={line.at}
+            data-lit={index === sung ? 'true' : 'false'}
+            data-hum={line.says === '· · ·' ? 'true' : 'false'}
+          >
+            {line.says}
+          </p>
+        ))}
       </div>
-
-      <ol className="talk__lines" ref={lines}>
-        {ROOM.map((line, index) => {
-          // Two in a row from the same person is one person still talking, so
-          // the second does not get their name and face again.
-          const same = ROOM[index - 1]?.who === line.who
-          return (
-            <li className="line" key={line.at} data-said={index < shown ? 'true' : 'false'}>
-              {/* The wrapper collapses to nothing rather than the line being
-                  removed, so the panel fills like a chat window instead of
-                  standing half empty from the start, and the conversation is
-                  still whole in the DOM for anything not reading it by eye. */}
-              <span className="line__inner" data-run={same ? 'true' : 'false'}>
-                <span className="line__face" aria-hidden="true">
-                  {same ? '' : initial(line.who)}
-                </span>
-                <span className="line__bubble">
-                  {same ? null : (
-                    <span className="line__top">
-                      <span className="line__who">{line.who}</span>
-                      <span className="line__at" aria-hidden="true">
-                        {clock(line.at)}
-                      </span>
-                    </span>
-                  )}
-                  <span className="line__says">{line.says}</span>
-                </span>
-              </span>
-            </li>
-          )
-        })}
-      </ol>
     </div>
   )
 }
+
+/**
+ * The room, filling up, on the same clock as the sheet.
+ *
+ * It was two bubbles, drawn once and never moving, which said the panel existed
+ * and nothing else. What a chat window does is *arrive*, and there is no way to
+ * show that with a picture of two messages.
+ *
+ * It runs off the record rather than off a clock of its own. The loop the
+ * section holds gives a second of the song — `SHEET[sung].at` — and this asks
+ * `saidBy` which of the room's lines have been said by then, the same function
+ * the conversation further down the page is drawn from. So a bubble lands at
+ * the second of the record it was said at, and the sheet beside it is on that
+ * same second, which is the section's whole argument happening in two cells at
+ * once rather than being asserted in a caption.
+ *
+ * A consequence worth knowing: the room is already talking when the loop
+ * starts. The sheet's first line is at 0:34 and two of these were said before
+ * it, so the panel opens mid-conversation — which is what walking into a
+ * station mid-song is like, and is the reason it is not worth waiting for an
+ * empty panel to fill from nothing.
+ *
+ * Only the lines that have been said are rendered, so a new one is a **mount**
+ * and gets its arrival animation for free without any state saying which is
+ * newest. The box is anchored to the bottom, so the pile grows upward and the
+ * oldest go off the top under the mask, which is what a chat window does.
+ */
+function Said({ at, again }: { at: number; again: boolean }) {
+  return (
+    <div className="said" aria-hidden="true" data-again={again ? 'true' : 'false'}>
+      <div className="said__lines">
+        {saidBy(ROOM, at).map((line) => (
+          <span className="said__line" key={line.at}>
+            <span className="said__face">{initial(line.who)}</span>
+            <span className="said__bubble">
+              <span className="said__who">{line.who}</span>
+              <span className="said__says">{line.says}</span>
+            </span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * What is on the screen while a session is on.
+ *
+ * This replaced two sections, and the reason is that neither of them was
+ * describing the station as built.
+ *
+ * `Works` was five steps of an evening on cards going past, and its last step
+ * promised a playlist export, annotations and listener notes — three things
+ * that have never existed here. The step was corrected first and the section
+ * still had the wrong job: five statements about how a night runs, on a page
+ * whose next four sections are about how a night runs.
+ *
+ * `Guide` was worse. "The Listening Guide" was three notes pinned to seconds of
+ * a record — 2:14, listen to how the guitar hesitates — which is the same
+ * unbuilt annotation feature the hero and the journal were also claiming, given
+ * a section and an example rail of its own. What the station actually puts
+ * beside the record is the **words to it**, read through to LRCLIB and lit a
+ * line at a time (`GET /api/lyrics/:trackId`, the `#lyrics` view), which is a
+ * better thing than the one that was being promised and was going unmentioned.
+ *
+ * So: one section, five cells, and every cell is a view a listener actually
+ * has — the clock everyone shares, the words, the room, the wish book, the
+ * evening so far. The cells are deliberately one line and one small drawing
+ * each: `Wishes` and `BeenOn` further down are the arguments for two of them,
+ * and a grid that argued too would be the page making the same case twice.
+ *
+ * It carries the room now as well. There used to be a whole section for the
+ * talking — a heading, four lines of framing, and a sticky pair holding the
+ * join panel and a chat that filled as you read — and the cell here says the
+ * same thing in one line and a drawing that fills by itself. The section went;
+ * this did not have to change to replace it, which is the argument for a grid
+ * of small true things over a screen of argument about one of them.
+ *
+ * The clock is first and is the only one given the whole width, for both the
+ * reason it deserves it and a plainer one: it is the only wide cell, and a wide
+ * cell anywhere but the start of a row leaves the column beside it empty. The
+ * four that follow pair off underneath it.
+ *
+ * The playhead reaches two of them. The sheet lights the line the sample
+ * session has got to and the clock counts with it, so the two cells that are
+ * about time keep it while somebody reads past them.
+ */
+const Inside = memo(function Inside() {
+  const section = useRef<HTMLElement>(null)
+  const near = useOnScreen(section)
+  const still = useStill()
+  /*
+   * The record, playing.
+   *
+   * Held here rather than inside the sheet, because two cells are on it: the
+   * line being sung, and the clock over the level meter beside it. Two timers
+   * would put the panel a few seconds out with itself within a minute of
+   * somebody looking at it, which is the one thing a section about everybody
+   * being on the same second cannot afford to be.
+   *
+   * Parked off screen the way the split-flap board and the mic sequence are,
+   * and stopped outright for anybody who asked for less movement. See `Sheet`:
+   * stopped, it is a sheet with a line lit rather than a blank one.
+   */
+  const [sung, setSung] = useState(0)
+
+  useEffect(() => {
+    if (still || !near) return
+    const round = setInterval(() => setSung((was) => (was + 1) % SHEET.length), A_LINE)
+    return () => clearInterval(round)
+  }, [still, near])
+
+  return (
+    <section className="inside" ref={section}>
+      {/* The grid comes up off the page as you reach it, with the words above
+          it drifting to meet it. See `ContainerScroll`: the heading and the two
+          lines are the part that drifts, the grid is the part that tilts, and
+          the turn at the bottom of the section stays outside because it is what
+          the section concludes rather than part of the thing being shown. */}
+      <ContainerScroll
+        className="inside__stage"
+        title={
+          <>
+            {/* The original's heading, which is one sentence broken over two
+                sizes: a quiet line, and then the subject of it set as large as
+                the column will take. It is the one heading on this page that is
+                centred and the one that is bigger than the hero's, and both are
+                because of what is under it — a heading set from the left margin
+                over a panel that fills the width would be pointing at a corner
+                of it. */}
+            <h2 className="inside__title">
+              <span className="inside__title-small">Nothing here is a feature you switch on.</span>
+              <span className="inside__title-big">Inside a session</span>
+            </h2>
+
+            <p className="inside__lede">
+              It is what the screen is, for as long as the station is up.
+            </p>
+          </>
+        }
+      >
+        <BentoGrid className="inside__grid">
+          {/* The one everything else on this page is downstream of, and the only
+              cell given the whole width. The meter is the station's own, and it
+              moves because the page says sound is coming out rather than because
+              any is — same rule as the one under the pile of records. */}
+          <BentoCell
+            wide
+            says="Everyone on the same second of it."
+            shows={
+              <div className="tuned" aria-hidden="true">
+                <Waveform live />
+                <div className="tuned__what">
+                  {/* The same playhead the sheet is on, so the number over the
+                    meter and the line being sung beside it are the same moment
+                    of the same record. */}
+                <span className="tuned__where">{clock(SHEET[sung]?.at ?? 0)}</span>
+                  <span className="tuned__of">{SESSION.title}</span>
+                  <span className="tuned__who">{SESSION.listeners} listening</span>
+                </div>
+              </div>
+            }
+          />
+
+          {/* The words. What `Guide` was pointing at without knowing it: not
+              somebody's notes about the record, the record's own words, keeping
+              up. See `Sheet`. */}
+          <BentoCell says="The words to it, keeping up." shows={<Sheet sung={sung} />} />
+
+          {/* The room, filling. See `Said`: it is on the sheet's clock, so what
+              the room says arrives at the second of the record it was said at,
+              which is the claim the whole section is making. */}
+          <BentoCell
+            says="The room, talking around it."
+            shows={<Said at={SHEET[sung]?.at ?? 0} again={sung === 0} />}
+          />
+
+          {/* One of them, not the wall. The wall is its own section, and the
+              thing worth saying here is the shape of the sentence. Not
+              `aria-hidden`: it is a quotation, and it reads. */}
+          <BentoCell
+            says="Ask for a feeling, not a song."
+            shows={<p className="asked">“{WISHES[0]?.says}”</p>}
+          />
+
+          {/* The evening, as the history view lists it. Three of them, because
+              the cell is a sample of a list rather than the list. */}
+          <BentoCell
+            says="And the evening, still there to read backwards."
+            shows={
+              <ul className="sofar" aria-hidden="true">
+                {BEEN_ON.slice(0, 3).map((play) => (
+                  <li className="sofar__row" key={play.title}>
+                    {play.cover ? (
+                      <img className="sofar__art" src={play.cover.src} alt="" loading="lazy" />
+                    ) : (
+                      <span className="sofar__art sofar__art--blank" />
+                    )}
+                    <span className="sofar__what">
+                      <span className="sofar__title">{play.title}</span>
+                      <span className="sofar__artist">{play.artist}</span>
+                    </span>
+                    <span className="sofar__at">{play.at}</span>
+                  </li>
+                ))}
+              </ul>
+            }
+          />
+        </BentoGrid>
+      </ContainerScroll>
+
+      <p className="inside__turn">All of it one mark away, all of it now.</p>
+    </section>
+  )
+})
+
 
 /**
  * The other kind of session.
  *
- * Straight after `Room`, which is where the talking is established, because
- * this is the same claim carried one step further: if a room hearing the same
+ * Straight after `Inside`, where the room is established — one cell of that
+ * grid is the talking, arriving at the second of the record it was said at.
+ * This is the same claim carried one step further: if a room hearing the same
  * second of a record is worth building, then a room hearing the same second of
  * somebody answering a question is the same thing with the record turned down.
  * Put anywhere earlier it would read as a second product bolted on; put here it
@@ -793,6 +842,23 @@ const Talks = memo(function Talks() {
         </p>
       </div>
 
+      {/* The other way a second voice happens, and it is not the same thing at
+          all. A guest is invited for a segment and goes down when the mic
+          closes; a co-host arrives holding a key, seats themselves and stays
+          the evening. See the table in the README: the two look alike from
+          outside and are opposite in every rule that matters.
+
+          The last line is the honest one and is worth its place: the console
+          does not merely decline to draw the buttons a co-host may not press.
+          The station refuses that credential. */}
+      <div className="talks__stack">
+        <p className="talks__line">Or somebody takes the second seat for the whole evening.</p>
+        <p className="talks__line">They can talk, and say what goes on next.</p>
+        <p className="talks__line talks__line--said">
+          What they cannot do, the station refuses them — not the page.
+        </p>
+      </div>
+
       <div className="talks__stack">
         <p className="talks__line">Anyone listening can ask for the mic.</p>
         <p className="talks__line">If it is the right moment, it gets opened.</p>
@@ -801,7 +867,29 @@ const Talks = memo(function Talks() {
         </p>
       </div>
 
+      {/* What that last line costs, which is the part nobody expects.
+
+          This used to be a panel: the five steps a hand goes through, running
+          on a loop, with the station's level meter beside them dropping to a
+          fifth on the last one. It is said in words now, in the register the
+          rest of the section is in. */}
+      <div className="talks__stack">
+        <p className="talks__line">When the mic opens, the music steps back.</p>
+        <p className="talks__line talks__line--said">
+          Not on a desk in here — in every room at the same instant.
+        </p>
+      </div>
+
       <p className="talks__turn">Music, ideas, and the people behind them.</p>
+
+      {/* This used to end with "Some of them are kept", and a link to the
+          podcast, because at the time that was the only place on the page
+          where the archive was more than a word in the bar. `Archive` is
+          directly underneath now and opens by saying the same thing at length,
+          so the two of them in a row were the argument and then the argument
+          again — which is the fault `Creed` was pulled apart to fix. The link
+          went with it; it is in the hero, in the bar, in the section below and
+          in the foot. */}
 
       {/* The plainest words on the page, and set that way on purpose: the rest
           of this section argues, and this one just says what the thing is.
@@ -819,6 +907,215 @@ const Talks = memo(function Talks() {
     </section>
   )
 })
+
+/**
+ * The nights that were kept.
+ *
+ * The other half of the station, and until this section existed it was one
+ * sentence at the end of `Talks` and a word in the bar. Everything else on this
+ * page describes an evening somebody has to be present for; this describes the
+ * part that is still there afterwards, which is the only part a visitor reading
+ * at two on a Tuesday can actually have.
+ *
+ * Directly after `Talks` on purpose. That section ends by saying an evening
+ * here is sometimes a conversation; this one says what becomes of the ones
+ * worth keeping. Anywhere earlier it would be a second product announced before
+ * the first had been explained.
+ *
+ * It is the second section on this page that is **true**. See `useArchive`:
+ * `GET /api/episodes` is open, because an episode is public by design, so the
+ * strip is real episodes with real posters whenever the station can be reached.
+ * When it cannot, it is an invented three, drawn inert — see `KeptStrip`.
+ *
+ * It had a second half: a transcript pane keeping up with a voice, beside two
+ * lines about pressing one to jump and about the player remembering where you
+ * stopped. Both are still true of an episode page and neither is claimed here
+ * any more.
+ */
+const Archive = memo(function Archive() {
+  return (
+    <section className="kept" id="archive">
+      {/* Quiet, like the head over `Talks` and the one over the wishes. The
+          first real line does the arguing; this only says where you are. */}
+      <h2 className="kept__title">The podcast</h2>
+
+      <div className="kept__stack">
+        <p className="kept__line">A session ends and takes the evening with it.</p>
+        <p className="kept__line kept__line--said">
+          The conversations worth keeping do not go anywhere.
+        </p>
+      </div>
+
+      <KeptStrip />
+
+      <p className="kept__turn">Nights you can go back to.</p>
+
+      <a className="button button--large" href={PODCAST}>
+        Open the archive
+      </a>
+    </section>
+  )
+})
+
+/**
+ * The shelf, and what a card opens into.
+ *
+ * Its own component, and memoised with no props, for a reason that is about
+ * this page rather than tidiness: `Landing` re-renders on every frame the
+ * playhead moves, and the strip has a scroll position, an open panel and up to
+ * six posters in it. None of that has anything to do with what second of the
+ * song the reader has scrolled to, and a strip rebuilt once a second is a strip
+ * that fights anybody pushing it along.
+ *
+ * **Real episodes are pressable; invented ones are not.** A fixture card that
+ * opened a panel would be a panel of show notes for an episode that does not
+ * exist, and one that linked would be a 404 with a poster on it. So the whole
+ * shelf goes `inert` when the station could not be reached: the cards are a
+ * picture, the arrows cannot be tabbed into, and the way to the archive is the
+ * link under it, which works either way. Same call `ListenerView` makes about
+ * the station it draws.
+ */
+const KeptStrip = memo(function KeptStrip() {
+  const { cards, real } = useArchive()
+  const [opened, setOpened] = useState<string | null>(null)
+  const showing = cards.find((card) => card.key === opened) ?? null
+
+  return (
+    <div className="kept__shelf" inert={!real}>
+      <Carousel
+        className="kept__carousel"
+        label="episodes"
+        items={cards.map((card, index) => ({
+          key: card.key,
+          node: <KeptCard card={card} eager={index < 2} onOpen={() => setOpened(card.key)} />,
+        }))}
+      />
+
+      {!real && (
+        // Said out loud rather than left to be discovered. The cards above are
+        // a drawing, and a reader who took them for the archive and found three
+        // other episodes behind the link would rightly wonder which page had
+        // lied to them.
+        <p className="kept__note">
+          A picture of the shelf. The episodes themselves are through the link below.
+        </p>
+      )}
+
+      <CardPanel
+        open={showing !== null}
+        onClose={() => setOpened(null)}
+        labelledBy="kept-open-title"
+        className="kept__panel"
+      >
+        {showing && (
+          <>
+            <p className="kept__panel-sub">{showing.sub ?? 'chunky.fm'}</p>
+            <h3 className="kept__panel-title" id="kept-open-title">
+              {showing.title}
+            </h3>
+            <p className="kept__panel-facts">
+              {showing.when} · {showing.length}
+            </p>
+
+            {showing.notes.length > 0 ? (
+              <div className="kept__panel-notes">
+                {showing.notes.map((block) => (
+                  <p key={block}>{block}</p>
+                ))}
+              </div>
+            ) : (
+              <p className="kept__panel-notes">No notes for this one.</p>
+            )}
+
+            {/* The point of the panel. Everything above it is what the card had
+                room to say; this is the page it came from, where the audio, the
+                transport and the transcript actually are. */}
+            {showing.href && (
+              <a className="button button--large" href={showing.href}>
+                Listen to this episode
+              </a>
+            )}
+          </>
+        )}
+      </CardPanel>
+    </div>
+  )
+})
+
+/**
+ * One episode on the shelf.
+ *
+ * A button rather than a link, which is the opposite of the call `EpisodeGrid`
+ * makes on the archive's own page, and for the opposite reason: there a card is
+ * a navigation and has to be middle-clickable and copyable, here it opens a
+ * panel on the page you are already on. The address is inside the panel, as a
+ * real anchor, which is where somebody who wants to keep it can get at it.
+ *
+ * A card with no poster is not a broken card. Every episode is meant to have
+ * one and the server refuses an upload without it, but `poster` is nullable on
+ * an `Episode` and the invented ones have none by design — so the artwork's
+ * absence is a layout, not a fallback: the title, set large, where the picture
+ * would be.
+ */
+function KeptCard({
+  card,
+  eager,
+  onOpen,
+}: {
+  card: ArchiveCard
+  eager: boolean
+  onOpen: () => void
+}) {
+  const face = (
+    <>
+      <span className="kept__art">
+        {card.poster ? (
+          // Empty alt: the title is the next thing in the card and in the
+          // reading order, and a poster announced by its own title is that
+          // title said twice.
+          <img
+            className="kept__poster"
+            src={card.poster}
+            alt=""
+            width={1080}
+            height={1350}
+            loading={eager ? 'eager' : 'lazy'}
+            decoding="async"
+          />
+        ) : (
+          <span className="kept__art-words">{card.title}</span>
+        )}
+        {/* A wash off the foot of the poster, so the words underneath have
+            something to sit against whatever the artwork is doing down there. */}
+        <span className="kept__wash" aria-hidden="true" />
+      </span>
+
+      <span className="kept__what">
+        {/* The title, unless the card has already had to print it where the
+            artwork would be. Said in both places it reads as a mistake — the
+            same words twice, six lines apart, in two sizes — and the caption is
+            the half that can go: a drawn sleeve with the title on it is still a
+            card with a name, and the facts under it are what the caption is
+            actually for. */}
+        {card.poster && <span className="kept__name">{card.title}</span>}
+        <span className="kept__facts">
+          {card.sub && <span className="kept__sub">{card.sub}</span>}
+          <span className="kept__when">
+            {card.when} · {card.length}
+          </span>
+        </span>
+      </span>
+    </>
+  )
+
+  if (card.href === null) return <span className="kept__card">{face}</span>
+
+  return (
+    <button type="button" className="kept__card" onClick={onOpen}>
+      {face}
+    </button>
+  )
+}
 
 /**
  * What the room asks for.
@@ -841,12 +1138,21 @@ const Talks = memo(function Talks() {
 const Wishes = memo(function Wishes() {
   return (
     <section className="wishes">
+      {/* Threads crossing the section behind the words. See `BackgroundLines`.
+
+          It belongs here rather than anywhere else on the page for the same
+          reason the spotlight belongs on `Talks`: this is the section about
+          things arriving from a room full of people the station cannot see, and
+          twenty lines coming in from off the frame, one at a time, is that
+          without a sentence saying it. Anywhere the page is making an argument
+          instead, it would be decoration behind prose. */}
+      <BackgroundLines />
+
       {/* Kept in the document and out of the picture, the same idiom as
-          `.limits__spoken`. There is nothing here that reads as this section's
-          heading the way the question does in `Live`, so rather than leave the
-          page's outline with a hole in it where a section used to be, the title
-          stays for anything reading structure and goes for anything reading by
-          eye. */}
+          `.limits__spoken`. Nothing here reads as this section's heading — the
+          wall of quotations is the section — so rather than leave the page's
+          outline with a hole in it, the title stays for anything reading
+          structure and goes for anything reading by eye. */}
       <h2 className="section__title section__title--quiet">What the room asks for</h2>
 
       {/* Two stacks said this: "Ask for a feeling. / Not a song." and "Instead
@@ -899,64 +1205,6 @@ function WishWall() {
 }
 
 /**
- * Why it has to be live.
- *
- * The question every page like this forgets: what stops me just playing the same
- * songs tomorrow. The answer is not a feature, so this section has no cards in
- * it and now has nothing under the mask but the one paragraph that answers it.
- *
- * It used to carry a second paragraph, on the station being off more often than
- * it is on. That is worth admitting to and is still admitted to, in `Call`, in
- * three short sentences at the point where somebody is deciding whether to press
- * the button — which is the only place the state of the station is actually
- * load-bearing. Said here as well it was a fifth paragraph in a row about the
- * same evening, and it took the section away from the question it is named for.
- *
- * The question is on a panel you have to look under. Aceternity UI's SVG Mask
- * Effect (see `MaskContainer`) with the section's own two lines in it: the
- * question on the page, and the answer to it lit underneath, found with the
- * cursor. It is the one section on the page where that device is not decoration.
- * The whole argument here is that hearing a song and being in the room while it
- * plays are different things, and one of them cannot be had by reading about it;
- * a sentence you have to go and uncover is that, in the one register the page
- * has that is not words.
- *
- * The answer is repeated in the prose below, which is not redundancy but the
- * point: nothing in this section is only behind the mask. On a phone there is no
- * cursor and no panel either, and the two lines simply read in order.
- *
- * It is the only section with no title over it. "Why it has to be live" was a
- * label on a section whose first line is already the question it was labelling,
- * and reading the two in a row was being told the subject and then asked about
- * it. So the question is the heading, the same `h2` every other section has,
- * set as the pull-quote it looks like, which is what keeps this section in the
- * document's outline rather than leaving a hole in it.
- */
-const Live = memo(function Live() {
-  return (
-    <section className="live">
-      {/* 480 rather than the demo's 600: the hole has to open wide enough to
-          clear the whole answer and stay inside a panel that is not 40rem tall.
-          See the note on `.mask` in landing.css, where the two are kept in
-          proportion. */}
-      <MaskContainer
-        revealSize={480}
-        revealText={
-          <h2 className="live__ask">“Why can’t I just play these songs myself tomorrow?”</h2>
-        }
-      >
-        <p className="live__answer">Being in the room while it plays is the thing.</p>
-      </MaskContainer>
-
-      <p className="section__lede live__after">
-        You can. You would hear the same notes and none of the evening: nobody going quiet at the
-        same moment as you, nobody asking for the next one, nothing at stake in a song ending.
-      </p>
-    </section>
-  )
-})
-
-/**
  * The evening so far.
  *
  * Deliberately not billed as an archive. The station keeps this for as long as
@@ -964,8 +1212,22 @@ const Live = memo(function Live() {
  * see, not a back catalogue, and the note under the grid says so, because a
  * page implying there are past sessions to browse would be selling one.
  */
-/** What the journal keeps, in the order it accumulates over an evening. */
-const HOLDS = ['Theme', 'Songs', 'Annotations', 'Listener notes', 'Playlist export']
+/**
+ * What the journal holds, in the order the rail lists it.
+ *
+ * Four marks rather than five things, and each one is a view that exists: the
+ * words to what is on (`#lyrics`), the room (`#chat`), what this listener asked
+ * for (`#wishes`) and the evening so far (`#history`). `On air` is the deck
+ * itself and `Sync` is a clock, so neither is something the evening accumulates.
+ * See RAIL in ListenerView.tsx, which draws the same six marks in the same
+ * order, and Sidebar.tsx, which is where both of them come from.
+ */
+const HOLDS = [
+  'The words to what is on',
+  'What the room said',
+  'What you asked for',
+  'Everything that has been on',
+]
 
 const BeenOn = memo(function BeenOn() {
   return (
@@ -973,12 +1235,7 @@ const BeenOn = memo(function BeenOn() {
       <MacbookScroll
         title={
           <>
-            <div className="section__head section__head--mid">
-              <span className="section__mark" aria-hidden="true">
-                <img src={scheduleIcon} alt="" width={18} height={18} />
-              </span>
-              <h2 className="section__title">The Listening Journal</h2>
-            </div>
+            <h2 className="section__title">The Listening Journal</h2>
             <p className="section__lede section__lede--mid">
               Arrive at eleven and the evening is still there to read backwards.
             </p>
@@ -1048,15 +1305,27 @@ const DJ = [
 const Dj = memo(function Dj() {
   return (
     <section className="dj" id="dj">
-      {/* The same gramophone as the hero, at the other end of the page, and
-          stopped. The station is off more than it is on, and beside the person
-          that depends on is the one place saying so is comfortable. See
-          `Gramophone`: one component that draws the model when it can and keeps
-          the flat deck when it cannot, so this is not a second thing to
-          maintain, and still or off screen, it is not drawing. */}
-      <div className="dj__mark" aria-hidden="true">
-        <Gramophone still />
-      </div>
+      {/* Him, rather than the gramophone that used to stand here.
+          
+          The object was the hero's, brought back and stopped, and it was making
+          an argument — the station is off more than it is on — in the one place
+          on the page where the argument is not the point. This section is a
+          person saying who they are in their own words, and the picture beside
+          it should be the person. It is also the only photograph on the page,
+          which is why it can be small and still be the thing you look at first.
+
+          A real `alt`, unlike every other picture here. The rest are drawings of
+          instruments and are `aria-hidden`; this is a photograph of somebody and
+          the page names him in the first line beside it. */}
+      <img
+        className="dj__face"
+        src={ndamulelo}
+        alt="Ndamulelo"
+        width={880}
+        height={1100}
+        loading="lazy"
+        decoding="async"
+      />
       <div className="dj__words">
         {DJ.map((line, index) => (
           // Position is the identity: these are the lines of one short
@@ -1168,12 +1437,24 @@ const Call = memo(function Call() {
           hand of sleeves somebody put on. */}
       <FeyCards sleeves={SLEEVES.map((play) => play.cover)} />
 
-      <a className="button button--large" href={TUNE_IN}>
-        Tune in
-      </a>
+      {/* The same pair as the hero, at the other end of the page, and here
+          the second one is carrying more weight than it is up there. This is
+          the last screen: somebody who has read this far and finds the station
+          dark has nowhere to go, and the note directly under these two buttons
+          is the page admitting that the first of them often leads to a quiet
+          room. The archive is the answer to that sentence, so it stands beside
+          it rather than being left in the bar. */}
+      <div className="call__ways">
+        <a className="button button--large" href={TUNE_IN}>
+          Tune in
+        </a>
+        <a className="button button--large button--quiet" href={PODCAST}>
+          Listen to the podcast
+        </a>
+      </div>
       <p className="call__note">
         The station is on when somebody is running it. If it isn’t, the page will say so. Leave it
-        open and it will come back on by itself.
+        open and it will come back on by itself — or listen to a night that already happened.
       </p>
     </section>
   )
@@ -1190,14 +1471,14 @@ const Foot = memo(function Foot() {
         <a className="foot__way" href={TUNE_IN}>
           Tune in
         </a>
-        <a className="foot__way" href="#room">
-          The room
-        </a>
         <a className="foot__way" href="#talks">
           Conversations
         </a>
         <a className="foot__way" href="#dj">
           The DJ
+        </a>
+        <a className="foot__way" href={PODCAST}>
+          The podcast
         </a>
         <a className="foot__way" href={DECKS}>
           Run the decks
