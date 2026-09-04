@@ -30,32 +30,6 @@ export function clock(seconds: number): string {
   return `${minutes}:${String(whole % 60).padStart(2, '0')}`
 }
 
-/**
- * Where the scroll has got to, as a position in the song.
- *
- * The page is the song: the top is 0:00 and the bottom is the last bar. It is
- * deliberately the whole document rather than one section, because the point of
- * the thing is that a reader arrives at the room section already somewhere in
- * particular, without having been asked to do anything.
- *
- * A page too short to scroll (a very tall window, a phone in landscape) has
- * nothing to divide by. That reads as 0:00 rather than as a division by zero,
- * and the bar simply sits at the start.
- */
-export function scrubbed(scrolled: number, scrollable: number, duration: number): number {
-  if (!(scrollable > 0)) return 0
-  const through = Math.min(1, Math.max(0, scrolled / scrollable))
-  // Whole seconds: a clock re-rendering on every pixel of scroll would shimmer,
-  // and a listener's clock counts in seconds anyway.
-  return Math.round(through * duration)
-}
-
-/** How far through the song a position is, as a fraction, for drawing a bar. */
-export function through(seconds: number, duration: number): number {
-  if (!(duration > 0)) return 0
-  return Math.min(1, Math.max(0, seconds / duration))
-}
-
 export interface Line {
   /** Seconds into the song. */
   at: number
@@ -118,6 +92,137 @@ export const ROOM: readonly Line[] = [
   { at: 268, who: 'lerato', says: 'the room went quiet at the same time. that’s the thing' },
   { at: 309, who: 'thandi', says: 'what is this doing to me at 11pm' },
 ]
+
+/**
+ * An episode of the podcast, as the page invents one.
+ *
+ * The fallback behind the archive strip, and the only fixture here that stands
+ * in for something a visitor could otherwise go and look at. The real archive
+ * is an open read (`GET /api/episodes`) so the section usually shows actual
+ * episodes; this is what it draws on a page that could not reach the station,
+ * which is the day the landing page matters most.
+ *
+ * Because these could be mistaken for real ones, the section draws them
+ * **inert**: no link, `aria-hidden`, a picture of an archive rather than an
+ * archive. Same call `ListenerView` makes about the station it draws. The link
+ * to the real thing is in the words beside them, where it always works.
+ *
+ * `weeksAgo` rather than a date. A written-down date in a fixture is a date
+ * that is wrong by next year, and these sit beside real episodes carrying real
+ * ones; counted back from today they stay plausible without anybody
+ * remembering to come back and edit them.
+ */
+export interface Invented {
+  title: string
+  /** Who came on, or null for a night that was just the decks. */
+  guests: string | null
+  number: number
+  weeksAgo: number
+  /** Minutes, turned into the same "1 hr 12 min" a real card carries. */
+  minutes: number
+  notes: string
+}
+
+export const KEPT: readonly Invented[] = [
+  {
+    title: 'What a song is for',
+    guests: 'Thandi',
+    number: 7,
+    weeksAgo: 2,
+    minutes: 74,
+    notes:
+      'An hour on the records people keep going back to, and why almost none of them are the ones anybody would call the best.\n\nWe got as far as agreeing that a song you have worn out is a different object from a song you admire, and no further.',
+  },
+  {
+    title: 'The year everything was sampled',
+    guests: 'Lerato',
+    number: 6,
+    weeksAgo: 5,
+    minutes: 58,
+    notes:
+      'Where a break came from, who it belonged to, and what happened to them afterwards.\n\nMore of this was about money than either of us expected going in.',
+  },
+  {
+    title: 'Records nobody asked for',
+    guests: null,
+    number: 5,
+    weeksAgo: 9,
+    minutes: 64,
+    notes:
+      'A night on the decks with nobody on the mic, talked through afterwards: what went on, what it followed, and the two that did not work.\n\nThe running order is the argument. It usually is.',
+  },
+]
+
+/**
+ * A line of the sheet beside the deck, and the second it is sung at.
+ *
+ * Invented, and it has to be: the record on the platter is a real one and its
+ * words belong to somebody. What the page needs is the *shape* of a lyric
+ * sheet — short lines, one of them lit, a timestamped silence drawn the way the
+ * real sheet draws one — and that is a thing it can write for itself.
+ */
+export interface Sung {
+  at: number
+  says: string
+}
+
+/**
+ * The sheet, once, for the two places that draw it.
+ *
+ * The station's own lyric view is a list in time order and a playhead (see
+ * `activeLineIndex` in lib/lyrics.ts), which is exactly what this is. It is
+ * used twice on this page — lit by the session grid's own loop, and frozen
+ * mid-verse inside the drawn station in `ListenerView` — and it is one list for
+ * the reason the evening is one list: two would be two things to keep in step,
+ * and the first time they drifted the page would be showing a verse in one
+ * place that the other says was never sung.
+ *
+ * `· · ·` is a bar with nobody singing over it, which the real sheet draws as
+ * itself rather than leaving a hole. It is a line like any other here: it has a
+ * second, and the playhead reaches it, and while it is lit nothing is being
+ * said, which is what a rest looks like on a sheet that follows a record.
+ *
+ * The seconds are what the clock over the level meter reads, so the two cells
+ * are on the same moment of the same record. See `Inside`.
+ */
+export const SHEET: readonly Sung[] = [
+  { at: 34, says: 'Static settles on the evening air' },
+  { at: 48, says: 'A needle drops into the quiet' },
+  { at: 62, says: 'Every window leaning on the same slow song' },
+  { at: 78, says: '· · ·' },
+  { at: 96, says: 'Miles apart and humming along' },
+  { at: 110, says: 'Nobody ahead and nobody behind' },
+  { at: 124, says: 'Hold the moment while it plays' },
+  { at: 138, says: 'It only comes around the once' },
+  { at: 152, says: 'The chorus lands on every roof at once' },
+  { at: 166, says: 'And the room goes quiet together' },
+  { at: 188, says: '· · ·' },
+  { at: 210, says: 'Somebody writes the hour down' },
+  { at: 232, says: 'So sing it soft and sing it slow' },
+  { at: 252, says: 'The night is long and the night knows' },
+]
+
+/**
+ * Which line is being sung at a given second, or -1 before the first of them.
+ *
+ * The same question `saidBy` answers for the room, and answered separately
+ * because the two are different shapes: a chat line arrives and stays on the
+ * screen with everything said before it, and a sung line is lit *instead of*
+ * the one before. One index rather than a count, because the sheet's whole job
+ * is that exactly one line is bright.
+ *
+ * -1 rather than 0 before the singing starts. A sheet with its first line
+ * already lit through a thirty-second intro is a sheet that is wrong for thirty
+ * seconds, and the station's own view has the same opinion.
+ */
+export function sungAt(sheet: readonly Sung[], seconds: number): number {
+  let index = -1
+  for (const [position, line] of sheet.entries()) {
+    if (line.at > seconds) break
+    index = position
+  }
+  return index
+}
 
 export interface Wish {
   says: string

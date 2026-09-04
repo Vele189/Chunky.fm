@@ -4,13 +4,12 @@ import {
   clock,
   ROOM,
   saidBy,
-  scrubbed,
   SESSION,
+  SHEET,
   SLEEVES,
-  through,
+  sungAt,
   WISHES,
 } from '../src/landing/session.js'
-import { nextStep } from '../src/landing/useOneByOne.js'
 
 describe('clock', () => {
   it('reads a position the way the station does', () => {
@@ -29,58 +28,6 @@ describe('clock', () => {
   it('does not run backwards past the start', () => {
     expect(clock(-1)).toBe('0:00')
     expect(clock(-999)).toBe('0:00')
-  })
-})
-
-/**
- * The arithmetic under the page's one trick: the document is the song, the top
- * is 0:00 and the bottom is the last bar.
- */
-describe('scrubbed', () => {
-  it('runs the length of the song from the top of the page to the bottom', () => {
-    expect(scrubbed(0, 1000, 334)).toBe(0)
-    expect(scrubbed(500, 1000, 334)).toBe(167)
-    expect(scrubbed(1000, 1000, 334)).toBe(334)
-  })
-
-  /**
-   * A page too short to scroll (a very tall window, a phone on its side) has
-   * nothing to divide by. That has to read as the start of the song rather than
-   * as a NaN in the address of every message on the page.
-   */
-  it('sits at the start when there is nothing to scroll', () => {
-    expect(scrubbed(0, 0, 334)).toBe(0)
-    expect(scrubbed(40, 0, 334)).toBe(0)
-    expect(scrubbed(0, -100, 334)).toBe(0)
-  })
-
-  /** Overscroll and rubber-banding both hand this numbers outside the range. */
-  it('never leaves the song', () => {
-    for (const scrolled of [-500, -1, 0, 1000, 5000]) {
-      const at = scrubbed(scrolled, 1000, 334)
-      expect(at).toBeGreaterThanOrEqual(0)
-      expect(at).toBeLessThanOrEqual(334)
-    }
-  })
-
-  it('is whole seconds, so the clock ticks rather than shimmers', () => {
-    for (let scrolled = 0; scrolled <= 1000; scrolled += 7) {
-      expect(Number.isInteger(scrubbed(scrolled, 1000, 334))).toBe(true)
-    }
-  })
-})
-
-describe('through', () => {
-  it('is the fraction the bar is drawn from', () => {
-    expect(through(0, 334)).toBe(0)
-    expect(through(167, 334)).toBe(0.5)
-    expect(through(334, 334)).toBe(1)
-  })
-
-  it('stays a fraction whatever it is handed', () => {
-    expect(through(999, 334)).toBe(1)
-    expect(through(-10, 334)).toBe(0)
-    expect(through(10, 0)).toBe(0)
   })
 })
 
@@ -213,38 +160,75 @@ describe('the pile', () => {
 })
 
 /**
- * Due is not the same as said. The playhead can reach five lines in one frame, and
- * arriving at the section with the record already at 2:13 does exactly that,
- * so five bubbles appearing together is a transcript rather than a
- * conversation. This is the pacing that stops it.
+ * The sheet beside the deck. A list in time order and a playhead, which is the
+ * same shape the station's own lyric view is, and the same question its
+ * `activeLineIndex` answers.
  */
-describe('nextStep', () => {
-  it('walks forwards one line at a time', () => {
-    expect(nextStep(0, 5)).toBe(1)
-    expect(nextStep(1, 5)).toBe(2)
-    expect(nextStep(4, 5)).toBe(5)
+describe('sungAt', () => {
+  it('lights nothing through the intro', () => {
+    expect(sungAt(SHEET, 0)).toBe(-1)
+    expect(sungAt(SHEET, SHEET[0]!.at - 1)).toBe(-1)
   })
 
-  it('stops on arrival rather than running past', () => {
-    expect(nextStep(5, 5)).toBe(5)
-    expect(nextStep(0, 0)).toBe(0)
-  })
-
-  /**
-   * Scrolling up takes the playhead with it and lines fall back out of the
-   * conversation. Running that in reverse a step at a time would be the room
-   * un-saying things at a stately pace while the reader is already elsewhere.
-   */
-  it('goes backwards all at once', () => {
-    expect(nextStep(9, 2)).toBe(2)
-    expect(nextStep(5, 0)).toBe(0)
-  })
-
-  it('always ends up at the target if you keep asking', () => {
-    for (const target of [0, 1, 4, ROOM.length]) {
-      let shown = 0
-      for (let i = 0; i < 50; i++) shown = nextStep(shown, target)
-      expect(shown).toBe(target)
+  it('lights a line the moment the playhead reaches it, not after', () => {
+    for (const [index, line] of SHEET.entries()) {
+      expect(sungAt(SHEET, line.at)).toBe(index)
     }
+  })
+
+  it('lights the line being sung rather than every line so far', () => {
+    // The difference between a sheet and a chat window: `saidBy` accumulates,
+    // this one moves.
+    const second = SHEET[5]!.at
+    expect(sungAt(SHEET, second)).toBe(5)
+    expect(sungAt(SHEET, second + 1)).toBe(5)
+  })
+
+  it('holds the last line once the song has run out', () => {
+    expect(sungAt(SHEET, SESSION.duration)).toBe(SHEET.length - 1)
+    expect(sungAt(SHEET, SESSION.duration * 10)).toBe(SHEET.length - 1)
+  })
+
+  it('is an index into the sheet it was handed, always', () => {
+    for (let second = 0; second <= SESSION.duration; second++) {
+      const index = sungAt(SHEET, second)
+      expect(index).toBeGreaterThanOrEqual(-1)
+      expect(index).toBeLessThan(SHEET.length)
+    }
+  })
+
+  it('has nothing to light in an empty sheet', () => {
+    expect(sungAt([], 42)).toBe(-1)
+  })
+})
+
+describe('the sheet', () => {
+  it('is sung inside the song it belongs to', () => {
+    for (const line of SHEET) {
+      expect(line.at).toBeGreaterThan(0)
+      expect(line.at).toBeLessThanOrEqual(SESSION.duration)
+    }
+  })
+
+  it('is in the order it is sung', () => {
+    const times = SHEET.map((line) => line.at)
+    expect(times).toEqual([...times].sort((a, b) => a - b))
+  })
+
+  it('sings no line twice in the same second', () => {
+    expect(new Set(SHEET.map((line) => line.at)).size).toBe(SHEET.length)
+  })
+
+  it('draws its rests rather than leaving holes', () => {
+    // `ListenerView` and the session grid both key off this exact string, and a
+    // rest written any other way would be drawn as a lyric that is three dots.
+    expect(SHEET.some((line) => line.says === '· · ·')).toBe(true)
+  })
+
+  it('is long enough for the still picture to have a line to light', () => {
+    // ListenerView draws a fixed line bright rather than following a playhead,
+    // and its index is written down there. This is the guard that says the
+    // sheet is still long enough to have one.
+    expect(SHEET.length).toBeGreaterThan(6)
   })
 })

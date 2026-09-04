@@ -95,6 +95,49 @@ html {
   }
 }
 
+/* --- the headings ----------------------------------------------------------
+ *
+ * `.section__title` had no rules at all. They came off in the revamp and the
+ * class stayed on the markup, so four sections were rendering an `h2` at
+ * whatever a browser thinks one is — around 24px bold, which on a page whose
+ * body copy is 26px is a heading smaller than the sentences under it.
+ *
+ * It is set at the scale `Inside` uses now: the size a section title is when
+ * the section is the thing you have arrived at rather than a label on the way
+ * past. See `.inside__title-big`, which is the same clamp.
+ *
+ * Deliberately first in this file. Three sections carry a title that is a quiet
+ * label rather than a heading — the philosophy, the wishes, and the kicker over
+ * "Not only records" — and each of those has its own rule further down. Equal
+ * specificity means source order decides, so this being at the top is what lets
+ * them win without any of them having to be written more forcefully than the
+ * thing it is overriding.
+ */
+
+.section__title {
+  margin: 0;
+  color: var(--fg);
+  font-size: clamp(40px, 6.6vw, 88px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+/* The label kind. Small, uppercase, in the numeric face: the same treatment
+   `.talks__title` and `.kept__title` spell out for themselves, given to the two
+   sections whose heading is there for the document's outline rather than for
+   somebody reading by eye. */
+.section__title--quiet {
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
 /* --- the bar ---------------------------------------------------------------
  *
  * Aceternity UI's Resizable Navbar. Everything about when it shrinks is in
@@ -401,24 +444,28 @@ html {
  * item cannot overlap a sibling, but its *contents* can, and that is what was
  * happening: 432px of links in 355px of bar at a 1440 window, and in 286px at a
  * 960 one, where the three links this bar had before were already 23px over.
+ * The same thing, smaller, is what the fifth link did to the old floor: 500px
+ * of links in the 449px a 720px pill leaves them.
  *
  * So the pill stops shrinking when the words stop fitting. This is the floor
  * Aceternity's own component has and this port dropped (see the note in
  * ResizableNavbar.tsx): theirs is a flat 800px, which on a 1080 page would mean
  * a bar that barely moves, and this is the same idea measured against what is
  * actually in the bar: 20 + 12 of padding, an 88px wordmark, 119px of buttons,
- * two 16px gaps and 419px of links comes to 690 exactly, and the rest is air.
- * The air is not decoration either. These widths are the vendored face, and a
- * machine that does not get it lays the same four words out in a fallback that
- * is wider; a floor set at exactly 690 would collide again on every one of them.
+ * two 16px gaps and 500px of links comes to 771, and the rest is air. The air
+ * is not decoration either. These widths are the vendored face, and a machine
+ * that does not get it lays the same five words out in a fallback of its own;
+ * a floor set at exactly 771 would collide again on any that is wider.
  *
  * It is a clamp rather than a new target: the spring still animates the inline
  * width from 100% down to 58% and the used value simply stops here, so the
  * motion is the same one, ended early. Which means the number matters. Add a
- * fifth link or a longer word to one of the four and this has to grow with it,
- * or the collision comes back exactly as it was. */
+ * sixth link or a longer word to one of the five and this has to grow with it,
+ * or the collision comes back exactly as it was. It has grown once already:
+ * "The podcast" is 101px and the gap before it 2, and the floor went from 720
+ * to 800 with it. See `NAV` in Landing.tsx, which points back here. */
 .navbar__body[data-shrunk='true'] {
-  min-width: 720px;
+  min-width: 800px;
 }
 
 /* Tighter once it is a pill, which is where every pixel is being argued over.
@@ -559,7 +606,14 @@ html {
   gap: 20px;
 }
 
-.hero__copy .button {
+/* The row of two, rather than the single pill this rule was written for. The
+   space belongs to the row: put on the buttons it would be applied to each of
+   them, which does nothing while they are on one line and opens a gap between
+   them the moment a narrow window wraps the second one under the first. */
+.hero__ways {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-top: 12px;
 }
 
@@ -605,10 +659,56 @@ html {
 /* The other half of what a session can be, one step quieter than the paragraph
    it follows and pulled up against it, so the two read as one thought in two
    breaths rather than as two claims arguing about what the station is. The
-   argument for it is a whole section further down; up here it is a sentence. */
-.hero__blurb--also {
-  margin-top: -8px;
-  color: var(--muted);
+   argument for it is a whole section further down; up here it is a sentence.
+
+   It carries a word that changes now, so it is set a size up from the blurb:
+   the one thing moving on this screen reading smaller than the paragraph above
+   it looked like a footnote that had come loose. */
+.hero__also {
+  max-width: 46ch;
+  margin: -4px 0 0;
+  color: var(--fg-dim);
+  font-size: clamp(17px, 1.6vw, 20px);
+  line-height: 1.55;
+}
+
+/* --- the word that changes -------------------------------------------------
+ *
+ * Aceternity UI's Flip Words. The component is FlipWords.tsx; this is the box
+ * it turns over inside.
+ *
+ * Every word is laid into the same grid cell, so the box is as wide and as tall
+ * as the longest of them and the sentence after it never moves. That is the
+ * whole reason this is a grid rather than one span being swapped: "A set of
+ * records" and "A conversation" are different widths, and a comma that jumped
+ * four characters left every three seconds would be the most distracting thing
+ * on the page.
+ *
+ * `baseline` alignment, so the word sits on the same line as the words either
+ * side of it rather than on the box's own bottom edge.
+ */
+
+.flip {
+  display: inline-grid;
+  vertical-align: baseline;
+  text-align: left;
+}
+
+.flip__word {
+  grid-area: 1 / 1;
+  color: var(--fg);
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 340ms ease,
+    transform 340ms ease;
+}
+
+.flip__word[data-showing='true'] {
+  opacity: 1;
+  transform: none;
 }
 
 @media (max-width: 940px) {
@@ -1035,6 +1135,21 @@ html {
   text-wrap: balance;
 }
 
+/* The line a quotation opens on.
+ *
+ * The mark hangs into the margin instead of pushing the words off it. This
+ * section's whole shape is a flush left edge with one thought on each line, and
+ * an opening quote set in the text flow moves exactly one line of six a third
+ * of a character to the right — which is not enough to read as a decision and
+ * is plenty to read as a mistake.
+ *
+ * `em` rather than a pixel value, because the type is a `clamp` and the mark
+ * grows with it. `hanging-punctuation: first` is the property for this and is
+ * still Safari's alone, so this is the version that works everywhere. */
+.creed__said--opens {
+  text-indent: -0.36em;
+}
+
 /* The three things somebody once explained. Faint, and set as the list they are:
    they are not the argument, they are what the argument is made of. */
 .creed__said--quiet {
@@ -1281,230 +1396,645 @@ html {
   }
 }
 
-/* --- a session, in five ----------------------------------------------------
+/* --- inside a session ------------------------------------------------------
  *
- * Five cards in the moving row: the component is InfiniteMovingCards.tsx and
- * the card is GlareCard.tsx; these are the sizes the steps are set at inside
- * one.
+ * Aceternity UI's Bento Grid: cells of unequal size, each holding a piece of
+ * the station drawn at card scale. The component is BentoGrid.tsx and it does
+ * nothing but the grid; everything below is what the cells are and what is in
+ * them.
  *
- * Each card is a heading and then a few fragments under it. Faint against the
- * heading's reading colour, which is the relationship `.creed__said--quiet` has
- * to the lines around it, at a fifth of the size.
+ * Two columns rather than the original's three. There are five cells and each
+ * one holds a drawing that has to stay legible — a lyric sheet, a level meter,
+ * two chat bubbles — and at a third of 1016px none of them is. Two columns and
+ * one full-width cell gives the meter the room it needs without any cell
+ * having to be told where to sit.
+ *
+ * Set from the left margin with the sections either side of it, and the
+ * sentences in the same measure `Talks` uses, so the grid arrives as an
+ * illustration inside the page's column rather than as a slab across it.
  */
 
-.works__row {
-  margin-top: 40px;
+/* The one section that takes more than the page's measure, which is the thing
+   the note at the top of this file says a section may do. Everything else here
+   is a column of sentences and 1080 is what a column of sentences wants; this
+   is a panel with five cells on it, and at the common cap the two-column rows
+   inside it were narrower than the prose beside them.
+
+   Written as `.landing > main > .inside` because the cap it is overriding is
+   set on `.landing > main > section`, which outranks a bare class. */
+.landing > main > .inside {
+  max-width: 1320px;
 }
 
-/* The number. Small, faint, and in the numeric face: it is the card's index,
-   not its title, and the `ol` this is not gives it no other way to say so. */
-.step__n {
-  color: var(--faint);
-  font-family: var(--font-numeric);
-  font-size: 12px;
-  letter-spacing: 0.08em;
+.inside {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  text-align: center;
 }
 
-.step__title {
-  color: var(--fg);
-  font-size: 17px;
-  font-weight: 600;
+/* One sentence at two sizes, which is the original's heading: the setup at
+   reading weight and the subject under it as large as the column will take.
+   Both halves are blocks so each takes its own line and its own measure — a
+   `br` between them would be a line break doing a paragraph's job, and a
+   measure on the heading itself would cap the large half at the width the small
+   one wants, which is what wrapped "Inside a session" onto two lines. */
+.inside__title {
+  margin: 0;
+}
+
+.inside__title-small {
+  display: block;
+  max-width: 24ch;
+  margin-inline: auto;
+  color: var(--muted);
+  font-size: clamp(18px, 2vw, 24px);
+  font-weight: 400;
   letter-spacing: -0.015em;
-  line-height: 1.28;
+  line-height: 1.3;
   text-wrap: balance;
 }
 
-/* A group inside a card. `.glare__content` puts 10px between its children, so
-   this is the tighter gap within one of them: the fragments are lines of one
-   thought and the space between them is a return rather than a break. */
-.step__stack {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+.inside__title-big {
+  display: block;
+  margin-top: 8px;
+  color: var(--fg);
+  font-size: clamp(40px, 6.6vw, 88px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  text-wrap: nowrap;
 }
 
-/* The fragments. What the step is made of rather than what it claims. */
-.step__line {
+/* Below the width the big half fits on one line, it is allowed to wrap rather
+   than run off the side of a phone. */
+@media (max-width: 560px) {
+  .inside__title-big {
+    text-wrap: balance;
+  }
+}
+
+.inside__lede {
+  max-width: 46ch;
   margin: 0;
   color: var(--faint);
-  font-size: 13.5px;
-  line-height: 1.52;
+  font-size: clamp(16px, 1.5vw, 19px);
+  line-height: 1.6;
+  text-wrap: balance;
 }
 
-/* The two example themes on card 01. Quoted, and a shade brighter than the
-   fragments: they are the only place this section says what a theme actually
-   sounds like, and they are things a person would type. */
-.step__like {
-  margin: 0;
-  color: var(--fg-soft);
-  font-size: 13.5px;
-  line-height: 1.52;
+.inside__turn {
+  margin: 4px 0 0;
+  max-width: 26ch;
+  color: var(--fg);
+  font-size: clamp(22px, 2.8vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  text-wrap: balance;
 }
 
-/* The word between them. It is punctuation, not a line. */
-.step__or {
-  margin: 0;
-  color: var(--faint);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-/* --- the listening guide ---------------------------------------------------
+/* --- the panel coming up ---------------------------------------------------
  *
- * The denials, the line that says what it is instead, and three notes at the
- * second of the record they belong to. Same setting as `Why` and `Creed`: one
- * thought a line, faint for what a thing is not, reading colour for what it is.
+ * Aceternity UI's Container Scroll Animation. The component is
+ * ContainerScroll.tsx and it writes the two transforms; this is the frame they
+ * happen in.
+ *
+ * The perspective belongs here rather than on the thing that turns: a rotation
+ * with no perspective ancestor is a flat squash, and putting the perspective on
+ * the rotating element itself would make each panel its own vanishing point
+ * instead of all of them sharing the section's.
+ *
+ * 1400px rather than the original's 1000. The original is looking at a card
+ * about half this wide; at 1016px a thousand-pixel perspective is a wide-angle
+ * lens, and the top edge of the grid recedes hard enough that the first row
+ * reads as a different size from the last.
  */
 
-.guide {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 28px;
-  max-width: 900px;
+.inside__stage {
+  align-self: stretch;
 }
 
-.guide__stack {
+.stage {
+  /* A longer lens than the original's 1000px, and longer again now the panel is
+     wider. Perspective is a distance from the eye: at a fixed one, a wider and
+     taller panel throws its near edge proportionally further forward, so the
+     same lean flares further past the sides. 2000 keeps the turn plainly
+     three-dimensional and brings the flare back inside the room reserved for it
+     below. */
+  perspective: 2000px;
+  /* The panel is wider than itself while it leans: a perspective brings the
+     near edge toward the eye and draws it larger, and the scale on the way in
+     adds to that. This is where that width goes — the original reserves the
+     same room with `md:p-20` — so the frame's bottom corners are still inside
+     the section at the steepest part of the lean instead of being cut off by
+     the guard below.
+
+     A percentage, not a clamp. How far the frame flares is a fraction of how
+     big it is — a wider panel is a taller one, and a taller one throws its near
+     edge further forward — so the room it needs is a fraction too. A fixed
+     ceiling was right at one width and short at every other.
+
+     `clip` rather than `hidden` on purpose: `hidden` would make this a scroll
+     container, which is the trap the hero documents, and `clip` cuts anything
+     left over without becoming one. */
+  padding-inline: 7.5%;
+  overflow-x: clip;
+}
+
+.stage__title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 40px;
+  text-align: center;
+}
+
+/* The bezel, and the face inside it.
+ *
+ * The original's `Card`: a lit border, a dark fill, a large radius and a stack
+ * of six shadows going soft underneath. This is that in the page's own colours
+ * rather than its `#6C6C6C` on `#222222` — `--raised` for the edge and the
+ * page's own background for the face, so what is inside reads as a screen with
+ * the section's cards on it rather than as a second card holding cards.
+ *
+ * The frame is what makes the tilt legible. Turned back, a grid of dark cards
+ * on a dark page has almost no edge to catch the light, and the whole gesture
+ * happens to something whose shape nobody can see. A border does not tilt
+ * ambiguously.
+ *
+ * No `will-change`, deliberately, and it is the same point the component makes
+ * about landing on no transform: `will-change: transform` promotes an element
+ * to its own compositing layer and *keeps* it there, so the type inside would
+ * be resampled for the whole visit rather than for the second it is moving. The
+ * transform makes the layer while it is set and gives it back when it is not.
+ *
+ * Nothing is eased here either. This follows a finger exactly and has no
+ * momentum of its own; a transition would mean the panel was still arriving
+ * after the scroll had stopped. */
+.stage__panel {
+  transform-origin: center center;
+  padding: 10px;
+  border-radius: 26px;
+  background: var(--raised);
+  box-shadow:
+    0 9px 20px rgb(0 0 0 / 29%),
+    0 37px 37px rgb(0 0 0 / 26%),
+    0 84px 50px rgb(0 0 0 / 15%),
+    0 149px 60px rgb(0 0 0 / 4%);
+}
+
+.stage__screen {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--bg);
+  box-shadow: var(--ring);
+}
+
+@media (max-width: 720px) {
+  .stage__panel {
+    padding: 6px;
+    border-radius: 20px;
+  }
+
+  .stage__screen {
+    padding: 10px;
+    border-radius: 15px;
+  }
+}
+
+.inside__grid {
+  width: 100%;
+}
+
+/* --- the cells -------------------------------------------------------------
+ *
+ * Rows size to what is in them, where the original declares a fixed 18rem and
+ * an earlier version of this made every row `1fr`. Both are the same mistake in
+ * opposite directions: what is in these cells is a sheet of fourteen lines in
+ * one and a single quotation in another, and any rule that makes all five agree
+ * either cuts the sheet off or leaves the quotation sitting in half a screen of
+ * nothing. Left alone, each row takes its own height and the two cells sharing
+ * it still stretch to match each other, which is the only agreement a grid of
+ * cards actually needs.
+ */
+
+.bento {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Left, explicitly, because the section around this is centred now and a cell
+   inherits it: a lyric sheet, a tracklist and two chat bubbles are all lists
+   read down a left edge, and centred they stop being any of those things. The
+   heading above the panel is the only thing here that is centred. */
+.bento__cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 20px;
+  min-width: 0;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--ring);
+  text-align: left;
+}
+
+/* The one cell that runs the whole width, and the only one set centred.
+ *
+ * The other four hold lists — a lyric sheet, two bubbles, a wish, a tracklist —
+ * and a list is read down a left edge. This one holds a meter and the three
+ * facts under it, which is not a list but a readout, and a readout ranged left
+ * across a thousand pixels is three things huddled in one corner with most of a
+ * cell empty beside them. Centred, it reads as what it is: one instrument with
+ * its label under it. */
+.bento__cell[data-wide='true'] {
+  grid-column: 1 / -1;
+  align-items: center;
+  text-align: center;
+}
+
+/* The drawing. `min-height: 0` so a cell holding a tall list can be clipped by
+   the cell rather than pushing the row taller than its neighbours. */
+.bento__shows {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The line under it, and the honest half of every cell: the drawings are
+   pictures of instruments and this is what each one is for, in words. */
+.bento__says {
+  margin: 0;
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+
+@media (max-width: 720px) {
+  .bento {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
+  }
+}
+
+/* --- the sheet, in a cell --------------------------------------------------
+ *
+ * The station's lyric view at card scale: one line lit and the rest faint, no
+ * panel and no heading, and the sheet drifting up under them as the record
+ * reaches each one.
+ *
+ * The lit line is `data-lit` and the drift is a transform on the inner box,
+ * both driven by the loop the section holds. Same 0.45s the real sheet takes
+ * and the transcript in the archive takes, because it is the same event.
+ *
+ * Faded at both ends now that it moves. It was faded only at the foot, which
+ * is right for a list that is standing still and wrong for one that is sliding:
+ * a line arriving from a hard top edge appears rather than comes up.
+ */
+
+.sheet {
+  max-height: 232px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 70%, transparent);
+}
+
+.sheet__lines {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* The same easing and the same 0.45s as a line coming up, because the two are
+     one movement: the sheet arrives at the line at the moment the line lights. */
+  transition: transform 0.45s ease;
 }
 
-/* What it is not. Faint, and there are only two of them, since the phrase "listening
-   guide" does most of the wrong work on its own and two denials undo it. */
-.guide__line {
-  margin: 0;
-  color: var(--faint);
-  font-size: clamp(20px, 2.4vw, 30px);
-  font-weight: 400;
-  letter-spacing: -0.015em;
-  line-height: 1.32;
+/* The top of the loop.
+ *
+ * The lift comes off with no transition, so the sheet does not scroll fourteen
+ * lines backwards — which is the one motion in this cell that would say nothing
+ * true — and the whole thing comes up from nothing instead. A record has
+ * reached the end and started again, which is exactly what happened. */
+.sheet[data-again='true'] .sheet__lines {
+  transition: none;
 }
 
-.guide__close {
-  max-width: 30ch;
+.sheet[data-again='true'] {
+  animation: starts-again 900ms ease;
+}
+
+/* The top of the loop, for both cells that are on it. The sheet snaps back to
+   its first line and the room empties back to what had been said by then, and
+   both come up from nothing rather than jumping. */
+@keyframes starts-again {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Set the way a lyric sheet is set, which is not the way a caption is.
+ *
+ * Large and heavy, tight leading, tight tracking, and the lines apart rather
+ * than run together — the shape every music player has settled on, and the
+ * shape the station's own `#lyrics` view already uses at 30px. It was 13px at
+ * body weight, which is a list of sentences about a song rather than the words
+ * to one.
+ *
+ * A dimmed line comes up a step from 0.22 with it. That number was set against
+ * a light face; the same value under 600 weight is a grey slab rather than a
+ * line waiting its turn, because there is simply more ink in it. */
+.sheet__line {
   margin: 0;
   color: var(--fg);
-  font-size: clamp(22px, 2.8vw, 34px);
-  font-weight: 500;
+  font-size: clamp(16px, 1.4vw, 20px);
+  font-weight: 600;
   letter-spacing: -0.02em;
-  line-height: 1.24;
+  line-height: 1.28;
+  opacity: 0.28;
+  transition: opacity 0.45s ease;
+}
+
+.sheet__line[data-lit='true'] {
+  opacity: 1;
+}
+
+/* A bar with nobody singing over it. Wider spaced and never lit bright, the
+   way the station draws a rest rather than leaving a hole in the sheet. Set
+   back down to the size it was: three dots at twenty pixels bold is a row of
+   full stops shouting, and a rest is the quietest thing on a sheet. */
+.sheet__line[data-hum='true'] {
+  color: var(--faint);
+  font-size: 15px;
+  letter-spacing: 0.3em;
+}
+
+/* A rest that is the line the record is on. Brighter than the sheet's other
+   rests and still short of a sung line, because "nobody is singing right now"
+   has to read as something rather than as a sheet with nothing lit on it —
+   which is what a quarter-opacity row of dots looks like. */
+.sheet__line[data-hum='true'][data-lit='true'] {
+  color: var(--muted);
+  opacity: 0.9;
+}
+
+/* --- the clock everyone shares ---------------------------------------------
+ *
+ * The one cell across the whole width, because it is the one thing the rest of
+ * the station is downstream of. The meter is `Waveform` out of Turntable.tsx,
+ * imported unchanged like the one under the pile of records.
+ */
+
+.tuned {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* `center` rather than `space-between`: the three of them are one line of
+   readout — where the record is, what it is, and how many are on it — and
+   spreading them to the corners of a wide cell turns one fact into three
+   separate ones. `justify-content` rather than `margin-left: auto` on the last
+   of them, which is what used to push the count to the far right and is the
+   idiom for a row that is being spread. */
+.tuned__what {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+}
+
+.tuned__where {
+  color: var(--fg);
+  font-family: var(--font-numeric);
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.tuned__of {
+  color: var(--fg-dim);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tuned__who {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* --- the room, filling -----------------------------------------------------
+ *
+ * A chat window at card scale, and everything about it follows from the fact
+ * that a chat window fills from the bottom: the box is anchored to its end, so
+ * a new bubble lands at the foot and pushes the pile up, and the ones that run
+ * off the top go under a mask rather than off a hard edge.
+ *
+ * Capped at the height the lyric sheet is capped at. They are the two cells in
+ * one row and both are windows onto the same moment; one of them a hand taller
+ * than the other would read as one of them mattering more.
+ */
+
+.said {
+  display: flex;
+  flex-direction: column;
+  /* The end, not the start. Overflow then goes off the top, which is where a
+     conversation's older half belongs. */
+  justify-content: flex-end;
+  /* A height rather than a cap. Capped, the box is only as tall as whatever has
+     been said so far, so the pile drifts about the middle of the cell and
+     settles somewhere different every few seconds. Given the height, the newest
+     bubble is always in the same place and the room grows up from it, which is
+     where the eye goes back to in any chat window. Matches the sheet beside it. */
+  height: 232px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, #000 22%);
+}
+
+.said[data-again='true'] {
+  animation: starts-again 900ms ease;
+}
+
+.said__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Every one of these is mounted the moment it is said, so the animation runs
+   once, on the one that just arrived, without anything having to keep track of
+   which that is. `backwards` holds it clear of the first frame, which is
+   otherwise a bubble at full opacity for the tick before it starts. */
+.said__line {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  animation: said-arrives 420ms ease backwards;
+}
+
+@keyframes said-arrives {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.said__face {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--pill);
+  background: var(--raised);
+  color: var(--fg-dim);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.said__bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 11px;
+  border-radius: 12px;
+  background: var(--raised);
+}
+
+.said__who {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.said__says {
+  color: var(--fg-dim);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* --- one wish --------------------------------------------------------------
+ *
+ * Set as a sentence rather than as an entry, which is the whole argument the
+ * wish wall further down makes at length: nobody types this into a genre box.
+ */
+
+.asked {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: clamp(16px, 1.6vw, 19px);
+  font-style: italic;
+  line-height: 1.5;
   text-wrap: balance;
 }
 
-/* The one label on the section, and it is doing real work: without it the three
-   notes below read as claims the station is making rather than as a sample of
-   what a note looks like. */
-.guide__label {
-  margin: 12px 0 0;
-  color: var(--faint);
-  font-family: var(--font-numeric);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/* --- the rail --------------------------------------------------------------
+/* --- the evening so far ----------------------------------------------------
  *
- * Aceternity UI's Timeline, in this project's materials and at about a third of
- * its size. The component is Timeline.tsx and the note on it explains why it is
- * this small; these are the sizes.
- *
- * The layout is one grid per note: the rail's own column, then the timestamp,
- * then what was said. The rail is drawn behind them as a single element rather
- * than as a border on each note, because it has to run past the gaps as well as
- * the notes, and a border stops at every one of them.
+ * Three rows of what the history view lists, sleeve first, at the size a
+ * sample of a list should be rather than the size of the list.
  */
 
-.rail {
-  position: relative;
-  width: 100%;
-}
-
-.guide__rail {
-  margin-top: 4px;
-}
-
-.rail__notes {
+.sofar {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-/* The timestamp beside the note rather than over it, so the three times make a
-   column that can be read on its own as the shape of a record.
-
-   rem rather than ch, for the reason in `.room__creed`: this box has no
-   font-size of its own, so a ch here would be measured against 16px while the
-   note beside it is set at 20px. */
-.rail__note {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px 4.5rem minmax(0, 1fr);
-  gap: 8px;
-  align-items: baseline;
-  max-width: 48rem;
+.sofar__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
-/* Where the note is on the rail. Filled rather than ringed: a hollow dot on a
-   line reads as a station a train has not reached, and these are not steps in
-   anything, they are places a note happens to sit. */
-.rail__dot {
-  position: relative;
-  z-index: 1;
-  align-self: center;
-  justify-self: start;
-  width: 7px;
-  height: 7px;
-  margin-left: 2px;
-  border-radius: var(--pill);
-  background: var(--muted);
-  /* The rail passes behind the dot, and the dot has to interrupt it or the two
-     read as a line with a bead threaded on rather than a point on a line. */
-  box-shadow: 0 0 0 4px var(--bg);
+.sofar__art {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+  box-shadow: var(--ring);
 }
 
-/* In the numeric face, like every other clock on this page, but not faint, and
-   not `aria-hidden`. This one is content. */
-.rail__at {
-  color: var(--fg-soft);
-  font-family: var(--font-numeric);
-  font-size: clamp(15px, 1.6vw, 18px);
-  letter-spacing: 0.02em;
+.sofar__art--blank {
+  background: var(--raised);
 }
 
-.rail__says {
-  color: var(--fg-dim);
-  font-size: clamp(16px, 1.8vw, 20px);
-  line-height: 1.5;
-  text-wrap: pretty;
+.sofar__what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-/* The rail. Faint for its whole length, and masked to nothing at both ends so
-   it arrives and leaves rather than starting and stopping at a hard edge. */
-.rail__line {
-  position: absolute;
-  top: 0;
-  left: 5px;
-  width: 1px;
+.sofar__title,
+.sofar__artist {
   overflow: hidden;
-  background: rgb(255 255 255 / 12%);
-  mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* And the part of it that has been reached. Its height is written by the
-   component from the scroll position; everything else about it is here. */
-.rail__lit {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  background: linear-gradient(to bottom, rgb(255 255 255 / 10%), rgb(255 255 255 / 70%));
+.sofar__title {
+  color: var(--fg-dim);
+  font-size: 13px;
+  font-weight: 500;
 }
 
-/* Asked to hold still: the whole rail, lit, with nothing driving it. */
-.rail__lit--all {
-  height: 100%;
+.sofar__artist {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.sofar__at {
+  margin-left: auto;
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 11px;
+}
+
+/* Asked to hold still, the lit line is simply lit. Nothing here travels to get
+   anywhere, so there is nothing else to turn off. */
+/* Asked to hold still, the loop is not running at all — see `Inside`, which
+   never starts the interval — so the sheet sits on its first line with that one
+   lit. There is nothing left to turn off but the two easings and the restart,
+   which would otherwise play once on mount. */
+@media (prefers-reduced-motion: reduce) {
+  .sheet__line,
+  .sheet__lines {
+    transition: none;
+  }
+
+  /* The loop is not running at all — see `Inside`, which never starts the
+     interval — so these would each play once, on mount, and then never again.
+     A single unexplained movement is worse than none. */
+  .sheet[data-again='true'],
+  .said[data-again='true'],
+  .said__line {
+    animation: none;
+  }
 }
 
 /* --- the beam --------------------------------------------------------------
@@ -1608,468 +2138,6 @@ html {
   .spotlight {
     opacity: 1;
     animation: none;
-  }
-}
-
-/* --- the room --------------------------------------------------------------
- *
- * Prose on the left, the conversation on the right, and the conversation is the
- * one thing on the page that moves with the reader. See Landing.tsx.
- */
-
-/* --- the sticky reveal ----------------------------------------------------
- *
- * Aceternity UI's Sticky Scroll Reveal. The whole thing is its own scroll
- * container (that is the component, not an accident) with the items down the
- * left and one panel stuck beside them that changes as the active item does.
- */
-
-/* The framing above the panels. See the note in Landing.tsx: the section has to
-   say what the talking is for before it shows a chat window, or the chat window
-   is all anybody takes from it. Set like `Why`: fragments faint, the line that
-   answers them in the reading colour. */
-.room__creed {
-  display: flex;
-  flex-direction: column;
-  gap: 34px;
-  /* In rem, not ch. `ch` on this box resolves against *its* font-size, which is
-     the inherited 16px, not the 26px the lines inside it are set at. At 46ch it
-     came out around 460px and broke "You're not listening beside people." across
-     two lines for no reason. */
-  max-width: 40rem;
-  margin: 8px 0 64px;
-}
-
-.room__stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.room__line {
-  margin: 0;
-  color: var(--faint);
-  font-size: clamp(19px, 2.2vw, 26px);
-  font-weight: 400;
-  letter-spacing: -0.015em;
-  line-height: 1.3;
-  text-wrap: balance;
-}
-
-/* The half of each pair that is the claim rather than the setup. */
-.room__line--said {
-  color: var(--fg);
-  font-weight: 500;
-}
-
-.room__reveal {
-  margin-top: 32px;
-}
-
-.sticky-reveal {
-  position: relative;
-  display: flex;
-  gap: 48px;
-  height: 32rem;
-  /* No padding on the right: the panel is meant to sit against that edge. The
-     scrollbar is given a gutter of its own instead, so it does not push the
-     panel back in every time the content is tall enough to need one. */
-  padding: 0 0 0 4px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  border-radius: 20px;
-  /* The original animates this between three slate-to-black backgrounds. Here
-     it stays one surface and the active item is what changes. See the note in
-     StickyScroll.tsx about why a palette was not an option. */
-  background: var(--card);
-  box-shadow: var(--ring);
-  scrollbar-width: thin;
-  /* The inner scroller is the point of the component, but it should not swallow
-     the page's scroll at its ends. */
-  overscroll-behavior-y: contain;
-}
-
-.sticky-reveal__column {
-  flex: 1;
-  min-width: 0;
-  max-width: 42ch;
-  padding: 0 8px 0 28px;
-}
-
-/* The original's trailing spacer. Without it the last item can never reach its
-   own breakpoint, because there is nothing left below it to scroll. */
-.sticky-reveal__tail {
-  height: 12rem;
-}
-
-.reveal {
-  padding: 6rem 0;
-}
-
-.reveal:first-child {
-  padding-top: 5rem;
-}
-
-.reveal__title {
-  margin-bottom: 20px;
-  color: var(--fg);
-  font-size: 22px;
-  letter-spacing: -0.02em;
-  /* The original's fade. It is the only thing saying which one you are on. */
-  opacity: 0.3;
-  transition: opacity 300ms ease;
-}
-
-.reveal__body {
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.7;
-  opacity: 0.3;
-  transition: opacity 300ms ease;
-}
-
-.reveal__body p {
-  margin: 0 0 14px;
-}
-
-.reveal__body p:last-child {
-  margin-bottom: 0;
-}
-
-.reveal[data-on='true'] .reveal__title,
-.reveal[data-on='true'] .reveal__body {
-  opacity: 1;
-}
-
-/* Hard against the right edge.
- *
- * `margin-left: auto` rather than relying on the column to push it: the column
- * is capped at 42ch, so on a wide section it stops growing long before the panel
- * runs out of room, and without this the pair would drift into the middle
- * together. Whatever the section's width, the panel stays where the eye learns
- * to look for it. */
-.sticky-reveal__panel {
-  position: sticky;
-  /* Room above for the cards behind, which sit up to 20px higher than the face
-     and would otherwise be cut off by the top of the scroller. */
-  top: 52px;
-  flex: none;
-  width: 24rem;
-  height: 26rem;
-  margin-left: auto;
-  margin-right: 10px;
-  align-self: flex-start;
-}
-
-/* --- the deck -------------------------------------------------------------
- *
- * Aceternity UI's Card Stack. The offsets and scales are in CardStack.tsx; this
- * is the box they are dealt in.
- */
-
-.stack {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-/* Each card is the full face of the deck, and it is the card that carries the
-   surface, not the panel inside it.
- *
- * It has to be opaque. `--panel` is 70%, which is right for one thing floating
- * on the sheet and wrong for three stacked on each other: through a translucent
- * face you can read the wishes and the join screen sitting behind the
- * conversation, all at once. `--bg` is the same surface the standing panel's
- * screen uses, and the bubbles at `--raised` read cleanly against it. */
-.stack__card {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  border-radius: 16px;
-  background: var(--bg);
-  box-shadow:
-    var(--ring-strong),
-    0 12px 32px rgb(0 0 0 / 40%);
-}
-
-@media (max-width: 940px) {
-  .sticky-reveal {
-    height: auto;
-    max-height: none;
-    overflow: visible;
-    scrollbar-gutter: auto;
-    flex-direction: column;
-    gap: 24px;
-    padding: 24px;
-  }
-
-  .sticky-reveal__column {
-    max-width: none;
-    padding: 0;
-  }
-
-  /* Nothing is stuck and nothing is scrolling inside anything, so the fade
-     would just be three paragraphs at 30% with no way to bring them up. */
-  .reveal {
-    padding: 20px 0;
-  }
-
-  .reveal__title,
-  .reveal__body,
-  .reveal[data-on='false'] .reveal__title,
-  .reveal[data-on='false'] .reveal__body {
-    opacity: 1;
-  }
-
-  .sticky-reveal__tail {
-    display: none;
-  }
-
-  /* In one column there is no right edge to sit against, so it is centred. */
-  .sticky-reveal__panel {
-    position: static;
-    width: 100%;
-    max-width: 22rem;
-    height: 22rem;
-    /* The cards behind still lift above the face; without this the top of the
-       deck is clipped by whatever sits above it. */
-    margin: 24px auto 0;
-  }
-}
-
-/* --- the panels the reveal shows ------------------------------------------ */
-
-/* Contents, not a surface: `.stack__card` is the card. */
-.panel {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 24px;
-}
-
-.panel__label {
-  margin: 0;
-  color: var(--faint);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.panel__field {
-  margin: 18px 0 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow: var(--ring);
-  color: var(--fg);
-  font-size: 16px;
-}
-
-.panel__go {
-  margin-top: 16px;
-  justify-content: center;
-  cursor: default;
-}
-
-.panel__note {
-  margin: auto 0 0;
-  color: var(--faint);
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-.panel__tally {
-  margin: 18px 0 0;
-  color: var(--fg);
-  font-family: var(--font-numeric);
-  font-size: 56px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.panel__of {
-  margin-left: 8px;
-  color: var(--faint);
-  font-size: 20px;
-}
-
-.panel__meter {
-  height: 4px;
-  margin-top: 20px;
-  border-radius: var(--pill);
-  background: var(--raised);
-}
-
-.panel__fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--pill);
-  background: var(--fg-dim);
-}
-
-/* One of the deck's cards now. The card is the surface (see `.stack__card`)
-   so this only has to fill it. */
-.talk {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 8px;
-  overflow: hidden;
-}
-
-.talk__top {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 14px 16px 16px;
-}
-
-.talk__where {
-  color: var(--live-text);
-  font-family: var(--font-numeric);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.talk__of {
-  color: var(--faint);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The panel fills as the room talks, and only downwards: it is stuck to the top
-   of the window and the section it sits in is taller than it will ever be, so
-   nothing else on the page moves when a line lands. A minimum height stops the
-   first arrival from being a box popping into existence beside the prose. */
-/* The scroller is this rather than `.talk`, so the record's title at the top
-   stays put while the conversation moves under it. */
-.talk__lines {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 96px;
-  margin: 0;
-  padding: 0 6px 8px;
-  overflow-y: auto;
-  list-style: none;
-  scrollbar-width: thin;
-  overscroll-behavior-y: contain;
-}
-
-/* Each line is a row that opens rather than one that fades in on space already
-   reserved for it. `0fr` to `1fr` is what makes that animatable without knowing
-   how tall the line is: some of them wrap to two. The content stays in the DOM
-   throughout, so the conversation is whole for anything not reading it by eye. */
-.line {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition:
-    grid-template-rows 460ms ease,
-    opacity 460ms ease;
-  opacity: 0;
-}
-
-.line[data-said='true'] {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-
-/* A face, then a bubble: the shape a conversation between several people is
-   drawn in. Everyone is on the same side of it, because everyone in the room is
-   a peer: there is no "you" on this page, nobody has joined yet. */
-.line__inner {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* The padding lives on the inner row so that a collapsed line is truly zero
-   high, since padding on the outer grid would leave every unsaid line 16px tall and
-   the panel would start off looking like a stack of empty rows. */
-.line[data-said='true'] .line__inner {
-  padding: 5px 8px;
-}
-
-/* The station has no picture of anybody (a nickname is all it knows) so the
-   avatar is the one thing it can honestly draw: their first letter. */
-.line__face {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--pill);
-  background: var(--raised);
-  box-shadow: var(--ring-strong);
-  color: var(--fg-dim);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-/* Somebody still talking keeps their bubble and loses the face, so a run reads
-   as one person rather than as the same person arriving three times. */
-.line__inner[data-run='true'] .line__face {
-  background: none;
-  box-shadow: none;
-}
-
-.line__bubble {
-  display: block;
-  min-width: 0;
-  padding: 8px 12px 9px;
-  /* Square at the top left, where it meets the face. */
-  border-radius: 4px 14px 14px 14px;
-  background: var(--raised);
-  box-shadow: var(--ring);
-}
-
-.line__inner[data-run='true'] .line__bubble {
-  border-radius: 14px;
-}
-
-.line__top {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 3px;
-}
-
-.line__at {
-  color: var(--faint);
-  font-family: var(--font-numeric);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.line__who {
-  color: var(--fg-dim);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.line__says {
-  display: block;
-  min-width: 0;
-  color: var(--muted);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
-/* The line the room is on. Warm rather than bright: it is where the needle is,
-   not an alert. */
-.line[data-said='true']:last-of-type .line__bubble,
-.line[data-said='true']:has(+ .line[data-said='false']) .line__bubble {
-  background: var(--raised-soft);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .line {
-    transition: none;
   }
 }
 
@@ -2204,6 +2272,464 @@ html {
   }
 }
 
+/* --- the podcast -----------------------------------------------------------
+ *
+ * The archive's section. Set from the left margin in the same measure as
+ * `Talks` directly above it, because it is the same voice carrying the same
+ * argument one step further, and a section that changed alignment here would
+ * read as a different page arriving.
+ *
+ * Self-contained, like `.talks`: the `.section__*` rules came off in the revamp
+ * and anything that has to look right says so itself.
+ *
+ * Three things sit inside it and each has its own block below: the shelf
+ * (Aceternity's Apple Cards Carousel, in AppleCardsCarousel.tsx), the panel a
+ * card opens into, and the transcript keeping up with a voice.
+ */
+
+.kept {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 32px;
+}
+
+/* Quiet, and the same one over `Talks` and the wishes. */
+.kept__title {
+  margin: 0;
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kept__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kept__line {
+  max-width: 40ch;
+  margin: 0;
+  color: var(--faint);
+  font-size: clamp(19px, 2.2vw, 26px);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.34;
+  text-wrap: balance;
+}
+
+.kept__line--said {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.kept__turn {
+  margin: 4px 0 0;
+  max-width: 26ch;
+  color: var(--fg);
+  font-size: clamp(22px, 2.8vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+/* --- the shelf -------------------------------------------------------------
+ *
+ * The strip runs the section's full width rather than the measure the sentences
+ * are set in: it is a row of pictures and the prose is a column of statements,
+ * and cards capped at 40ch would be three cards with a third of the page empty
+ * beside them.
+ */
+
+.kept__shelf {
+  width: 100%;
+}
+
+/* Asked for and not answered: an archive nobody could reach, drawn instead.
+   Held back a step so it reads as an illustration beside sentences rather than
+   as the thing itself, and `inert` in the markup means nothing in here can be
+   pressed or tabbed into whatever this says. */
+.kept__shelf[inert] {
+  opacity: 0.62;
+}
+
+.kept__note {
+  margin: 14px 0 0;
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* --- the carousel ----------------------------------------------------------
+ *
+ * Aceternity UI's Apple Cards Carousel. An ordinary scroll container with the
+ * scrollbar taken off it and two buttons that push it by exactly one card. The
+ * snap is what makes an arrow press land on a card edge rather than halfway
+ * through one, and what makes a flick on a phone stop somewhere sensible.
+ */
+
+.carousel {
+  width: 100%;
+}
+
+.carousel__strip {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  /* Sideways is the strip's, up and down stays the page's. Without it a thumb
+     that starts on a card and moves down the screen scrolls nothing at all. */
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+
+.carousel__strip::-webkit-scrollbar {
+  display: none;
+}
+
+.carousel__cell {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  /* One after another as they arrive, the original's stagger without its
+     timeline: `--card-index` is set on the element in the port. `backwards` is
+     what keeps a card that has not started yet invisible instead of flashing at
+     full opacity for its own delay. */
+  animation: card-in 420ms ease-out backwards;
+  animation-delay: calc(var(--card-index, 0) * 70ms);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.carousel__arrows {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.carousel__arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--raised);
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition:
+    background 200ms ease,
+    color 200ms ease,
+    opacity 200ms ease;
+}
+
+.carousel__arrow:hover:not(:disabled) {
+  background: var(--raised-soft);
+  color: var(--fg);
+}
+
+/* Out rather than gone. A pair that appeared and disappeared as the strip grew
+   would move the section under whoever was reading it. */
+.carousel__arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.carousel__arrow:focus-visible {
+  outline: 1px solid var(--raised-soft);
+  outline-offset: 3px;
+}
+
+/* --- one episode -----------------------------------------------------------
+ *
+ * A poster at the ratio the server enforces (1080x1350, exactly 4:5) with the
+ * words under it. The ratio is declared here rather than left to the image, so
+ * a card holds its shape from the moment the page lays out — an archive that
+ * reflowed as six posters arrived would be a strip that jumped under a reader
+ * on a slow connection.
+ */
+
+.kept__card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 244px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The invented ones are a `span`, and there is nothing to press. */
+.kept__card:not(button) {
+  cursor: default;
+}
+
+.kept__art {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+  border-radius: 14px;
+  background: var(--raised);
+  box-shadow: var(--ring);
+  transition: transform 260ms ease;
+}
+
+button.kept__card:hover .kept__art {
+  transform: translateY(-4px);
+}
+
+.kept__poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Where the artwork would be, for an episode that has none. Not a placeholder
+   graphic: the title, large, which is the one thing every episode has — and
+   which the caption underneath then leaves out, so the card says its name once.
+   See `KeptCard`. */
+.kept__art-words {
+  padding: 20px;
+  color: var(--fg-dim);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.kept__wash {
+  position: absolute;
+  inset: auto 0 0;
+  height: 45%;
+  background: linear-gradient(to top, rgb(10 10 10 / 55%), transparent);
+  pointer-events: none;
+}
+
+.kept__what {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.kept__name {
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+
+.kept__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.kept__sub {
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .kept__card {
+    width: 200px;
+  }
+}
+
+/* --- what a card opens into ------------------------------------------------
+ *
+ * The original's modal. Fixed over the page rather than inside the section, so
+ * it is not clipped by anything above it in the stacking order, and scrollable
+ * itself for the notes that run long on a short screen.
+ */
+
+.panel-over {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.panel-over__dim {
+  position: fixed;
+  inset: 0;
+  background: rgb(10 10 10 / 78%);
+  backdrop-filter: blur(6px);
+}
+
+.panel-over__panel {
+  position: relative;
+  width: min(560px, 100%);
+  padding: 28px;
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--ring-strong);
+  backdrop-filter: blur(20px);
+}
+
+.panel-over__panel:focus-visible {
+  outline: none;
+}
+
+.panel-over__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--raised);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.panel-over__close:hover {
+  background: var(--raised-soft);
+  color: var(--fg);
+}
+
+.kept__panel-sub {
+  margin: 0 40px 0 0;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.kept__panel-title {
+  margin: 10px 0 0;
+  color: var(--fg);
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.kept__panel-facts {
+  margin: 8px 0 0;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.kept__panel-notes {
+  margin: 20px 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--fg-dim);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.kept__panel-notes p {
+  margin: 0;
+}
+
+/* --- lines crossing a section ----------------------------------------------
+ *
+ * Aceternity UI's Background Lines. The twenty paths are in
+ * BackgroundLines.tsx; this is the one keyframe that draws them and the stagger
+ * that stops them arriving together.
+ *
+ * The trick is a dash pattern longer than the curve: a 50-unit dash and an
+ * 800-unit gap means one short stroke and nothing else, and sliding the offset
+ * from 800 to 0 walks that stroke from one end of the path to the other. The
+ * dash tightens to 20 on the way, so a line thins as it goes rather than
+ * arriving and leaving at the same weight.
+ */
+
+.lines {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  /* The paths take `currentColor`, so the whole set is one declaration. Faint:
+     this is behind quotations somebody typed and must never be the thing being
+     read. */
+  color: rgb(255 255 255 / 30%);
+  pointer-events: none;
+}
+
+.lines__path {
+  animation: line-crosses 11s linear infinite;
+  /* Spread over the loop rather than randomised per render. Prime-ish spacing
+     against the duration, so the set never settles into a rhythm you can
+     predict from having watched it once. */
+  animation-delay: calc(var(--line-index, 0) * -0.53s);
+}
+
+@keyframes line-crosses {
+  0% {
+    stroke-dasharray: 50 800;
+    stroke-dashoffset: 800;
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  78% {
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dasharray: 20 800;
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+/* Twenty strokes travelling across a section is exactly the continuous ambient
+   movement this setting is for, and a still frame of it says nothing, so it is
+   not drawn at all. */
+@media (prefers-reduced-motion: reduce) {
+  .lines {
+    display: none;
+  }
+}
+
 /* --- what the room asks for ------------------------------------------------
  *
  * Set in the reading face at a size that makes them sentences rather than
@@ -2213,9 +2739,10 @@ html {
  * components that drew it.
  */
 
-/* The centred head, for the one section that still wants one: the laptop that
-   stands up under "What has been on". Everything else on the page, this section
-   included since the panel came off it, is set from the left margin. */
+/* The centred head, for the one place that still has one: `NextSession`, whose
+   title sits in a wrapper. "What has been on" used to as well, because the
+   wrapper was there to stand an icon beside the words; with the icon gone the
+   title is the head. */
 .section__head--mid {
   justify-content: center;
 }
@@ -2225,6 +2752,14 @@ html {
   margin-inline: auto;
 }
 
+/* Room under a title that is now three times the size it was. Written against
+   the title rather than the wrapper it used to sit in, so it still applies now
+   that "What has been on" has no wrapper. */
+.section__title + .section__lede--mid,
+.section__head--mid + .section__lede--mid {
+  margin-top: 18px;
+}
+
 /* --- the wishes, going past ------------------------------------------------
  *
  * `InfiniteMovingCards` stood on end and run twice, out of step: two columns,
@@ -2232,6 +2767,20 @@ html {
  * MovingColumns.tsx; these are the two boxes it needs: one that clips and fades
  * the ends, and one that moves.
  */
+
+/* The section holds the lines behind it. `isolate` keeps that stacking here
+   rather than putting the section into a contest with the rest of the page,
+   which is the same call `.talks` makes for its spotlight. */
+.wishes {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Everything the section says, over the threads rather than among them. */
+.wishes > *:not(.lines) {
+  position: relative;
+  z-index: 1;
+}
 
 /* The copy above the wall.
  *
@@ -2425,205 +2974,6 @@ html {
   .columns__item[aria-hidden='true'] {
     display: none;
   }
-}
-
-/* --- why it has to be live --------------------------------------------------
- *
- * Aceternity UI's SVG Mask Effect, in this stylesheet's own terms. The mechanism
- * (what is masked, how the hole moves) is in MaskContainer.tsx; this is the
- * box it happens in, which over there is a handful of Tailwind classes.
- *
- * Two layers, exactly overlapping: the question, on the page; and a lit panel
- * over it holding the answer, with a hole in it that follows the cursor.
- */
-
-.mask {
-  position: relative;
-  display: grid;
-  place-items: center;
-  /* Room to hunt in. The effect is a cursor moving over a surface, and a panel
-     the height of one sentence gives it nowhere to go.
-
-     It is also what keeps the disc a disc: the hole is 480px across, and in a
-     box shorter than that the circle meets the top and bottom edges at once and
-     reads as a torn sheet rather than as a light. The demo has the same
-     relationship: a 40rem box and a 600px hole. */
-  min-height: 32rem;
-  padding: 48px 32px;
-  overflow: hidden;
-  /* No border. The demo has one, and it is the honest thing on a page of
-     components where a reader has to be told which rectangle is the exhibit;
-     here it was the only line on the page drawn round nothing, and the panel
-     reading as a panel before the cursor is in it is not worth that. The radius
-     stays: it is still what the disc is clipped against. */
-  border-radius: 12px;
-}
-
-/* The question, centred in the panel and holding its height. */
-.mask__under {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  max-width: 46rem;
-  text-align: center;
-}
-
-/* The panel over the top.
- *
- * `position: absolute` and nothing else positioned in here, which is what puts
- * it above the question without a z-index on either, and what makes the two
- * share a box rather than stack.
- *
- * It covers the panel exactly, and that is not cosmetic: `mask-position` is
- * measured from this element's own box, while the component measures the cursor
- * against `.mask`. Give this one a max-width and the two coordinate systems come
- * apart: the disc lands short of the pointer, and past the width it stops
- * existing at all. The 46rem measure belongs to the words inside it, below.
- *
- * The mask is the original's `/mask.svg` inlined: one circle, filled, on a 1298
- * viewBox. `mask-size` and `mask-position` are written every frame by the
- * component, so the only thing set here is the part that never changes. */
-.mask__over {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 48px 32px;
-  text-align: center;
-  /* The lit side of the effect: the panel is the page's own foreground colour
-     and the words on it are the sheet, so the disc reads as a light behind the
-     section rather than as a second colour introduced for it. */
-  background: var(--fg);
-  color: var(--bg);
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1298 1298'%3E%3Ccircle cx='649' cy='649' r='649' fill='%23000'/%3E%3C/svg%3E");
-  mask-repeat: no-repeat;
-  mask-size: 10px;
-}
-
-/* Only the words open the hole wide. See MaskContainer.tsx. Everything else in
-   the panel is along for the ride. */
-.mask__words {
-  max-width: 46rem;
-}
-
-/* No cursor, no effect. Both texts, in order, on the page.
- *
- * The panel stops being a panel: it comes out of the overlay, gives up the lit
- * background it only had in order to be cut a hole in, and becomes the sentence
- * under the question, which is what it always was. */
-.mask--flat {
-  position: static;
-  display: block;
-  /* Everything `.mask` set in order to be a panel, given back: the grid that
-     centred two layers on top of each other, the height that gave the cursor
-     somewhere to hunt, the box that made it a box. None of it means anything
-     without the effect. */
-  place-items: normal;
-  min-height: 0;
-  padding: 0;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-}
-
-.mask--flat .mask__under,
-.mask--flat .mask__over {
-  display: block;
-  /* Both explicitly, because `.mask__under` carries a `width: 100%` and
-     `.mask__over` does not, and a pair of sentences that are meant to read as
-     consecutive cannot sit in two differently sized boxes. */
-  width: 100%;
-  max-width: none;
-  /* Centred here too. The panel is gone on a phone but the section is still the
-     centred one, and a question and answer set flush left above four centred
-     lines of prose would be the only place on the page changing its mind about
-     alignment halfway down a section. */
-  text-align: center;
-}
-
-.mask--flat .mask__over {
-  position: static;
-  padding: 0;
-  background: none;
-  color: inherit;
-  mask-image: none;
-}
-
-/* The question, and the answer under the panel, set alike on purpose. The
-   answer comes up in the place the question was, at the same size and weight, so
-   the disc reads as the same sentence changing its mind rather than as a caption
-   appearing over it. The measure is wider than the 22ch this had when it was a
-   pull-quote in the flow: centred in a 46rem box, 22ch left it three words to a
-   line. */
-.live__ask,
-.live__answer {
-  margin: 0;
-  font-size: clamp(24px, 3.2vw, 38px);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.16;
-  text-wrap: balance;
-}
-
-.live__ask {
-  max-width: 26ch;
-  color: var(--fg);
-}
-
-/* On the lit panel, so it takes the panel's colour rather than the page's.
-   Narrower than the question, because this one has to fit inside a circle: at
-   the question's measure the sentence is two long lines whose ends fall outside
-   the disc, and the last word of the answer is the one word that must not be
-   clipped. Three shorter lines sit in a circle the way two long ones cannot.
-
-   In rem rather than ch. This face's `0` is wide: 1ch lands near 24px at this
-   size, so the 20ch that reads as "narrow" measured 491px against a 480px hole
-   and clipped both ends of every line. */
-.live__answer {
-  max-width: 21rem;
-  color: inherit;
-}
-
-/* Back in the flow, with no panel to sit on; see `.mask--flat`. The answer
-   becomes what it reads as there: the line under the question. Both centre in
-   the column, which their capped measures otherwise cannot do. */
-.mask--flat .live__ask,
-.mask--flat .live__answer {
-  margin-inline: auto;
-}
-
-.mask--flat .live__ask {
-  margin-bottom: 20px;
-}
-
-.mask--flat .live__answer {
-  /* The 21rem above is the width of a circle, and there is no circle here. Back
-     to the question's measure, so the two read as one exchange set the same way
-     rather than as a sentence and a narrower afterthought. */
-  max-width: 26ch;
-  color: var(--fg-soft);
-}
-
-/* The prose picks up from the answer, so it stands off the panel rather than
-   running straight on from its bottom edge. */
-.live__after {
-  margin-top: 40px;
-}
-
-/* The whole section is one centred column: the question, the answer found under
-   it, and the paragraph that spells both out. Left-aligned prose starting at
-   the page margin under a panel whose text is centred read as two sections
-   stacked rather than as one thought carried on.
- *
- * `margin-inline` has to be said out loud: `.section__lede` sets `margin: 0 0 …`,
- * which zeroes the inline margins, and a capped block cannot centre without them
- * back. */
-.live .section__lede {
-  margin-inline: auto;
-  text-align: center;
-  /* Centred ragged text strands a short last line in the middle of the column,
-     which is the one place it has nowhere to hide. */
-  text-wrap: pretty;
 }
 
 /* --- what has been on ------------------------------------------------------
@@ -3227,11 +3577,12 @@ html {
 
 /* --- the DJ ----------------------------------------------------------------
  *
- * The gramophone again, and the second and last time it appears: the object the
- * page opened with, brought back beside the person the station depends on, and
- * stopped, which is the whole point of it being here. It was a flat stopped deck
- * before, saying the same thing in a different vocabulary from the hero. Same
- * sentence now, same object, said once at each end of the page.
+ * A photograph and seven lines. The gramophone stood here until now — the
+ * object the page opens with, brought back and stopped — and it was making the
+ * argument that the station is off more than it is on, in the one section where
+ * the argument is not the point. The rest of the page is instruments and
+ * drawings; this is the person they belong to, and he gets a picture of
+ * himself.
  */
 
 .dj {
@@ -3241,24 +3592,25 @@ html {
   align-items: center;
 }
 
-/* Square and given a real height rather than sized by its contents, for the
-   same reason `.hero__stage` is: what goes in it is a canvas, and a box that
-   took its height from one would leave both at zero. `aspect-ratio` rather than
-   a matching height, so the narrow width below carries down on its own. */
-.dj__mark {
-  width: 300px;
-  aspect-ratio: 1;
-}
+/* The portrait. 4:5, which is the shape it was taken in and the same ratio the
+   podcast's posters are held to, so the two photographic things on this page
+   agree with each other.
 
-/* Beside the words rather than behind them, so it is looked at rather than read
-   through at full strength, unlike the hero where the same object is a texture
-   under a headline. */
-.dj__mark .gram[data-shown='true'] .gram__stage {
-  opacity: 1;
-}
-
-.dj__mark .gram__fallback {
-  opacity: 0.55;
+   `object-fit: cover` with the crop held to the top, because a portrait cropped
+   from the centre takes the chin off before it takes anything else. */
+.dj__face {
+  width: 280px;
+  /* Auto, and it is load-bearing: the `height` attribute on the tag is there so
+     the box is reserved before the file arrives, and a specified height means
+     `aspect-ratio` has nothing left to work out — it only ever fills in a
+     dimension that is `auto`. Without this the portrait is drawn at its full
+     1100px. */
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 16px;
+  box-shadow: var(--ring);
 }
 
 /* One thought a line, set as written.
@@ -3319,8 +3671,8 @@ html {
     gap: 36px;
   }
 
-  .dj__mark {
-    width: 220px;
+  .dj__face {
+    width: 200px;
   }
 }
 
@@ -3354,6 +3706,10 @@ html {
  * titles reach and the two read as the same size. The tracking comes down as the
  * size goes up: 0.06em is a label's spacing, and at 26px it would be a gap
  * between every letter. */
+/* The one heading still set as a label, and it stays one: it stands directly
+   over a split-flap board that spells its lines out in capitals, and a title
+   three times the board's size would be a heading with a caption under it
+   rather than a sign over a sign. */
 .limits__title {
   margin: 36px 0 28px;
   color: var(--fg);
@@ -3589,6 +3945,16 @@ html {
   color: var(--faint);
   font-size: 14px;
   line-height: 1.66;
+}
+
+/* The two ways out, side by side, and centred with everything else in this
+   section. Wrapping rather than shrinking on a narrow screen: two pills at
+   half width each are two pills nobody can read the labels of. */
+.call__ways {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 
 /* --- the fanned sleeves ----------------------------------------------------
