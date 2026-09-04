@@ -12,12 +12,13 @@ import type { CSSProperties } from 'react'
  *
  * Three departures:
  *
- *  - **One colour, not twenty-one.** The original gives every path its own hue
- *    from a list that runs through crimson, lime and magenta. On this page that
- *    would be the only colour anywhere except the LIVE dot, which is red for a
- *    reason and would stop meaning anything the moment something else was
- *    brighter than it. These are white, at the opacity of a thing you are meant
- *    to notice without looking at.
+ *  - **Eight colours, cycled, and none of them red.** The original gives every
+ *    path its own hue from a list that runs through crimson, lime and magenta.
+ *    These are eight pale ones taken in turn by index, which is the same set on
+ *    every render and the same one on the server. Red is left out on purpose: the LIVE dot is red for a reason, and it has to stay the
+ *    only red on the page. The palette is pale rather than saturated and the
+ *    whole set is held under `.lines`'s own opacity, so these stay a thing you
+ *    notice without looking at, behind quotations somebody typed.
  *  - **No `motion`, and no `Math.random()`.** The original stakes each path's
  *    delay and repeat gap on a random number drawn during render, which is a
  *    different frame on every render and a different one again under React's
@@ -33,6 +34,27 @@ import type { CSSProperties } from 'react'
  * a section is exactly the kind of continuous ambient movement that setting is
  * for, and there is nothing here that a still frame would still be saying.
  */
+
+/**
+ * The eight, taken in turn by a path's index.
+ *
+ * Light rather than vivid, because these are drawn on near-black behind text:
+ * a saturated stroke at this width reads as a scratch on the screen, and a pale
+ * one reads as light. Eight colours over twenty paths, so each is used two or
+ * three times: consecutive paths never share one, and the two that do are four
+ * seconds apart in an eleven-second loop, which is far enough that a repeat
+ * does not read as one.
+ */
+const SPARKS = [
+  '#7dd3fc',
+  '#c4b5fd',
+  '#f9a8d4',
+  '#fdba74',
+  '#fde68a',
+  '#86efac',
+  '#67e8f9',
+  '#a5b4fc',
+]
 
 /** The original's twenty, all leaving 720,450 — the middle of its 1440x900 frame. */
 const PATHS = [
@@ -84,7 +106,12 @@ export function BackgroundLines({ className = '' }: BackgroundLinesProps) {
           stroke="currentColor"
           strokeWidth={1.4}
           strokeLinecap="round"
-          style={{ '--line-index': index } as CSSProperties}
+          style={
+            {
+              '--line-index': index,
+              '--line-colour': SPARKS[index % SPARKS.length],
+            } as CSSProperties
+          }
         />
       ))}
     </svg>
