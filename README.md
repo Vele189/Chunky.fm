@@ -600,10 +600,10 @@ The one part of this API whose **reads are open on a private station**. See
 | `GET /api/episodes` | open | Published episodes, newest first. |
 | `GET /api/episodes/:slug` | open | One episode. A draft is `404` here, and visible to an admin. |
 | `GET /api/episodes/:slug/transcript` | open | `{transcript}`, whole. `404` when there is none, and for a draft a stranger asked about. |
-| `GET /api/episode-audio/:filename` | open | Audio with `Range` support, `immutable`. |
+| `GET /api/episode-media/:filename` | open | The video, with `Range` support, `immutable`. |
 | `GET /api/episode-poster/:filename` | open | The poster, `immutable`. |
 | `GET /api/admin/episodes` | admin | Everything, drafts included. The console's list. |
-| `POST /api/episodes` | admin | `multipart/form-data`: an `audio` part, a `poster` part, and the fields (`transcript` among them, as text). |
+| `POST /api/episodes` | admin | `multipart/form-data`: the receipts from the chunked video upload, a `poster` part, and the fields (`transcript` among them, as text). |
 | `PATCH /api/episodes/:id` | admin | Partial. Absent means "leave it"; an explicit `null` clears. |
 | `DELETE /api/episodes/:id` | admin | Row first, then both files. |
 
@@ -612,11 +612,11 @@ Upload statuses:
 | Status | When |
 |---|---|
 | `201` | Stored. Body is `{episode}`. |
-| `400` | No audio part, no poster part, an empty file, or no title. |
+| `400` | No video, no poster part, an empty file, or no title. |
 | `401` | Missing or refused admin credentials. |
-| `409` | That audio is already an episode. Body carries the existing `episode`. |
-| `413` | Audio over `MAX_UPLOAD_BYTES`, a poster over 8 MiB, or a transcript over 200,000 characters. |
-| `415` | Not audio, or a poster that is not a JPEG, PNG or WebP. |
+| `409` | That video is already an episode. Body carries the existing `episode`. |
+| `413` | Video over `MAX_EPISODE_BYTES`, a poster over 8 MiB, or a transcript over 200,000 characters. |
+| `415` | Not video, or a poster that is not a JPEG, PNG or WebP. |
 | `422` | The poster is not 1080x1350. The message names the size received. |
 
 ### Voice and the room
@@ -1629,8 +1629,8 @@ assertion the whole file exists for.
 
 ### Drafts, and what a stranger may know
 
-`status` is `draft` or `published`, and draft is the default: an episode is an
-audio file, a poster and five fields typed into a form, and the gap between the
+`status` is `draft` or `published`, and draft is the default: an episode is a
+video file, a poster and five fields typed into a form, and the gap between the
 upload finishing and the description being right is exactly the window in which
 somebody would otherwise find it.
 
@@ -1667,7 +1667,7 @@ Dimensions are read from the file's own header — `lib/poster.ts` parses PNG,
 JPEG and WebP by hand rather than adding `sharp`, which is 30 MB of platform
 binaries in the server image to read twenty bytes. The refusal names the size
 received, and the console checks the same thing in the browser before sending,
-because finding out after eighty megabytes of audio have crossed a phone's
+because finding out after a gigabyte of video has crossed somebody's
 connection that the poster was square is a genuinely bad minute.
 
 The session poster in `routes/schedule.ts` deliberately has **no** such rule: it
@@ -1681,13 +1681,13 @@ about size.
 Every page of the archive is exactly one viewport tall and never scrolls
 itself. On a desk each is two columns; below 900px the same regions stack.
 What scrolls is always a named region *inside* the layout — the card grid, the
-show notes, each of the console's two columns — so the things that orient you
+each of the console's two columns — so the things that orient you
 stay where they were:
 
 | Page | Left | Right | What scrolls |
 |---|---|---|---|
 | `/podcast` | the words, and the footer | the cards | the cards |
-| `/podcast/<slug>` | the artwork, title, transport — and the notes when the other column is taken | the transcript, or the show notes | the right column, under a transport that does not move |
+| `/podcast/<slug>` | the video and its name | the transcript, when there is one | the right column |
 | `/podcast#admin` | the upload form | the archive it changes | each column, on its own |
 
 The episode page's split is the station's own: **the thing on the left, the
@@ -1720,49 +1720,70 @@ each scrolling region actually *reaches* its last card, paragraph and row.
 Fitting the screen by clipping content unreachably would pass the first
 assertion and fail the second.
 
-### Where the audio lives, and how it gets there
+### Where the video lives, and how it gets there
 
-An hour of conversation is a 500 MB to 1 GB master, and neither end of that
-works naively: it will not fit in one request, and no listener should download
-it. Two independent pieces solve those.
+An hour of conversation is a master of several hundred megabytes to a couple of
+gigabytes, and neither end of that works naively: it will not fit in one
+request, and nobody should have to download all of it before the first frame.
+Two independent pieces solve those.
 
 **The upload never touches this server.** The console asks for a chunked
 upload, gets a presigned URL per 8 MiB part, and PUTs each one straight to
 Cloudflare R2. Railway sees the metadata and nothing else. A part that fails is
-retried on its own — dropping at 90% costs the last 8 MiB, not 450 — and
-cancelling aborts the upload so the parts already sent are not left in the
+retried on its own — dropping at 90% costs the last 8 MiB, not the gigabyte —
+and cancelling aborts the upload so the parts already sent are not left in the
 bucket being billed for.
 
 | | Through the server | Direct to R2 |
 |---|---|---|
-| 500 MB crosses Railway | yes | no |
+| A gigabyte crosses Railway | yes | no |
 | Proxy body limit applies | yes | no |
 | Drop at 90% | starts over | resumes at the last part |
 
-**Listeners get a re-encode, not the master.** After the upload answers, a
-background job pulls the master, encodes it to 96 kbps mono AAC with
-`faststart`, and points the episode at that. Measured on a real hour:
+**Nothing is re-encoded, and usually nothing is done at all.** This is where the
+video archive parts company with the audio one it replaced. An hour of WAV went
+to 96 kbps AAC and lost 95% of its size with nothing audible given up, which was
+worth minutes of CPU every time. An hour of video re-encodes over *hours* on the
+one small container that is also running a live radio station, for a saving
+whoever exported the file has usually already taken.
 
-| | Size |
-|---|---|
-| master (1 hr, 24-bit/48k stereo WAV) | 988.8 MB |
-| serving copy (96 kbps mono AAC) | 42.0 MB |
-| what a listener downloads | **95.8% less** |
+So the only thing that is ever done to a master is moving its index. An MP4
+keeps its table of contents in a `moov` box, and a great many tools write it
+*after* the video data — a file like that cannot start until it has been fetched
+to the end, which on an hour of video is a spinner and a gigabyte. `-c copy
+-movflags +faststart` rewrites it with the index at the front: a stream copy, so
+it is seconds rather than hours and not one frame is touched.
 
-The master is **kept**, under `masters/`, and never served. It is the thing that
-cannot be recreated: re-encoding from a lossy copy later, for a different
-bitrate or codec, is a generation of quality nobody gets back.
+**And most files skip even that.** Whether a master needs it is answered by its
+first 64 KB — the box order says where the index is — so a file exported for the
+web is recognised as already streamable and left exactly where it is, with no
+gigabyte pulled back through this server to find out. `lib/video.ts` is that
+check; it is the reason this feature is nearly free.
 
-The encode is an *errand*, not a step. The episode is created pointing at the
+| What arrived | What happens | What is served |
+|---|---|---|
+| MP4 with `moov` first | nothing | the master |
+| WebM / Matroska | nothing | the master |
+| MP4 or MOV with `moov` last | a stream copy, index moved | the rewrite |
+| Something ffmpeg refuses | it is logged | the master, starting slowly |
+
+The master is **kept**, under `masters/`. On the episodes that were rewritten
+that means the archive holds two copies of the same streams, which is a real
+cost and a deliberate one: a stream copy is lossless, so the master is not
+protecting quality here — it is protecting against the rewrite having quietly
+dropped something nobody thought to check for. `lib/publish.ts` names the one
+place to change if that stops being worth it.
+
+The rewrite is an *errand*, not a step. The episode is created pointing at the
 master, so it is playable the instant the upload answers, and every later state
 is an improvement on that or a note explaining why there wasn't one:
 
 | `transcode_status` | What it means | Plays? |
 |---|---|---|
-| `pending` | the master is the serving copy; the encode is queued | yes, large |
-| `ready` | the small copy is the serving copy | yes |
-| `failed` | ffmpeg refused this file; the master is served | yes, large |
-| `none` | this station has no ffmpeg | yes, large |
+| `pending` | nobody has looked at the file yet | yes, maybe starting slowly |
+| `ready` | what is served starts and seeks immediately | yes |
+| `failed` | ffmpeg refused this file; the master is served | yes, starting slowly |
+| `none` | this station has no ffmpeg | yes, starting slowly |
 
 There is deliberately no state in which an episode exists and cannot be played.
 
@@ -1790,55 +1811,66 @@ Two details that are easy to get wrong:
 
 ### The player
 
-Apple Music's transport, with the departures a podcast needs: the outer buttons
-are **skips** (15 back, 30 forward) rather than track changes, because there is
-nowhere to go and the reasons are "I missed that" and "get past this bit"; and
-the remaining time counts down negative, which is the question somebody deciding
-whether to start an hour actually has. How far each skip goes is in its label
-and its tooltip rather than drawn inside the arrow — at 26px a two-digit number
-inside a circle is a smudge, and the arrows already say which way they point.
+**The page is the video**, and the bar over it is YouTube's, drawn in this
+page's own units. `Controls.tsx` is that bar; the note at the top of it says
+which parts are decisions rather than looks.
 
-Three things are deliberately absent, and the first two were built and then
-removed. A **speed control**: it is a preference, and this is a page for
-listening to one conversation rather than a client for getting through a
-backlog. A **volume slider**: every device this runs on already has one that
-works, and on iOS `audio.volume` is read-only, so the slider was inert on
-exactly the devices where it cost the most room. A **queue**, for a different
-reason — an archive is browsed rather than played through, and autoplaying the
-next episode of a conversation because somebody let one finish is presumptuous.
+The browser's own controls were here in between, and they are the reason this
+exists: `<video controls>` is three different bars on three different engines,
+at three different heights, with three different ideas of where the clock goes —
+and on a page this deliberate about its surfaces, the one element carrying the
+actual content looked borrowed from somewhere else. Modelling it on YouTube's is
+not an aesthetic preference either. It is the transport every viewer has already
+learned, down to the keys.
 
-The three glyphs are [Phosphor](https://phosphoricons.com), fill weight,
-vendored inline from `phosphor-icons/core` (`assets/fill/`) with upstream's
-paths untouched. The rest of the project uses Phosphor too, but through
-`client/src/assets/icons/` as Figma exports loaded with `<img src=…>`, and that
-could not work here: those files carry a hardcoded `#171717` or `white`, because
-an `<img>` has no access to the colour of the thing it sits in. These sit inside
-buttons that change colour on hover and invert entirely on the play button, so
-they are inline SVG keeping upstream's `fill="currentColor"`.
+| | What it does |
+|---|---|
+| Scrubber | 3px at rest, 5px with a red knob under the pointer, which is the only reason 3px is allowed to be the resting state. Red played, light grey buffered, dark grey to come, and the time under the pointer above it. |
+| Left cluster | Play, volume (a button that expands sideways into a slider on hover), and `elapsed / total` in tabular figures. |
+| Right cluster | Playback speed, and fullscreen. The middle is empty because the middle is the picture. |
+| Auto-hide | Three seconds after the last movement, while playing. Any movement brings it back; a paused video keeps it. |
+| Keys | Space and `k` play, `j`/`l` and the arrows seek, `m` mutes, `f` is fullscreen, `0`–`9` jump to a tenth. |
 
-One thing to know if the skip icons are ever revisited: `skip-back` and
-`skip-forward` are the *track* skip glyph, and these buttons do not change
-track. Nothing is reachable by pressing one that the icon misrepresents — there
-is no next episode from here — and the label and tooltip both carry the
-duration. `arrow-counter-clockwise` is what a seconds-jump usually wears.
+The red is YouTube's `#f00` rather than this project's `--live`, and that is the
+one place a second red is allowed: `--live` means *the station is on the air
+right now*, and a scrubber wearing it inside an archive — the one part of this
+station that is never live — would be the page's strongest signal pointing at
+the wrong thing.
 
-The play glyph gets **no optical nudge**, which is the opposite of the usual
-advice: a triangle centred on its bounding box reads left of centre in a circle,
-so it is normally pushed a few pixels right. Phosphor's `play-fill` already
-carries that offset — the path spans 64..240 on a 256 grid — and adding the
-customary correction on top pushes it visibly past the middle.
+Four things are deliberately not YouTube's: no next video, no autoplay toggle,
+no miniplayer, and no quality menu, because an episode is one file — see
+`lib/publish.ts`, which does not make renditions and says why. There is no
+captions button either; the transcript beside it is the captions, and it is
+better.
 
-The transport sits in the left column under the poster, and it is the one thing
-on the page that never scrolls at either width: the right column moves, and the
-buttons stay where they were put.
+**Fullscreen is taken on the frame, not the element.** A `<video>` put
+fullscreen takes only itself and draws the *browser's* controls over it, which
+would swap this bar for a different one at the moment somebody most wants the
+one they were using. The one exception is the iPhone, where element fullscreen
+does not exist at all and Safari will only hand over to the system player —
+which is what every site including YouTube ends up doing there.
 
-Position is remembered per episode in `localStorage`, restored on
-`loadedmetadata` (seeking an element that does not yet know its duration is
-ignored or clamped depending on the browser), and cleared within fifteen seconds
-of the end — somebody who reached the outro has heard it, and restoring them to
-59:57 is a bug with good intentions. It is kept in the browser rather than on
-the server because the archive is public: a server-side position would mean the
-station knowing what strangers listen to, which it has no reason to want.
+**`playsInline` is the attribute doing the quiet work.** Without it, iOS takes
+any play into that same fullscreen player, turning the phone landscape and
+throwing away the page around it. With it, a phone plays the video where it
+sits, and fullscreen stays something a viewer chooses rather than something that
+happens to them the moment they press play. On a touch screen the volume control
+is dropped entirely — the device has one, and a slider that appears on hover
+never appears at all — and everything else grows to a 44px target.
+
+`crossOrigin` is gone, along with the Web Audio graph that needed it. Nothing on
+this page reads the video's pixels or its samples back, so the browser never
+asks the bucket's permission to fetch it; the CORS policy is for uploads only.
+
+The position is tracked twice over, and both readers earn it: the transcript
+follows the playhead, and `localStorage` remembers where somebody got to —
+restored on `loadedmetadata` (seeking an element that does not yet know its
+duration is ignored or clamped depending on the browser) and cleared within
+fifteen seconds of the end, since somebody who reached the outro has watched it
+and restoring them to 59:57 is a bug with good intentions. It is kept in the
+browser rather than on the server because the archive is public: a server-side
+position would mean the station knowing what strangers watch, which it has no
+reason to want.
 
 ### The transcript
 
@@ -1867,13 +1899,11 @@ paragraph is forty, long enough to read ahead and be dragged back by a pane that
 thinks it knows best. A wheel, a finger or an arrow key hands the sheet over,
 and a button appears to hand it back.
 
-**On a phone the sheet is behind a button.** Stacked, an hour of talk, a 4:5
-poster and a transport cannot share a screen, and a transcript that begins below
-the fold is one nobody finds. So *Read the transcript* takes the room from where
-the room is: the poster becomes a 64px thumbnail with the title beside it, the
-show notes step out of the way, and the words get everything that is left. The
-transport does not shrink — a transcript is read *while listening*, so the play
-button is the last thing that may give. It is the station's answer at this width
+**On a phone the sheet is behind a button.** Stacked, an hour of talk and a
+16:9 frame cannot share a screen, and a transcript that begins below the fold is
+one nobody finds. So *Read the transcript* takes the room from where the room
+is: the video becomes a strip with the title beside it, and the words get
+everything that is left. It is the station's answer at this width
 arrived at from the other end: there the lyric sheet falls under the deck and is
 capped so it stays a panel you read from rather than a second page. Closed, the
 transcript is not merely hidden but unmounted, so a reader who never opens it
@@ -1914,33 +1944,719 @@ is stored as uploaded, byte for byte: the parse is what decides how it is drawn,
 and a server that pre-chewed it into cues would have to be redeployed to change
 a rendering decision.
 
-### The blob
+### The console
 
-The shape behind the artwork is driven by **the actual audio**, not a keyframe
-loop. An `AnalyserNode` is tapped off the playing element and every frame writes
-three custom properties — `--level`, `--deform`, `--wobble` — from three bands
-of the spectrum. A single amplitude would only ever make it bigger and smaller,
-which reads as a volume meter; splitting it lets the *shape* change, so a vowel
-and a consonant look different, which is the whole illusion.
+```mermaid
+flowchart LR
+    MIC["console microphone"] --> AN["analyser (the meter)"]
+    MIC --> MON["monitor to your headphones"]
+    MIC --> TI["talkIn"]
+    TI --> ROOM["room bus"]
+    TI --> SBG["seat bus: guest"]
+    TI --> SBC["seat bus: co-host"]
 
-A CSS-only version was the alternative and it looks wrong within about four
-seconds of watching it, because it is plainly not listening: it keeps pulsing
-through silences and sits still through a laugh.
+    G["guest voice"] --> CUEG["cue to your headphones"]
+    G --> AIRG["air to room bus"]
+    G --> SBC
 
-The hazard to know about before touching `Blob.tsx`:
-`createMediaElementSource` **permanently reroutes an element's audio through the
-graph**. From that moment it reaches the speakers only via
-`context.destination`, and a suspended context is not quiet audio, it is
-silence. So the graph is built lazily on the first play — which is a click, and
-therefore a gesture that can resume a context — never on mount. A browser that
-refuses the graph gets audio playing normally and a blob that breathes on a slow
-default; the sound is never sacrificed for the decoration. This is the same
-trap, in a much smaller room, that `lib/audio-graph.ts` documents at length.
+    C["co-host voice"] --> CUEC["cue to your headphones"]
+    C --> AIRC["air to room bus"]
+    C --> SBG
 
-Under `prefers-reduced-motion` the blob stops entirely rather than slowing: it
-is large, organic and continuous, which is precisely what that setting is for.
-The card lift and brightness stay, because they say "this is the one you are
-pointing at", which is information rather than decoration.
+    ROOM --> LIS["every listener"]
+    SBG --> GST["the guest"]
+    SBC --> CHT["the co-host"]
+```
+
+The most important thing about this graph is a line that is **not** in it: there
+is no path from a voice to its own seat bus. That absence is mix-minus, and it
+is what makes a call possible. Send somebody the room bus and they hear
+themselves about six hundred milliseconds later, which is not cosmetic: delayed
+auditory feedback at that interval is used deliberately to disrupt fluency, and
+the person it happens to will stop mid-sentence and assume the station is broken.
+
+A bus **per voice** rather than one shared minus-bus, because with a co-host
+there can be two people up, and one shared bus would mean the co-host and the
+caller each hear the decks and neither hears the other.
+
+The sound check is a deliberate milestone rather than a nicety: "the browser
+will not give me the microphone" and "the connection will not establish" are
+separate problems, and the first can be answered on one machine before any
+peer-connection code exists to be blamed. Three controls, each doing more than
+it looks like:
+
+| Control | What it really is |
+|---|---|
+| Input | `enumerateDevices` filtered to `audioinput`, rebuilt on `devicechange`. Labels are empty until permission has been granted once. |
+| "I'm on speakers" | An echo-cancellation switch in plain English. Cancellation is tuned for speech and treats anything sustained and musical as echo, so it comes **off** on headphones and the voice is noticeably better. |
+| "Hear myself" | *Refused* on speakers rather than warned about. A monitor feeding the speaker its own microphone is a loop with nothing between its ends. |
+
+The meter is fast up and slow down (speech is mostly gaps), scaled in dBFS over
+a 60 dB window so a healthy speaking level sits in the middle of the bar, with
+the clip lamp read off raw samples rather than the average because clipping is a
+peak event an RMS never shows. Nothing in that loop touches React: the bar's
+`transform` is written straight to the node from the animation frame.
+
+---
+
+## Voice: mic, call-in and co-host
+
+### Ducking without audio
+
+The mic route carries no sound and never will. The station broadcasts "the mic
+is open, the music should sit this far down", and thirty browsers turn down the
+copy they are each already playing, on the clock they already share.
+
+That makes the ducking better than a mixed stream's rather than a compromise: it
+lands everywhere at the same instant, it costs the server nothing, and it works
+for a listener whose voice connection has failed or does not exist yet. It also
+means the whole experience of a mic break is testable without a microphone.
+
+`duckTo` is a linear gain clamped to `[0.05, 1]`, defaulting to `0.2` (about
+-14 dB). The floor is deliberately not silence: a duck to nothing is a pause,
+and a listener who cannot hear the bed has no way to tell a mic break from the
+station having died.
+
+`renew` is deliberately not `open`. Without the lease, a tab that died
+mid-sentence would leave every listener sitting through a permanently quiet
+song. Without the *separate verb*, a keep-alive still in flight when the key
+came up would reopen the mic behind whoever had just stopped talking.
+
+### Signalling
+
+The voice is WebRTC, peer to peer, and it does not touch the server. One
+`RTCPeerConnection` per listener, Opus mono capped at 32 kbps, so a room of
+thirty is about a megabit off the console's uplink and nothing at all off the
+station's.
+
+```mermaid
+sequenceDiagram
+    participant D as Console, the decks
+    participant S as Station, relay only
+    participant L as Listener
+
+    L->>S: GET /api/rtc
+    S-->>L: {iceServers}
+    Note over S: TURN credentials are minted once and shared,<br/>so a room arriving together is one call to Cloudflare
+    S-->>D: presence {listeners}
+    D->>S: signal {to: L, payload: offer}
+    S->>S: is the sender the decks? stamp the from field
+    S-->>L: signal {from: D, payload: offer}
+    L->>S: signal {to: D, payload: answer}
+    S-->>D: signal {from: L, payload: answer}
+    loop ICE candidates
+        D->>S: signal {to: L, payload: ice}
+        S-->>L: signal {from: D, payload: ice}
+        L->>S: signal {to: D, payload: ice}
+        S-->>D: signal {from: L, payload: ice}
+    end
+    Note over D,L: media flows directly, or through TURN.<br/>The station carries none of it.
+```
+
+The server owns the address book and nothing else. `payload` is opaque: a
+station that validated SDP would be a station with an opinion about WebRTC
+versions it has no way to keep current. What it *does* decide:
+
+- The decks may address any socket. That is what fanning a voice out is.
+- A listener may address the decks and nobody else. Two listeners have no
+  business negotiating, and a socket that could reach any other by id would be a
+  way to make the station introduce strangers.
+- **`from` is stamped by the server, never carried by the sender.** Without it a
+  listener could pose as the decks and offer somebody a microphone.
+- A listener may not `offer`. The decks always offer, including for a guest's
+  microphone, which travels on a connection the decks offered `recvonly` and the
+  guest answered. That keeps the negotiation the simplest one WebRTC allows,
+  since two peers can only collide if both of them can start.
+
+Two operational facts worth stating plainly:
+
+- **`YouMessage.decks` exists because of a bug that reached a deployed station.**
+  A socket presents its credentials once, on the upgrade, and the console opens
+  its socket when the page loads, which is before anybody has typed a password.
+  Signing in afterwards leaves a connection the station does not recognise as
+  the decks, on a page where everything else works perfectly, because every
+  command goes over HTTP and HTTP does carry the cookie. The only thing that
+  breaks is offering a listener a voice, and it breaks in silence: the room ducks
+  obediently for a voice nobody can hear. So the station says which it thinks you
+  are, and the console opens a fresh socket once per change of mind, in both
+  directions.
+- **The listener who needs a relay is usually the one on a phone.** A desktop
+  browser on the same network as the console connects with STUN alone. A phone on
+  cellular sits behind carrier-grade NAT, where the address STUN reports differs
+  per destination, so there is no direct path to find. Give `TURN_URL` every
+  address your provider hands you: UDP is the fast path, TCP survives a network
+  that drops UDP, and `turns:` on 443 gets through a firewall that only believes
+  in HTTPS, and strict networks are exactly where a relay was needed.
+
+Failed connections are rebuilt twice and then given up on. Not an ICE restart:
+there is no transport state worth preserving, and a listener answering a fresh
+offer is a path the code already takes every time somebody joins. Two attempts
+distinguishes a network that changed under a laptop from a NAT that nothing will
+cross without a relay. The console lists every listener worst first
+(`lib/reach.ts`), because a failed connection is otherwise invisible: from the
+decks' side it looks exactly like a room that is listening.
+
+### The floor: a listener brought up
+
+```mermaid
+stateDiagram-v2
+    [*] --> Listening
+    Listening --> HandUp: hand raise
+    HandUp --> Listening: hand lower
+    HandUp --> Invited: POST /api/floor invite, admin
+    Invited --> Listening: 60s lease expires
+    Invited --> Listening: hand lower, declined
+    Invited --> Speaking: hand accept
+    Speaking --> Listening: hand lower
+    Speaking --> Listening: POST /api/floor drop, admin
+    Speaking --> Listening: the mic closes
+    Speaking --> Listening: the socket closes
+```
+
+`hand {lower}` does three jobs (withdraw, decline, come down) because they are
+one intent, and which of the three it is depends only on state the station
+already holds. Three verbs would be three chances for a client to pick the
+wrong one, and the worst of those is a guest pressing "leave" and staying on air.
+
+`hands` is the one frame the station volunteers to a subset of its sockets, for
+the wish book's reason: a raised hand is a request addressed to whoever runs the
+decks, not an announcement to the room. Put it in front of everybody and it
+becomes a queue the room can see, which is a social cost paid by the shyest
+person in it. `floor.invited`, by contrast, *is* broadcast: a room that can see
+somebody being brought up reads the pause before a voice for what it is.
+
+The mic follows the floor asymmetrically, and both halves are deliberate.
+Somebody coming up **opens** the mic, because the room has to be ducked before
+their first word. Standing a guest down does **not** shut it, because you will
+nearly always say something after them, and un-ducking between their last word
+and your first is a swell of music in the middle of a sentence. The mic closing
+*does* take the floor with it, and that half is not optional: a shut mic is an
+un-ducked room, and the commonest way this happens is a lapsed lease after a
+console died.
+
+`lib/sound-check.ts` is a gate rather than advice, and it is the one thing
+standing between a raised hand and a live microphone: a laptop playing the
+station out loud with an open microphone in front of it sends the room a smeared
+copy of the record it is already playing, and then a howl.
+
+### The co-host: a second person at the decks
+
+A co-host can **talk**, **decide what plays next** and **move the current record
+along**. They cannot end the session, upload anything, mute anybody, empty the
+queue, put a different record on, seek inside one, or set how far the music
+ducks. Not because the page declines to draw those buttons: the station refuses
+them to that credential.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Stranger
+    Stranger --> HoldsKey: POST /api/cohost/session with the key
+    note right of HoldsKey
+        The cookie says this browser MAY co-host.
+        Opening the page in a taxi should not
+        put anybody in front of the room.
+    end note
+    HoldsKey --> Seated: POST /api/cohost/seat, action take, naming a socket
+    Seated --> Seated: action renew, every few seconds
+    Seated --> HoldsKey: action leave
+    Seated --> HoldsKey: 30s lease lapses
+    Seated --> HoldsKey: the socket closes
+    Seated --> HoldsKey: the session ends
+    HoldsKey --> Stranger: DELETE /api/cohost/session
+```
+
+The `socket` field is the crux. The cookie says *may this browser co-host*; the
+id says *which connection is it*, which a cookie cannot carry and which the
+console needs in order to offer a microphone. The station checks both and
+refuses an id that never presented a co-host key on its own upgrade, or anybody
+holding a seat could put an arbitrary listener on the air by guessing an id and
+the room would hear whoever was really on that socket.
+
+`DELETE /api/cohost/session` deliberately does not stand anybody down: it
+carries a cookie and no connection, so it cannot tell whether the browser
+sending it is the one currently on air, and a stale tab signing itself out would
+otherwise take a co-host off the air mid-sentence from another device.
+
+A guest and a co-host look alike from outside (both are a second voice arriving
+over WebRTC) and are opposite in every rule that matters:
+
+| | Guest (`Floor`) | Co-host (`CoHost`) |
+|---|---|---|
+| How they get up | Raises a hand, is invited | Arrives holding a key, seats themselves |
+| Who decides | The decks | They do |
+| Mic closing | Stands them down | Changes nothing |
+| Lasts | A segment | The evening |
+
+The last row forces them apart. A co-host works push-to-talk, so the mic closes
+at the end of every sentence; a seat wired to the floor would throw them out of
+it every time they stopped talking.
+
+The co-host surface is its own document and its own bundle for a reason that is
+about the device rather than tidiness: the station's bundle carries a globe, a
+gramophone and three.js, and the console carries the whole desk. Neither is what
+you want to hand somebody on a phone in a kitchen who has to press one button in
+the next four seconds, on a mobile connection, over an evening, on a battery.
+
+---
+
+## Session lifecycle
+
+A session is a stretch of time the station is on air, opened and closed by
+whoever runs the decks. It used to be a run of the process, which meant a deploy
+silently ended the evening and a restart silently began a new one. The station
+now comes up **off air**.
+
+```mermaid
+stateDiagram-v2
+    [*] --> OffAir: process starts
+    OffAir --> Live: POST /api/session, action start, with a kind
+    Live --> OffAir: POST /api/session, action end
+    Live --> OffAir: process shuts down (session closed quietly)
+
+    state Live {
+        [*] --> Set
+        [*] --> Talk
+        note right of Set
+            kind is chosen when the station goes on
+            and cannot be changed afterwards: changing
+            it halfway would rewrite what the room was
+            told when they walked in.
+        end note
+    }
+```
+
+Going live clears **nothing**: queueing a set up and then opening the doors is
+the ordinary way to start an evening. Ending a session clears a great deal, and
+the dividing line throughout is *is this a claim about tonight, or a setting
+belonging to whoever runs the decks*:
+
+| Ends with the session | Survives it |
+|---|---|
+| The decks stop, the queue is emptied | The duck depth (`duckTo`) |
+| Mutes, padding | The transition length (`blendMs`) |
+| The mic, the floor (hands included), the seat | The announced next session |
+| Chat, wishes and play history are forgotten | Every credential, which lives in config |
+| **The entire library**: every track row, file, artwork and lyrics row | Uploads made *after* ending, which land in an already-empty library |
+
+A mute set in October reappearing next Saturday is a bug; your own duck depth is
+a setting. The library wipe is the strongest form of the same principle: the
+station is an evening, not an archive, so the disk holds tonight and never
+everything. It is fire-and-forget with errors logged, because an air change must
+never be able to fail on housekeeping.
+
+While off air, `say`, `wish` and `hand` are refused with `off_air`, opening the
+mic is refused, and taking the co-host seat is refused. Moving the duck fader is
+not, because setting up before the doors open is ordinary and a depth is not a
+claim about a broadcast.
+
+`GET /api/session` is deliberately open. Whether there is a station tonight is
+the first thing a listener's page needs, it is not a secret, and it arrives
+unasked on the socket anyway. What is behind the gate is changing it.
+
+---
+
+## Uploads, library and lyrics
+
+```mermaid
+flowchart TB
+    Up["POST /api/upload<br/>multipart, admin"] --> Tmp["stream to tmp/"]
+    Tmp --> Parse["music-metadata parses the container"]
+    Parse -- "not audio, or unsupported" --> R415["415, discard"]
+    Parse -- "over MAX_UPLOAD_BYTES" --> R413["413, discard"]
+    Parse --> Hash["SHA-256 of the content"]
+    Hash --> Dup{"already in tracks?"}
+    Dup -- yes --> R409["409 with the existing track"]
+    Dup -- no --> Move["move into audio/ named by hash<br/>write artwork/ named by hash"]
+    Move --> Row["INSERT INTO tracks"]
+    Row --> R201["201 {track}"]
+    Row -.-> Errand["background: LyricsService asks LRCLIB"]
+    Errand -.-> LRow["INSERT INTO lyrics"]
+```
+
+The declared `Content-Type` is a hint, never the gate: the file is only moved
+out of `tmp/` once `music-metadata` confirms it is a container the station can
+serve. Storing under the content hash makes re-uploading the same track a no-op
+rather than a second copy.
+
+Lyrics are looked up once per track, at upload time, and written down, so the
+station asks the archive one time rather than once per listener.
+`GET /api/lyrics/:trackId` is **read-through**: the upload's errand usually got
+there first, but a track that went on air seconds after landing (or one whose
+errand lost the network) sends the first listener who asks back to the archive
+rather than going without. The service memoises hard enough that a full room
+asking at once still costs one outbound request. A track nobody could find keeps
+no row, so a restart is allowed to ask again.
+
+On the client, the bright line lands on the ear's line with no machinery of its
+own: `lib/lyrics.ts` reads `expectedPositionSeconds` off the server clock, which
+is the same "now" everything else already agrees on.
+
+---
+
+## The podcast archive
+
+Everything else in this project is about tonight. A session ends and takes its
+tracklist, its chat and its wish book with it, and the library is emptied down
+to the last file — the station is an evening, not a back catalogue. The archive
+is the deliberate exception, and every structural decision about it follows from
+being the one thing here meant to still be true in a year.
+
+It lives at `/podcast`, a fifth document with its own bundle:
+
+| | The station | The archive |
+|---|---|---|
+| Address | `/listen`, views on the fragment | `/podcast/<slug>`, real paths |
+| Who may read | behind the door on a private station | anyone, always |
+| Lifetime | deleted when the session ends | kept |
+| Clock | everyone inside the same second | yours; scrub it, nobody else is there |
+| Bundle | globe, gramophone, three.js | 25 kB, none of that |
+
+**Why a separate document.** The same reason the co-host's page is one: what the
+bundle has to carry. This is the page strangers arrive at cold, from a link in a
+message, usually on a phone, and the station's bundle carries a globe and a
+gramophone that have nothing to do with reading show notes and pressing play.
+
+**Why paths rather than fragments.** The station is one document deciding what
+to show from `location.hash`, which is right for an application behind a door
+whose views nobody shares. An episode is the opposite: it is public, it is meant
+to be pasted into a message, and it is the one address in this project a crawler
+should read. A fragment never reaches the server, so `/listen#podcast/12` could
+never have a title of its own or appear in a sitemap. The cost is that
+client-side routing now owns the back button, which `Podcast.tsx` handles with
+`popstate` and a `pushState` on every navigation.
+
+**Why its own table.** `episodes` shares nothing with `tracks`. The columns
+could have been made to agree; what could not is the lifetime. Filing an episode
+under `tracks` would mean an archive that deleted itself the first time somebody
+pressed "end broadcast" — see the `air.on('change')` handler in `app.ts`, which
+calls `emptyLibrary`. There is a test named for exactly this
+(`test/podcast.test.ts`, "the archive outlives the evening"), and it is the
+assertion the whole file exists for.
+
+### Drafts, and what a stranger may know
+
+`status` is `draft` or `published`, and draft is the default: an episode is a
+video file, a poster and five fields typed into a form, and the gap between the
+upload finishing and the description being right is exactly the window in which
+somebody would otherwise find it.
+
+A draft is invisible to the open reads at every level. It is missing from
+`GET /api/episodes`, and its own address answers **404 rather than 403** — a 403
+on a slug confirms the slug is real, and whether an unpublished episode exists is
+not a stranger's business. An admin asking directly gets it, so "View" in the
+console lands on the real page rather than a 404 for something visible in the
+list beside the button.
+
+### Addresses
+
+A slug is derived from the title, folded to ASCII (`Sé` becomes `se`) because a
+slug is read off a screen and typed into a phone, and percent-escapes in a
+shared link are how an address stops being something anybody can repeat out
+loud. Collisions count up — `leaving-johannesburg-2` — rather than taking a
+random suffix, because these are read by people.
+
+The slug **follows the title only while the episode is a draft**. Once it is
+published it is frozen: a published episode has been sent to people, and
+re-slugging it to fix a typo would break every link already in a message thread,
+which is worse than an address that reads slightly wrong. Correcting a title
+before publishing corrects the address too, which is the moment anybody actually
+wants that.
+
+### The poster is exactly 1080x1350
+
+The one place this station is strict about an image, and the reason is the grid:
+the cards are a fixed 4:5, and a poster that is not that ratio is either
+letterboxed or cropped with no say from whoever chose the framing. Both look
+like a bug on the page whose whole job is showing artwork.
+
+Dimensions are read from the file's own header — `lib/poster.ts` parses PNG,
+JPEG and WebP by hand rather than adding `sharp`, which is 30 MB of platform
+binaries in the server image to read twenty bytes. The refusal names the size
+received, and the console checks the same thing in the browser before sending,
+because finding out after a gigabyte of video has crossed somebody's
+connection that the poster was square is a genuinely bad minute.
+
+The session poster in `routes/schedule.ts` deliberately has **no** such rule: it
+is whatever somebody made in a hurry an hour before the doors open, and refusing
+it then would be the tool getting in the way of the night. The two share
+`lib/poster.ts` for format sniffing and the byte ceiling, and disagree only
+about size.
+
+### One viewport, two columns
+
+Every page of the archive is exactly one viewport tall and never scrolls
+itself. On a desk each is two columns; below 900px the same regions stack.
+What scrolls is always a named region *inside* the layout — the card grid, the
+each of the console's two columns — so the things that orient you
+stay where they were:
+
+| Page | Left | Right | What scrolls |
+|---|---|---|---|
+| `/podcast` | the words, and the footer | the cards | the cards |
+| `/podcast/<slug>` | the video and its name | the transcript, when there is one | the right column |
+| `/podcast#admin` | the upload form | the archive it changes | each column, on its own |
+
+The episode page's split is the station's own: **the thing on the left, the
+words on the right**, the same shape `.station__columns` gives the deck and the
+lyric sheet beside it. Which is why everything you press is in the left column
+with the poster rather than above the reading pane — what is being played and
+what is being said are two different things to look at, and neither belongs
+underneath the other. `data-beside` on the article says what the right column
+is (`transcript`, `notes`, or `none`, which collapses the page to one centred
+column), and the CSS lays the page out from that.
+
+Two details carry this, and both are easy to lose:
+
+- **`100dvh`, not `100vh`.** `vh` is the *largest* the viewport ever gets — it
+  does not shrink while a phone's address bar is showing — so a `100vh` layout
+  on iOS puts its bottom edge under the browser chrome, which on this page is
+  the play button. `100vh` is still declared first, as the fallback for
+  anything that has not heard of `dvh`, where being slightly too tall is the
+  better failure.
+- **`min-height: 0` on every pane.** A grid or flex child defaults to
+  `min-height: auto`, meaning "as tall as my content" — so a scrolling region
+  inside one makes the *parent* grow instead of scrolling, and the page quietly
+  becomes taller than the viewport again. This is the single declaration that
+  the whole arrangement rests on.
+
+The layout is pinned by a browser check rather than by eye: every view at six
+viewport sizes, asserting the document does not scroll in either axis, that the
+play button is inside the viewport, and — the half that matters more — that
+each scrolling region actually *reaches* its last card, paragraph and row.
+Fitting the screen by clipping content unreachably would pass the first
+assertion and fail the second.
+
+### Where the video lives, and how it gets there
+
+An hour of conversation is a master of several hundred megabytes to a couple of
+gigabytes, and neither end of that works naively: it will not fit in one
+request, and nobody should have to download all of it before the first frame.
+Two independent pieces solve those.
+
+**The upload never touches this server.** The console asks for a chunked
+upload, gets a presigned URL per 8 MiB part, and PUTs each one straight to
+Cloudflare R2. Railway sees the metadata and nothing else. A part that fails is
+retried on its own — dropping at 90% costs the last 8 MiB, not the gigabyte —
+and cancelling aborts the upload so the parts already sent are not left in the
+bucket being billed for.
+
+| | Through the server | Direct to R2 |
+|---|---|---|
+| A gigabyte crosses Railway | yes | no |
+| Proxy body limit applies | yes | no |
+| Drop at 90% | starts over | resumes at the last part |
+
+**Nothing is re-encoded, and usually nothing is done at all.** This is where the
+video archive parts company with the audio one it replaced. An hour of WAV went
+to 96 kbps AAC and lost 95% of its size with nothing audible given up, which was
+worth minutes of CPU every time. An hour of video re-encodes over *hours* on the
+one small container that is also running a live radio station, for a saving
+whoever exported the file has usually already taken.
+
+So the only thing that is ever done to a master is moving its index. An MP4
+keeps its table of contents in a `moov` box, and a great many tools write it
+*after* the video data — a file like that cannot start until it has been fetched
+to the end, which on an hour of video is a spinner and a gigabyte. `-c copy
+-movflags +faststart` rewrites it with the index at the front: a stream copy, so
+it is seconds rather than hours and not one frame is touched.
+
+**And most files skip even that.** Whether a master needs it is answered by its
+first 64 KB — the box order says where the index is — so a file exported for the
+web is recognised as already streamable and left exactly where it is, with no
+gigabyte pulled back through this server to find out. `lib/video.ts` is that
+check; it is the reason this feature is nearly free.
+
+| What arrived | What happens | What is served |
+|---|---|---|
+| MP4 with `moov` first | nothing | the master |
+| WebM / Matroska | nothing | the master |
+| MP4 or MOV with `moov` last | a stream copy, index moved | the rewrite |
+| Something ffmpeg refuses | it is logged | the master, starting slowly |
+
+The master is **kept**, under `masters/`. On the episodes that were rewritten
+that means the archive holds two copies of the same streams, which is a real
+cost and a deliberate one: a stream copy is lossless, so the master is not
+protecting quality here — it is protecting against the rewrite having quietly
+dropped something nobody thought to check for. `lib/publish.ts` names the one
+place to change if that stops being worth it.
+
+The rewrite is an *errand*, not a step. The episode is created pointing at the
+master, so it is playable the instant the upload answers, and every later state
+is an improvement on that or a note explaining why there wasn't one:
+
+| `transcode_status` | What it means | Plays? |
+|---|---|---|
+| `pending` | nobody has looked at the file yet | yes, maybe starting slowly |
+| `ready` | what is served starts and seeks immediately | yes |
+| `failed` | ffmpeg refused this file; the master is served | yes, starting slowly |
+| `none` | this station has no ffmpeg | yes, starting slowly |
+
+There is deliberately no state in which an episode exists and cannot be played.
+
+**Neither piece requires R2.** With the five `R2_*` variables unset the archive
+lives on the storage volume and *the same chunked protocol* runs against this
+server instead — `lib/store.ts` implements begin/sign/put/complete/abort against
+a directory. That is not a degraded mode; it is what `docker compose` and
+`npm run dev` do, and it means the upload path exercised in development is the
+one production runs. The only thing the console does differently is which URL it
+PUTs a part to, and it is handed that URL either way.
+
+Two details that are easy to get wrong:
+
+- **The bucket needs `ExposeHeaders: ["ETag"]` in its CORS policy.** Without it
+  every part uploads successfully and the browser cannot read the receipt, which
+  presents as an upload that reaches 100% and then fails. The upload says so by
+  name when it happens.
+- **The content hash is computed in the browser**, because the server never sees
+  the bytes. `crypto.subtle` is one-shot and cannot hash a gigabyte without
+  holding it in memory, so `lib/episodes.ts` carries a small incremental
+  SHA-256 — checked against the platform's own implementation at every block and
+  padding boundary, and for independence from the slice size, since a hash that
+  depended on `PART_SIZE` would silently break dedupe the day that constant
+  changed.
+
+### The player
+
+**The page is the video.** There are no controls of ours on it, and that is the
+whole of the design: `<video controls>` hands the transport to the browser —
+play, scrub, volume, speed and fullscreen, drawn by the platform, known by
+everyone, working on devices this project will never see.
+
+What was there before was a considerable amount of code: Apple Music's transport
+with a podcast's departures — skips of 15 back and 30 forward rather than track
+changes, a countdown showing what was left, three inline Phosphor glyphs, a
+keyboard map over the document, and a `scrubbing` flag so the position readout
+held still while a finger was on the slider. All of it was right for an archive
+of audio, where a page with no controls is a page with nothing on it. A video
+does not need a page built around it, so the transport, the show notes and the
+keyboard shortcuts all went with the audio.
+
+Two attributes on the element carry more weight than they look like they do:
+
+- **`playsInline`.** Without it, iOS takes any play into its own fullscreen
+  player, turning the phone landscape and throwing away the page around it. With
+  it, a phone plays the video where it sits, and fullscreen stays something a
+  viewer chooses from the browser's controls rather than something that happens
+  to them the moment they press play.
+- **`poster`** is the same artwork the grid draws, standing in until the first
+  frame decodes — so the page looks like the card that was clicked to reach it,
+  which matters most in the moment this page is otherwise silent about: the wait
+  before a slow file starts.
+
+`crossOrigin` is gone, along with the Web Audio graph that needed it. Nothing on
+this page reads the video's pixels or its samples back, so the browser never
+asks the bucket's permission to fetch it; the CORS policy is for uploads only.
+
+The position is still tracked, and there are still two readers for it even with
+nothing of ours drawing a clock. The transcript follows the playhead, and
+`localStorage` remembers where somebody got to — restored on `loadedmetadata`
+(seeking an element that does not yet know its duration is ignored or clamped
+depending on the browser) and cleared within fifteen seconds of the end, since
+somebody who reached the outro has watched it and restoring them to 59:57 is a
+bug with good intentions. It is kept in the browser rather than on the server
+because the archive is public: a server-side position would mean the station
+knowing what strangers watch, which it has no reason to want.
+
+### The transcript
+
+An episode may carry the words that were said, and when it does they are the
+right-hand column: the station's own lyric sheet applied to a conversation —
+the line being spoken at full brightness, the rest at a quarter of it, the sheet
+drifting up through them, faded at both ends and with no scrollbar, because a
+scrollbar makes it look like a panel and it is not one. It is the same code
+answering the same question, `activeLineIndex` from
+`client/src/lib/lyrics.ts`, because a lyric line and a spoken line are a list in
+time order and a playhead; and the same numbers, down to the 0.45s a line takes
+to come up.
+
+The one thing that is *not* the lyric sheet's is the size. There a line is eight
+sung words set at 30px; here it is forty spoken ones, and at 30px a single
+answer is six lines of shouting. So the type is the largest a paragraph can
+honestly take and everything else — the dimming, the lift, the timing — is the
+station's, unchanged.
+
+Two things are different, and both follow from what a conversation is. **Every
+line is a button**: pressing one takes the episode to that moment, which the
+station refuses to let a listener do for a very good reason and which is exactly
+what somebody wants here, since nobody else is in the room. And **it stops
+following when you start reading**: a lyric is four seconds long and a spoken
+paragraph is forty, long enough to read ahead and be dragged back by a pane that
+thinks it knows best. A wheel, a finger or an arrow key hands the sheet over,
+and a button appears to hand it back.
+
+**On a phone the sheet is behind a button.** Stacked, an hour of talk and a
+16:9 frame cannot share a screen, and a transcript that begins below the fold is
+one nobody finds. So *Read the transcript* takes the room from where the room
+is: the video becomes a strip with the title beside it, and the words get
+everything that is left. It is the station's answer at this width
+arrived at from the other end: there the lyric sheet falls under the deck and is
+capped so it stays a panel you read from rather than a second page. Closed, the
+transcript is not merely hidden but unmounted, so a reader who never opens it
+never fetches a hundred kilobytes of text — which is why `Player.tsx` reads the
+900px breakpoint with `matchMedia` as well as in CSS.
+
+The format is what a transcription tool actually writes:
+
+```
+Untitled - August 23, 2026
+
+00:00:00 Speaker 1: All right, there we go.
+
+00:04:31 Speaker 2: So for anyone who is listening but isn't familiar…
+```
+
+`client/src/lib/transcript.ts` is deliberately forgiving around that, because
+"the transcript format" is not a standard and the next tool will write it
+slightly differently: the hour is optional, the timestamp may be bracketed the
+way an LRC line is, a fraction of a second is read and ignored, the speaker is
+optional, and a line with no timestamp is treated as more of what was being said
+above it rather than dropped — which is what makes a hard-wrapped paragraph
+arrive as a paragraph. The one guard worth knowing about is the speaker: a name
+is short, is a handful of words and carries no sentence punctuation, so
+"So here is the thing: it was fine" is one person talking rather than somebody
+called *So here is the thing*.
+
+A transcript with **no timestamps at all** is not a failure. It parses to
+nothing, and the pane reads that as words to read rather than words to follow
+and lays them out as paragraphs under a note saying so — the same fallback the
+station's lyric sheet makes for an untimed sheet.
+
+The words are **not part of the episode**. An hour of talk is around a hundred
+kilobytes of text and `GET /api/episodes` hands back sixty episodes at once, so
+an episode carries `hasTranscript` — enough to decide whether to draw the tab —
+and the text lives at its own address, fetched when a reader opens the pane. It
+is stored as uploaded, byte for byte: the parse is what decides how it is drawn,
+and a server that pre-chewed it into cues would have to be redeployed to change
+a rendering decision.
+
+### What the stage holds
+
+The video, and nothing over it. This used to be the poster with a blob swelling
+behind it, driven off an `AnalyserNode` tapped from the playing element — which
+is what an audio player puts on a page that would otherwise be a rectangle of
+controls. There is something to look at now, so the decoration is gone, along
+with `Blob.tsx` and the `createMediaElementSource` hazard it documented.
+
+Two attributes on the element carry more weight than they look like they do:
+
+- **`poster`** is the same artwork the grid draws, standing in until the first
+  frame is decoded. It means the page looks like the card that was clicked to
+  reach it, which matters most in the moment this page is otherwise silent
+  about — the wait before a slow file starts.
+- **`playsInline`** is what stops iOS taking any play into its own fullscreen
+  player, which would throw away the transcript, the show notes and every
+  control on this page.
+
+There is no `controls` attribute: the transport below is the transport, and it
+is a podcast's rather than a video player's — how much is left, back fifteen,
+forward thirty, and a transcript line to seek by. A fullscreen button and a
+volume slider are what a video player offers instead, and neither is the
+question somebody watching two people talk for an hour is asking.
+
+`crossOrigin` is gone with the graph, and its absence is worth a line: nothing
+on this page reads the video's pixels or its samples back, so the browser never
+has to ask the bucket's permission to fetch it. The bucket's CORS policy is
+needed for the *upload* only.
 
 ### The console
 
@@ -2289,7 +3005,7 @@ checking against any change that touches its area.
     │   ├── CallIn.tsx         the listener's end of a call
     │   ├── cohost/            the third document, phone-sized
     │   ├── landing/           the public page and its ported components
-    │   ├── podcast/           the archive: TiltCard, EpisodeGrid, Player, Blob,
+    │   ├── podcast/           the archive: TiltCard, EpisodeGrid, Player,
     │   │                      Transcript, Console
     │   ├── hooks/             everything stateful
     │   ├── lib/               everything pure, and therefore tested

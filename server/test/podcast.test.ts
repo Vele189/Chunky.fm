@@ -70,12 +70,16 @@ function crc32(buffer: Buffer): number {
   return (crc ^ 0xffffffff) >>> 0
 }
 
-/** A poster of the one size the archive accepts. */
+/** The portrait card the collection draws. */
 const goodPoster = () => pngOf(1080, 1350)
 
+/** The 16:9 still the player shows before the first frame. */
+const goodThumb = () => pngOf(1280, 720)
+
 interface UploadOptions {
-  audio?: { filename: string; contentType: string; data: Buffer } | null
+  video?: { filename: string; contentType: string; data: Buffer } | null
   poster?: { filename: string; contentType: string; data: Buffer } | null
+  thumbnail?: { filename: string; contentType: string; data: Buffer } | null
   fields?: Record<string, string>
   headers?: Record<string, string>
   /** Skip the chunked upload and finish with these, to test the refusals. */
@@ -83,16 +87,16 @@ interface UploadOptions {
 }
 
 /**
- * Put the audio in the store, the way the console does.
+ * Put the video in the store, the way the console does.
  *
  * Three steps, and the test drives all three rather than shortcutting to the
  * end: begin, PUT each part, and hand the receipts back at completion. That is
  * the whole point of the disk backend implementing the same multipart protocol
  * R2 does — the path under test here is the path production runs.
  */
-async function putAudio(
+async function putVideo(
   h: Harness,
-  audio: { filename: string; contentType: string; data: Buffer },
+  video: { filename: string; contentType: string; data: Buffer },
   headers: Record<string, string> = authHeaders,
 ): Promise<{ uploadId: string; key: string; parts: unknown[]; contentHash: string } | number> {
   const begun = await h.app.inject({
@@ -100,9 +104,9 @@ async function putAudio(
     url: '/api/episodes/uploads',
     headers,
     payload: {
-      bytes: audio.data.length,
-      filename: audio.filename,
-      contentType: audio.contentType,
+      bytes: video.data.length,
+      filename: video.filename,
+      contentType: video.contentType,
     },
   })
   if (begun.statusCode !== 201) return begun.statusCode
@@ -116,7 +120,7 @@ async function putAudio(
 
   const parts: { partNumber: number; etag: string }[] = []
   for (let i = 0; i < urls.length; i++) {
-    const slice = audio.data.subarray(i * partSize, (i + 1) * partSize)
+    const slice = video.data.subarray(i * partSize, (i + 1) * partSize)
     const put = await h.app.inject({
       method: 'PUT',
       url: urls[i]!,
@@ -131,46 +135,51 @@ async function putAudio(
     uploadId,
     key,
     parts,
-    contentHash: createHash('sha256').update(audio.data).digest('hex'),
+    contentHash: createHash('sha256').update(video.data).digest('hex'),
   }
 }
 
 async function upload(h: Harness, options: UploadOptions = {}) {
-  const audio =
-    options.audio === undefined
-      ? { filename: 'tagged.mp3', contentType: 'audio/mpeg', data: await fixture('tagged.mp3') }
-      : options.audio
+  const video =
+    options.video === undefined
+      ? { filename: 'episode.mp4', contentType: 'video/mp4', data: await fixture('episode.mp4') }
+      : options.video
   const poster =
     options.poster === undefined
       ? { filename: 'poster.png', contentType: 'image/png', data: goodPoster() }
       : options.poster
+  const thumbnail =
+    options.thumbnail === undefined
+      ? { filename: 'thumb.png', contentType: 'image/png', data: goodThumb() }
+      : options.thumbnail
   const headers = options.headers ?? authHeaders
 
-  let audioFields: Record<string, string> = {}
+  let videoFields: Record<string, string> = {}
   if (options.finishWith) {
-    audioFields = options.finishWith
-  } else if (audio) {
-    const put = await putAudio(h, audio, headers)
+    videoFields = options.finishWith
+  } else if (video) {
+    const put = await putVideo(h, video, headers)
     if (typeof put === 'number') {
       // The upload itself was refused; hand the status back in the shape the
       // caller asserts on.
       return { statusCode: put, json: () => ({ error: 'upload_refused' }) } as never
     }
-    audioFields = {
+    videoFields = {
       uploadId: put.uploadId,
       key: put.key,
       contentHash: put.contentHash,
       parts: JSON.stringify(put.parts),
-      contentType: audio.contentType,
+      contentType: video.contentType,
     }
   }
 
   const parts = [
     ...Object.entries({
       ...(options.fields ?? { title: 'Leaving Johannesburg' }),
-      ...audioFields,
+      ...videoFields,
     }).map(([name, data]) => ({ name, data })),
     ...(poster ? [{ name: 'poster', ...poster }] : []),
+    ...(thumbnail ? [{ name: 'thumbnail', ...thumbnail }] : []),
   ]
 
   return h.app.inject({
@@ -262,12 +271,13 @@ describe('POST /api/episodes', () => {
     expect((res.json() as { episode: Episode }).episode.durationMs).toBe(0)
   })
 
-  it('writes both files into the archive, not the library', async () => {
+  it('writes all three files into the archive, not the library', async () => {
     await upload(harness)
 
-    // The archive has them...
-    expect(await listDir(harness.config.episodeAudioDir)).toHaveLength(1)
-    expect(await listDir(harness.config.episodePosterDir)).toHaveLength(1)
+    // The archive has them: the video, and both pictures — the portrait card
+    // and the 16:9 still, which share a directory and are two files.
+    expect(await listDir(harness.config.episodeVideoDir)).toHaveLength(1)
+    expect(await listDir(harness.config.episodePosterDir)).toHaveLength(2)
     // ...and the library, which the nightly wipe empties, does not.
     expect(await listDir(harness.config.audioDir)).toHaveLength(0)
     expect(harness.db.prepare('SELECT * FROM tracks').all()).toHaveLength(0)
@@ -282,22 +292,45 @@ describe('POST /api/episodes', () => {
 
   it('serves the master until an encode replaces it', async () => {
     // The property that makes an episode playable the instant the upload
-    // answers: there is never a moment where a row exists and its audio does
+    // answers: there is never a moment where a row exists and its video does
     // not. The encode is an improvement queued afterwards, not a step.
     const res = await upload(harness)
     const { episode } = res.json() as { episode: Episode }
 
-    expect(episode.audioUrl).toContain('/api/episode-media/')
-    expect(episode.audioBytes).toBeGreaterThan(0)
+    expect(episode.videoUrl).toContain('/api/episode-media/')
+    expect(episode.videoBytes).toBeGreaterThan(0)
     // No ffmpeg in the test harness's expectations either way: `none` when the
     // build has none, `pending` or `ready` when it does. What must never appear
-    // is an episode with no audio at all.
+    // is an episode with no video at all.
     expect(['none', 'pending', 'ready', 'failed']).toContain(episode.transcodeStatus)
   })
 
-  it('refuses a poster that is not 1080x1350, and says what it got', async () => {
+  it('refuses a poster that is not the portrait card size, and says what it got', async () => {
     const res = await upload(harness, {
-      poster: { filename: 'poster.png', contentType: 'image/png', data: pngOf(900, 1200) },
+      poster: { filename: 'poster.png', contentType: 'image/png', data: pngOf(1280, 720) },
+    })
+
+    expect(res.statusCode).toBe(422)
+    const body = res.json() as { error: string; message: string }
+    expect(body.error).toBe('poster_dimensions')
+    expect(body.message).toContain('1280x720')
+    expect(body.message).toContain('1080x1350')
+    expect(episodeRows(harness)).toHaveLength(0)
+  })
+
+  it('needs both pictures, and says which is missing', async () => {
+    const noPoster = await upload(harness, { poster: null })
+    expect(noPoster.statusCode).toBe(400)
+    expect((noPoster.json() as { error: string }).error).toBe('no_poster')
+
+    const noThumb = await upload(harness, { thumbnail: null })
+    expect(noThumb.statusCode).toBe(400)
+    expect((noThumb.json() as { error: string }).error).toBe('no_thumbnail')
+  })
+
+  it('refuses a thumbnail that is not 16:9, and says what it got', async () => {
+    const res = await upload(harness, {
+      thumbnail: { filename: 'thumb.png', contentType: 'image/png', data: pngOf(900, 1200) },
     })
 
     expect(res.statusCode).toBe(422)
@@ -306,12 +339,52 @@ describe('POST /api/episodes', () => {
     // Naming the size received is the difference between a refusal somebody can
     // act on and one they have to guess at.
     expect(body.message).toContain('900x1200')
-    expect(body.message).toContain('1080x1350')
+    expect(body.message).toContain('16:9')
     expect(episodeRows(harness)).toHaveLength(0)
   })
 
+  it('takes any 16:9 thumbnail big enough to look sharp, not one exact size', async () => {
+    // The rule is a ratio and a floor, because 1280x720 and 1920x1080 are the
+    // same picture and refusing one of them would be fussiness about a number.
+    const sizes = [
+      [1280, 720],
+      [1920, 1080],
+      [2560, 1440],
+    ] as const
+    for (const [n, [width, height]] of sizes.entries()) {
+      const res = await upload(harness, {
+        fields: { title: `A ${width} wide one` },
+        // A different video each time, or the second one is refused as a
+        // duplicate before its thumbnail is ever looked at.
+        video: {
+          filename: `episode-${width}.mp4`,
+          contentType: 'video/mp4',
+          data: Buffer.concat([await fixture('episode.mp4'), Buffer.from([n])]),
+        },
+        thumbnail: {
+          filename: 'thumb.png',
+          contentType: 'image/png',
+          data: pngOf(width, height),
+        },
+      })
+      expect(res.statusCode, `${width}x${height}`).toBe(201)
+    }
+  })
+
+  it('refuses a 16:9 thumbnail that is too small to be sharp', async () => {
+    const res = await upload(harness, {
+      thumbnail: { filename: 'thumb.png', contentType: 'image/png', data: pngOf(640, 360) },
+    })
+
+    expect(res.statusCode).toBe(422)
+    const body = res.json() as { error: string; message: string }
+    expect(body.error).toBe('poster_dimensions')
+    expect(body.message).toContain('640x360')
+    expect(body.message).toContain('1280')
+  })
+
   it('keeps nothing on disk when the poster is the wrong size', async () => {
-    // By the time the poster is checked, the audio is already staged in the
+    // By the time the poster is checked, the video is already staged in the
     // store — hundreds of megabytes of it, for a real episode. A refusal that
     // cleaned up only the poster would strand all of it, once per rejected
     // attempt, with nothing referencing it and nothing looking for orphans.
@@ -320,11 +393,11 @@ describe('POST /api/episodes', () => {
     })
 
     expect(await listDir(path.join(harness.config.tmpDir, 'uploads'))).toHaveLength(0)
-    expect(await listDir(harness.config.episodeAudioDir)).toHaveLength(0)
+    expect(await listDir(harness.config.episodeVideoDir)).toHaveLength(0)
     expect(await listDir(harness.config.episodePosterDir)).toHaveLength(0)
   })
 
-  it('keeps nothing when the same audio is uploaded twice', async () => {
+  it('keeps nothing when the same video is uploaded twice', async () => {
     // The same leak by another route: a duplicate is refused *after* its bytes
     // have already been staged.
     await upload(harness)
@@ -332,8 +405,8 @@ describe('POST /api/episodes', () => {
 
     expect(again.statusCode).toBe(409)
     expect(await listDir(path.join(harness.config.tmpDir, 'uploads'))).toHaveLength(0)
-    // One episode's audio, not two.
-    expect(await listDir(harness.config.episodeAudioDir)).toHaveLength(1)
+    // One episode's video, not two.
+    expect(await listDir(harness.config.episodeVideoDir)).toHaveLength(1)
   })
 
   it('refuses a poster that is not an image at all', async () => {
@@ -348,10 +421,10 @@ describe('POST /api/episodes', () => {
     expect((res.json() as { error: string }).error).toBe('unsupported_poster')
   })
 
-  it('refuses audio that is not audio', async () => {
+  it('refuses video that is not video', async () => {
     const res = await upload(harness, {
-      audio: {
-        filename: 'not-audio.txt',
+      video: {
+        filename: 'not-video.txt',
         contentType: 'text/plain',
         data: await fixture('not-audio.txt'),
       },
@@ -372,13 +445,13 @@ describe('POST /api/episodes', () => {
     expect((res.json() as { error: string }).error).toBe('no_poster')
   })
 
-  it('needs audio', async () => {
-    const res = await upload(harness, { audio: null })
+  it('needs video', async () => {
+    const res = await upload(harness, { video: null })
     expect(res.statusCode).toBe(400)
-    expect((res.json() as { error: string }).error).toBe('no_audio')
+    expect((res.json() as { error: string }).error).toBe('no_video')
   })
 
-  it('refuses the same audio twice, and hands back the episode it already is', async () => {
+  it('refuses the same video twice, and hands back the episode it already is', async () => {
     const first = await upload(harness)
     const again = await upload(harness, { fields: { title: 'A different name for it' } })
 
@@ -388,14 +461,14 @@ describe('POST /api/episodes', () => {
     expect(body.episode.id).toBe((first.json() as { episode: Episode }).episode.id)
     expect(episodeRows(harness)).toHaveLength(1)
     // And the second attempt left nothing behind.
-    expect(await listDir(harness.config.episodeAudioDir)).toHaveLength(1)
+    expect(await listDir(harness.config.episodeVideoDir)).toHaveLength(1)
   })
 
   it('gives two episodes of the same name distinct addresses', async () => {
     await upload(harness, { fields: { title: 'Leaving Johannesburg' } })
     const second = await upload(harness, {
       fields: { title: 'Leaving Johannesburg' },
-      audio: { filename: 'other.flac', contentType: 'audio/flac', data: await fixture('untagged.flac') },
+      video: { filename: 'other.mp4', contentType: 'video/mp4', data: await fixture('episode-faststart.mp4') },
     })
 
     expect(second.statusCode).toBe(201)
@@ -487,10 +560,10 @@ describe('reading the archive', () => {
         publishedAt: '1800000000000',
         status: 'published',
       },
-      audio: {
-        filename: 'other.flac',
-        contentType: 'audio/flac',
-        data: await fixture('untagged.flac'),
+      video: {
+        filename: 'other.mp4',
+        contentType: 'video/mp4',
+        data: await fixture('episode-faststart.mp4'),
       },
     })
     expect(newer.statusCode).toBe(201)
@@ -500,14 +573,14 @@ describe('reading the archive', () => {
     expect(episodes.map((e) => e.title)).toEqual(['The new one', 'The old one'])
   })
 
-  it('serves the audio, and serves a byte range of it', async () => {
+  it('serves the video, and serves a byte range of it', async () => {
     // The load-bearing half of a podcast player: somebody resuming at 34:10 has
     // to fetch that range rather than pulling the whole hour from zero.
     const episode = await publish(harness)
-    const whole = await harness.app.inject({ method: 'GET', url: episode.audioUrl })
+    const whole = await harness.app.inject({ method: 'GET', url: episode.videoUrl })
     const ranged = await harness.app.inject({
       method: 'GET',
-      url: episode.audioUrl,
+      url: episode.videoUrl,
       headers: { range: 'bytes=0-99' },
     })
 
@@ -777,7 +850,7 @@ describe('DELETE /api/episodes/:id', () => {
 
     expect(res.statusCode).toBe(200)
     expect(episodeRows(harness)).toHaveLength(0)
-    expect(await listDir(harness.config.episodeAudioDir)).toHaveLength(0)
+    expect(await listDir(harness.config.episodeVideoDir)).toHaveLength(0)
     expect(await listDir(harness.config.episodePosterDir)).toHaveLength(0)
   })
 
@@ -789,49 +862,82 @@ describe('DELETE /api/episodes/:id', () => {
   })
 })
 
-describe('an episode is made small enough to listen to', () => {
+describe('an episode is made to start quickly', () => {
   /**
-   * The end-to-end version of what `test/transcode.test.ts` checks directly:
-   * that uploading a master actually leaves the archive serving something much
-   * smaller, without the episode ever being unplayable in between.
+   * The end-to-end version of what `test/transcode.test.ts` checks directly,
+   * and it is two claims rather than one, because the interesting half of this
+   * design is the file that is left alone.
    *
    * Its own harness with `transcode: true`, because every other test in this
-   * file deliberately runs without it — an encode is a background job, and a
+   * file deliberately runs without it — the rewrite is a background job, and a
    * test that is about drafts should not be racing one.
    */
-  it('serves the master first, then replaces it with the encode', async () => {
+  const settled = async (h: Harness, from: Episode): Promise<Episode> => {
+    let episode = from
+    // Bounded, so a hung ffmpeg fails the test rather than the suite.
+    for (let i = 0; i < 100 && episode.transcodeStatus === 'pending'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const again = await h.app.inject({
+        method: 'GET',
+        url: '/api/admin/episodes',
+        headers: authHeaders,
+      })
+      episode = (again.json() as { episodes: Episode[] }).episodes[0] as Episode
+    }
+    return episode
+  }
+
+  it('rewrites a master whose index is at the end, and serves the rewrite', async () => {
     const h = await startHarness({}, { transcode: true })
     try {
+      // `episode.mp4` is an ordinary ffmpeg export: `mdat` first, `moov` last,
+      // which is a file a browser cannot start until it has all of it.
       const res = await upload(h)
+      const created = (res.json() as { episode: Episode }).episode
       // If this build has no ffmpeg there is nothing to prove; the archive
       // still works, which is what `none` means.
-      const created = (res.json() as { episode: Episode }).episode
       if (created.transcodeStatus === 'none') return
 
       // Playable the instant the upload answered, from the master. This is the
-      // property that lets the encode be an errand rather than a step.
+      // property that lets the rewrite be an errand rather than a step.
       expect(created.transcodeStatus).toBe('pending')
-      expect(created.audioBytes).toBeGreaterThan(0)
+      expect(created.videoBytes).toBeGreaterThan(0)
 
-      // Wait for the errand. Bounded, so a hung ffmpeg fails the test rather
-      // than the suite.
-      let episode = created
-      for (let i = 0; i < 100 && episode.transcodeStatus === 'pending'; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        const again = await h.app.inject({
-          method: 'GET',
-          url: '/api/admin/episodes',
-          headers: authHeaders,
-        })
-        episode = (again.json() as { episodes: Episode[] }).episodes[0] as Episode
-      }
-
+      const episode = await settled(h, created)
       expect(episode.transcodeStatus).toBe('ready')
-      // ffmpeg measured the real length, replacing the zero the upload carried.
+      // A different object from the master, and it exists.
+      expect(episode.videoUrl).not.toBe(created.videoUrl)
       expect(episode.durationMs).toBeGreaterThan(0)
-      // And whatever is served now, it is served from a key that exists.
-      const audio = await h.app.inject({ method: 'GET', url: episode.audioUrl })
-      expect(audio.statusCode).toBe(200)
+      const video = await h.app.inject({ method: 'GET', url: episode.videoUrl })
+      expect(video.statusCode).toBe(200)
+    } finally {
+      await h.cleanup()
+    }
+  })
+
+  it('leaves a master that already starts quickly exactly where it is', async () => {
+    const h = await startHarness({}, { transcode: true })
+    try {
+      const res = await upload(h, {
+        video: {
+          filename: 'ready.mp4',
+          contentType: 'video/mp4',
+          data: await fixture('episode-faststart.mp4'),
+        },
+      })
+      const created = (res.json() as { episode: Episode }).episode
+      if (created.transcodeStatus === 'none') return
+
+      const episode = await settled(h, created)
+      expect(episode.transcodeStatus).toBe('ready')
+      // The whole point: no second copy was made, so what is served is still
+      // the object the browser uploaded. On R2 this is a gigabyte that never
+      // crossed this server in either direction.
+      expect(episode.videoUrl).toBe(created.videoUrl)
+      expect(episode.videoBytes).toBe(created.videoBytes)
+
+      const video = await h.app.inject({ method: 'GET', url: episode.videoUrl })
+      expect(video.statusCode).toBe(200)
     } finally {
       await h.cleanup()
     }
@@ -861,6 +967,8 @@ describe('the archive outlives the evening', () => {
       payload: multipartBody([
         {
           name: 'file',
+          // The *library*, which is still audio: a track is a record somebody
+          // is playing tonight, and only the archive moved to video.
           filename: 'tagged.mp3',
           contentType: 'audio/mpeg',
           data: await fixture('tagged.mp3'),
@@ -880,7 +988,7 @@ describe('the archive outlives the evening', () => {
     expect(episodeRows(harness)).toHaveLength(1)
     const still = await harness.app.inject({ method: 'GET', url: '/api/episodes' })
     expect((still.json() as { episodes: Episode[] }).episodes).toHaveLength(1)
-    const stillThere = await harness.app.inject({ method: 'GET', url: episode.audioUrl })
+    const stillThere = await harness.app.inject({ method: 'GET', url: episode.videoUrl })
     expect(stillThere.statusCode).toBe(200)
   })
 })

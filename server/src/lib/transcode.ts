@@ -5,63 +5,81 @@ import { promisify } from 'node:util'
 import ffmpegPath from 'ffmpeg-static'
 
 /**
- * Turning a master into something a phone can stream.
+ * Making a master streamable, without touching a frame of it.
  *
- * This is the largest single win in the archive, and it is worth stating the
- * arithmetic rather than leaving it implied. An hour of 24-bit/48k stereo WAV
- * is about 1 GB; the same hour at 96 kbps AAC is about 43 MB. Two people
- * talking do not need more than that — 96 kbps is above the rate most podcast
- * networks ship, and the difference is inaudible on the earbuds and car
- * speakers this will actually be heard on.
+ * This was an encoder. The archive was audio, and an hour of 24-bit WAV at a
+ * gigabyte went to forty megabytes of AAC with nothing audible lost: the
+ * largest single win the archive had, and worth minutes of CPU every time.
  *
- * Serving the master instead would mean every listener pulling a gigabyte to
- * hear one conversation, and a listener who scrubs pulls ranges out of it
- * repeatedly. On a phone that is not slow, it is unusable and expensive.
+ * Video does not offer that trade. An hour of it re-encodes over *hours* on the
+ * single small container that is also running a live radio station — the one
+ * thing this project cannot spend — and the saving is one whoever exported the
+ * file has usually already taken. So nothing here re-encodes. `-c copy` moves
+ * the streams across untouched, which is why this is fast enough to do on
+ * upload and lossless enough that the result is not a second generation of
+ * anything.
  *
- * **The master is kept.** It goes to R2 under `masters/` and stays there: it is
- * the thing that cannot be recreated, and re-encoding from a lossy copy later —
- * for a different bitrate, a different codec, a remaster — is a generation of
- * quality nobody gets back. What is thrown away is only ever the derived file.
+ * What it is for is the index. An MP4 keeps its table of contents in a `moov`
+ * box, and a great many tools write that box *after* the video data: such a
+ * file cannot be played at all until it has been fetched to its end, which on
+ * an hour of video is a listener staring at a spinner while a gigabyte comes
+ * down a phone connection. `+faststart` rewrites the file with the index at the
+ * front. That is the whole job.
+ *
+ * Most files do not need it. `lib/video.ts` answers that from the first
+ * sixty-four kilobytes, and this only runs on the ones that do.
  *
  * ## Failure is not fatal
  *
- * `transcode` answers with a result rather than throwing, and the caller falls
- * back to serving the master. An archive that refused to publish an episode
- * because ffmpeg was unhappy with one file would be worse than an archive that
- * serves that one episode large; the console says which happened.
+ * `remux` answers with a result rather than throwing, and the caller falls back
+ * to serving the master as it arrived. An archive that refused to publish an
+ * episode because ffmpeg was unhappy with one file would be worse than an
+ * archive that serves that one episode with a slow start; the console says
+ * which happened.
  */
 
 const exec = promisify(execFile)
 
 /**
- * The serving format.
+ * The serving container.
  *
- * AAC in an MP4 container rather than MP3, for two reasons that both matter
- * here. It is meaningfully better at these bitrates — 96 kbps AAC is roughly
- * 128 kbps MP3 — and `faststart` moves the index to the front of the file,
- * without which a browser must fetch the *end* of an hour-long file before it
- * can play the beginning. Every current browser and phone plays it.
+ * MP4 out, whatever went in. It is the one container every browser and every
+ * phone plays, and a `.mov` or a `.mkv` holding H.264 becomes one by being
+ * rewrapped rather than re-encoded — the streams are already what an MP4 wants,
+ * they are merely in the wrong box.
  *
- * Mono, deliberately. A conversation recorded in a kitchen is not a stereo
- * production, and halving the channel count is the cheapest quality-neutral
- * saving available. A music show would want this changed.
+ * The streams are taken one each, and the audio only if there is one. `-map 0`
+ * would carry across whatever else the file happened to hold — timecode tracks,
+ * chapter data, the data streams a phone camera writes — and MP4 refuses some
+ * of them, which fails the whole remux over something nobody was going to
+ * watch.
  */
-const BITRATE = '96k'
-const CHANNELS = 1
-const SAMPLE_RATE = 44_100
+const STREAMS = ['-map', '0:v:0', '-map', '0:a:0?']
 
-export interface Transcoded {
+export interface Remuxed {
   ok: true
-  /** The encoded bytes, ready to be put in the store. */
-  data: Buffer
+  /**
+   * Where the rewritten file is, on disk.
+   *
+   * A path rather than the bytes, which is the one change the move to video
+   * forces on every caller of this. The audio encoder handed back a Buffer
+   * because forty megabytes is nothing; a remuxed hour of video is the same
+   * size as the master it came from, and holding a gigabyte of it in memory on
+   * a container this small is how a station gets killed by its own archive.
+   *
+   * It lives in the `workDir` it was given and is the caller's to clean up,
+   * which the caller was already doing for the master it downloaded.
+   */
+  path: string
+  bytes: number
   /** What it turned out to be, in milliseconds, measured from the output. */
   durationMs: number
-  /** `m4a`. The extension the serving copy is stored under. */
+  /** `mp4`. The extension the serving copy is stored under. */
   extension: string
   contentType: string
 }
 
-export interface TranscodeFailed {
+export interface RemuxFailed {
   ok: false
   reason: string
 }
@@ -115,7 +133,7 @@ async function ffmpegSays(bin: string, args: string[]): Promise<string> {
 }
 
 /**
- * How long the audio at this path is, in milliseconds.
+ * How long the file at this path runs, in milliseconds.
  *
  * Read out of ffmpeg's own report rather than with a second tool: `ffprobe` is
  * a separate binary that `ffmpeg-static` does not ship, and ffmpeg prints what
@@ -124,10 +142,11 @@ async function ffmpegSays(bin: string, args: string[]): Promise<string> {
  * **The header first, and a full decode only if the header will not say.** That
  * ordering matters at these sizes: reading the `Duration:` line costs one file
  * open, while decoding a 500 MB master to count the samples takes tens of
- * seconds of CPU on a container that is also running a radio station. The
- * fallback exists because the header is genuinely absent or wrong on exactly
- * one common input — a VBR MP3 with no Xing frame — and that is worth the
- * seconds when it happens rather than on every file.
+ * seconds of CPU on a container that is also running a radio station, and on
+ * video it is minutes. The fallback exists because the header is genuinely
+ * absent or wrong on a file whose recording was interrupted — a screen capture
+ * that was killed rather than stopped is the common one — and that is worth the
+ * wait when it happens rather than on every file.
  *
  * Null when neither answers, which the caller treats as "keep whatever the
  * client claimed".
@@ -157,39 +176,34 @@ export async function durationOf(filePath: string): Promise<number | null> {
 }
 
 /**
- * Encode a master into the serving copy.
+ * Rewrite a master with its index at the front.
  *
- * Takes a path rather than a stream, and writes to a path rather than a buffer,
- * because ffmpeg needs to seek: `faststart` rewrites the file to move its index
- * to the front, and a pipe cannot be rewound. The caller is responsible for
- * having the master on disk, which for R2 means streaming it down first.
+ * Takes a path and writes a path, because both ends of this are too big to hold
+ * and because ffmpeg needs to seek: `+faststart` works by writing the file and
+ * then rewriting it with the index moved, and a pipe cannot be rewound. The
+ * caller is responsible for having the master on disk, which for R2 means
+ * streaming it down first.
  *
- * The output is read into memory at the end, which is safe at these sizes: an
- * hour at 96 kbps is about 43 MB, and the ceiling below refuses anything that
- * would be unreasonable to hold.
+ * The output is left where it was written and handed back as a path. Nothing is
+ * read into memory here — see `Remuxed.path`.
  */
-export async function transcode(
+export async function remux(
   sourcePath: string,
   workDir: string,
-): Promise<Transcoded | TranscodeFailed> {
+): Promise<Remuxed | RemuxFailed> {
   const bin = binary()
   if (!bin) return { ok: false, reason: 'this build has no ffmpeg' }
 
-  const outPath = path.join(workDir, `${path.basename(sourcePath)}.m4a`)
+  const outPath = path.join(workDir, `${path.basename(sourcePath)}.mp4`)
   const args = [
     '-nostdin',
     '-hide_banner',
     '-loglevel', 'error',
     '-i', sourcePath,
-    // No video, no cover art carried through: an attached picture in an m4a
-    // makes some players treat the whole file as a video and refuse to stream
-    // it in the background, which on a phone is the entire point.
-    '-vn',
-    '-map_metadata', '-1',
-    '-ac', String(CHANNELS),
-    '-ar', String(SAMPLE_RATE),
-    '-c:a', 'aac',
-    '-b:a', BITRATE,
+    ...STREAMS,
+    // The whole point, and the whole of the work: copy the streams, put the
+    // index at the front.
+    '-c', 'copy',
     '-movflags', '+faststart',
     '-y',
     outPath,
@@ -211,12 +225,14 @@ export async function transcode(
       })
     })
 
-    const data = await fs.readFile(outPath)
-    const durationMs = (await durationOf(outPath)) ?? 0
-    await fs.rm(outPath, { force: true })
+    const { size } = await fs.stat(outPath)
+    if (size === 0) {
+      await fs.rm(outPath, { force: true })
+      return { ok: false, reason: 'ffmpeg produced an empty file' }
+    }
 
-    if (data.length === 0) return { ok: false, reason: 'ffmpeg produced an empty file' }
-    return { ok: true, data, durationMs, extension: 'm4a', contentType: 'audio/mp4' }
+    const durationMs = (await durationOf(outPath)) ?? 0
+    return { ok: true, path: outPath, bytes: size, durationMs, extension: 'mp4', contentType: 'video/mp4' }
   } catch (err) {
     await fs.rm(outPath, { force: true })
     // The first line only. ffmpeg's diagnostics run to paragraphs and this ends

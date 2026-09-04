@@ -4,12 +4,12 @@ import type { MediaStore } from './store.js'
 /**
  * An episode as it goes over the wire.
  *
- * camelCase where the row is snake_case, and `audioUrl` **whole** rather than a
+ * camelCase where the row is snake_case, and `videoUrl` **whole** rather than a
  * bare filename — which is the one place this API departs from the shape
  * `toTrack` uses, and the departure is forced rather than chosen.
  *
  * Everything else here is served by this app, so a filename is enough and the
- * client builds the address: `/api/audio/${track.filename}`. An episode's audio
+ * client builds the address: `/api/audio/${track.filename}`. An episode's video
  * is not. On a station with R2 configured it is served from a Cloudflare
  * hostname this app does not own and cannot construct a rule for, and on one
  * without it is served from here — so the *only* thing that knows the address
@@ -32,22 +32,32 @@ export interface Episode {
   publishedAt: number
   status: EpisodeStatus
   durationMs: number
-  /** Where the audio actually is. Absolute on R2, app-relative on disk. */
-  audioUrl: string
+  /** Where the video actually is. Absolute on R2, app-relative on disk. */
+  videoUrl: string
   /** What that file is, so a player is not left sniffing. */
-  audioType: string
+  videoType: string
   /** How big it is, so the page can say so before somebody starts an hour. */
-  audioBytes: number
+  videoBytes: number
   /**
-   * Whether the small serving copy exists yet.
+   * Whether what is served has been checked over yet.
    *
-   * Public, and it earns its place: between the master landing and the encode
-   * finishing there are minutes during which the episode plays *from the
-   * master*, which on a phone is a very large download. A player that knows can
-   * say so rather than silently spending somebody's data.
+   * Public, and it earns its place: an episode whose index has not been moved
+   * to the front cannot start until the whole file has come down, and on a
+   * phone that is an hour of video before the first frame. A player that knows
+   * can say so rather than appearing to have hung.
    */
   transcodeStatus: TranscodeStatus
+  /** The portrait card in the collection. A basename; the client builds the URL. */
   poster: string | null
+  /**
+   * The 16:9 still the player shows before the first frame decodes.
+   *
+   * Null on a row uploaded before an episode carried two pictures, which the
+   * player reads as "no poster attribute" — a black frame until the video has
+   * enough of itself to draw one, rather than a portrait poster stretched into
+   * a shape it was never cut for.
+   */
+  thumbnail: string | null
   /**
    * Whether there is a transcript to fetch, rather than the transcript.
    *
@@ -83,11 +93,12 @@ export function toEpisode(row: EpisodeRow, store: MediaStore): Episode {
     publishedAt: row.published_at,
     status: row.status,
     durationMs: row.duration_ms,
-    audioUrl: store.publicUrl(row.audio_key),
-    audioType: row.audio_type,
-    audioBytes: row.audio_bytes,
+    videoUrl: store.publicUrl(row.video_key),
+    videoType: row.video_type,
+    videoBytes: row.video_bytes,
     transcodeStatus: row.transcode_status,
     poster: row.poster,
+    thumbnail: row.thumbnail,
     hasTranscript: row.transcript !== null && row.transcript !== '',
     uploadedAt: row.uploaded_at,
   }

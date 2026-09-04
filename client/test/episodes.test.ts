@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CONSOLE_HASH,
   type Episode,
@@ -14,6 +14,7 @@ import {
   routeFrom,
   slugInPath,
   subtitleFor,
+  uploadVideo,
 } from '../src/lib/episodes.js'
 
 const at = (pathname: string, hash = '') => ({ pathname, hash })
@@ -29,11 +30,12 @@ function makeEpisode(overrides: Partial<Episode> = {}): Episode {
     publishedAt: Date.UTC(2026, 2, 14, 12),
     status: 'published',
     durationMs: 48 * 60_000,
-    audioUrl: 'https://media.example.test/audio/abc.m4a',
-    audioType: 'audio/mp4',
-    audioBytes: 42 * 1024 * 1024,
+    videoUrl: 'https://media.example.test/video/abc.mp4',
+    videoType: 'video/mp4',
+    videoBytes: 42 * 1024 * 1024,
     transcodeStatus: 'ready',
     poster: 'b7f3.png',
+    thumbnail: 'still.jpg',
     hasTranscript: false,
     uploadedAt: Date.UTC(2026, 2, 14, 12),
     ...overrides,
@@ -113,11 +115,11 @@ describe('episodePath', () => {
 })
 
 describe('addresses for the files', () => {
-  it('takes the audio address from the server rather than building one', () => {
+  it('takes the video address from the server rather than building one', () => {
     // The one address this client does not construct. On a station with R2 it
     // is a Cloudflare hostname this app has never heard of; only the server
     // knows which store an episode is in.
-    expect(makeEpisode().audioUrl).toBe('https://media.example.test/audio/abc.m4a')
+    expect(makeEpisode().videoUrl).toBe('https://media.example.test/video/abc.mp4')
     expect(episodePosterUrl(makeEpisode())).toBe('/api/episode-poster/b7f3.png')
   })
 
@@ -216,6 +218,137 @@ describe('formatBytes', () => {
     expect(formatBytes(512 * 1024 * 1024)).toBe('512 MB')
     // And a master is measured in gigabytes, which is the whole point.
     expect(formatBytes(Math.round(1.5 * 1024 * 1024 * 1024))).toBe('1.50 GB')
+  })
+})
+
+/**
+ * The chunked upload, which is the one path in this file an hour of video has
+ * to survive.
+ *
+ * Driven against a fake store rather than a real one, because what is being
+ * checked is the *protocol* — every part sent once, in order, the hash computed
+ * over exactly those bytes, and a failure recovered from — and none of that
+ * needs a bucket. The parts themselves are the file's own bytes, so a test that
+ * sliced them wrongly would show up as a hash that does not match.
+ */
+describe('uploading an hour of video', () => {
+  /** Small enough to be quick, and more than one part, which is the point. */
+  const PART = 8 * 1024 * 1024
+
+  /*
+   * The part PUTs go through the *global* fetch rather than the API's own, and
+   * that is deliberate in the code being tested: a part goes cross-origin to
+   * the store and must not carry this app's credentials or headers. So the
+   * fake is installed in both places.
+   */
+  afterEach(() => vi.unstubAllGlobals())
+
+  function fileOf(bytes: number): File {
+    const data = new Uint8Array(bytes)
+    // Not zeroes: a hash over a megabyte of nothing is the same hash however
+    // many of the slices were skipped, which is the bug this would hide.
+    for (let i = 0; i < bytes; i++) data[i] = (i * 31 + 7) % 251
+    return new File([data], 'talk.mp4', { type: 'video/mp4' })
+  }
+
+  interface Store {
+    fetch: typeof globalThis.fetch
+    puts: { url: string; bytes: number }[]
+    signed: number[]
+  }
+
+  function store(options: { failPart?: number } = {}): Store {
+    const puts: { url: string; bytes: number }[] = []
+    const signed: number[] = []
+    let failed = false
+
+    const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+
+      if (url.endsWith('/api/episodes/uploads') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { bytes: number }
+        const partCount = Math.max(1, Math.ceil(body.bytes / PART))
+        return Response.json(
+          {
+            uploadId: 'u1',
+            key: 'masters/one.mp4',
+            partSize: PART,
+            partCount,
+            urls: Array.from({ length: partCount }, (_, i) => `https://store.test/part/${i + 1}?minted=first`),
+            direct: true,
+          },
+          { status: 201 },
+        )
+      }
+
+      // A fresh URL for one part.
+      const remint = /\/parts\/(\d+)\/url/.exec(url)
+      if (remint) {
+        signed.push(Number(remint[1]))
+        return Response.json({ url: `https://store.test/part/${remint[1]}?minted=again` })
+      }
+
+      if (url.startsWith('https://store.test/part/')) {
+        const n = Number(/\/part\/(\d+)/.exec(url)?.[1])
+        // One part refuses once, the way an expired credential does.
+        if (options.failPart === n && !failed) {
+          failed = true
+          return new Response(null, { status: 403 })
+        }
+        const bytes = (init?.body as Uint8Array).byteLength
+        puts.push({ url, bytes })
+        return new Response(null, { status: 200, headers: { etag: `"etag-${n}"` } })
+      }
+
+      throw new Error(`unexpected request: ${url}`)
+    }) as typeof globalThis.fetch
+
+    return { fetch, puts, signed }
+  }
+
+  /** What the browser's own implementation makes of the same bytes. */
+  async function digestOf(file: File): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  it('sends every part once, in order, and hashes exactly what it sent', async () => {
+    const file = fileOf(PART * 2 + 1024)
+    const fake = store()
+    vi.stubGlobal('fetch', fake.fetch)
+    const finished = await uploadVideo(new EpisodeApi({ fetch: fake.fetch }), file)
+
+    expect(fake.puts).toHaveLength(3)
+    expect(fake.puts.map((put) => put.bytes)).toEqual([PART, PART, 1024])
+    expect(finished.parts.map((part) => part.partNumber)).toEqual([1, 2, 3])
+    // The hash is computed inside the upload loop now, over the slices as they
+    // go; this is the check that it is still the hash of the whole file.
+    expect(finished.contentHash).toBe(await digestOf(file))
+  })
+
+  it('asks for a fresh URL before retrying a part, which is what an expired one needs', async () => {
+    const file = fileOf(PART * 2)
+    const fake = store({ failPart: 2 })
+    vi.stubGlobal('fetch', fake.fetch)
+    const finished = await uploadVideo(new EpisodeApi({ fetch: fake.fetch }), file)
+
+    // Part two was signed again and then went up with the new credential.
+    expect(fake.signed).toEqual([2])
+    expect(fake.puts.at(-1)?.url).toContain('minted=again')
+    expect(finished.parts).toHaveLength(2)
+    expect(finished.contentHash).toBe(await digestOf(file))
+  })
+
+  it('reports progress against the bytes the store has taken', async () => {
+    const file = fileOf(PART + 512)
+    const fake = store()
+    vi.stubGlobal('fetch', fake.fetch)
+    const seen: number[] = []
+    await uploadVideo(new EpisodeApi({ fetch: fake.fetch }), file, {
+      onProgress: (progress) => seen.push(progress.sent),
+    })
+    expect(seen.at(0)).toBe(0)
+    expect(seen.at(-1)).toBe(file.size)
   })
 })
 

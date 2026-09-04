@@ -72,8 +72,7 @@ What is built there and invisible on the landing page: episode pages anyone can
 open with no account, posters, show notes, guests, episode numbers, a transport
 with 15-back and 30-forward, a position remembered per episode, a transcript
 that follows the voice and where **every line is a button that jumps you
-there**, a phone layout that hands the transcript the screen, and a blob driven
-by the actual audio.
+there**, and a phone layout that hands the transcript the screen.
 
 ---
 
@@ -193,7 +192,7 @@ Because every existing one does them:
 - the real text present in the DOM even when it is revealed a piece at a time,
   the way `Room` and `Limits` do it
 - `prefers-reduced-motion` respected by **stopping**, not slowing, which is the
-  rule `Blob.tsx` documents
+  rule `BackgroundLines.tsx` documents
 - a provenance comment at the top with the Aceternity URL
 - **no imports from `client/src/podcast/` into the landing bundle.** Copy the
   handful of CSS rules instead. That bundle is deliberately 25 kB and separate.

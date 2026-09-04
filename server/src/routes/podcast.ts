@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import type { Config } from '../config.js'
 import type { Db, EpisodeRow, EpisodeStatus } from '../db.js'
-import { looksLikeAudioUpload } from '../lib/audio.js'
+import { looksLikeVideoUpload } from '../lib/video.js'
 import { hasAdminCredentials, requireAdmin } from '../lib/auth.js'
 import {
   type Episode,
@@ -58,24 +58,45 @@ import { discard, episodePosterFilePath } from '../lib/storage.js'
  */
 
 /**
- * A poster is exactly 1080x1350: Instagram's portrait post, which is the shape
- * these are made in.
+ * An episode carries two pictures, and they are different shapes because they
+ * are doing different jobs.
  *
- * Enforced rather than suggested, and this is the one place the station is
- * strict about an image. The reason is the grid: the cards on the podcast page
- * are a fixed 4:5, and a poster that is not that ratio is either letterboxed
- * against the card's background or cropped by the browser with no say from
- * whoever chose the framing. Both look like a bug on the one page whose whole
- * job is showing artwork. Refusing at the door, with the size that was actually
- * received in the message, is the version of this that somebody can fix in
- * thirty seconds.
+ * **The poster** is the episode's card in the collection: 1080x1350, the
+ * portrait post these are made as, exactly. Enforced to the pixel because the
+ * grid is a wall of them and one card at a different ratio is either
+ * letterboxed against the card or cropped by the browser, with no say from
+ * whoever chose the framing — on the one page whose whole job is showing
+ * artwork, that reads as a bug.
  *
- * The session poster in `routes/schedule.ts` deliberately has no such rule: it
- * is whatever somebody made in a hurry an hour before the doors open, and
+ * **The thumbnail** is what the player shows before the first frame decodes:
+ * 16:9, so it is the shape of the thing it stands in for. A *ratio* with a
+ * floor rather than an exact size, because 1280x720, 1920x1080 and 2560x1440
+ * are the same picture and refusing two of them would be fussiness about a
+ * number rather than about the result.
+ *
+ * Neither is the other cropped. A 16:9 still cut to 4:5 loses more than half
+ * its width — which on a two-shot is both faces — and a portrait poster
+ * pillarboxed into the player is a black frame with a strip of picture in it.
+ * Two images is the honest cost of wanting both, and it is one more drop target
+ * in the console.
+ *
+ * The session poster in `routes/schedule.ts` deliberately has no rule at all:
+ * it is whatever somebody made in a hurry an hour before the doors open, and
  * refusing it then would be the tool getting in the way of the night.
  */
 const POSTER_WIDTH = 1080
 const POSTER_HEIGHT = 1350
+
+const THUMB_RATIO = 16 / 9
+/**
+ * How far off 16:9 still counts.
+ *
+ * A per cent, which sounds tight and is not: it is a pixel and a half of height
+ * on a 1280-wide image. What it is for is the export that comes back
+ * 1920x1081 because something rounded, rather than a 4:3 photograph.
+ */
+const THUMB_TOLERANCE = 0.01
+const THUMB_MIN_WIDTH = 1280
 
 /** What a page of the archive holds. Generous: an archive is browsed, not paged. */
 const PAGE_SIZE = 60
@@ -83,9 +104,9 @@ const PAGE_SIZE = 60
 interface PodcastDeps {
   config: Config
   db: Db
-  /** Where the audio lives. R2, or this station's own disk. See `lib/store.ts`. */
+  /** Where the video lives. R2, or this station's own disk. See `lib/store.ts`. */
   store: MediaStore
-  /** What makes an episode small enough to listen to. See `lib/publish.ts`. */
+  /** What makes an episode start quickly. See `lib/publish.ts`. */
   publisher: Publisher
 }
 
@@ -99,15 +120,15 @@ interface Refusal {
 /**
  * A file part read into memory with a ceiling, or a refusal.
  *
- * The audio is streamed to disk because it runs to 150 MB; a poster is eight,
+ * The video never comes through here at all; a poster is eight megabytes,
  * and buffering one is both simpler and necessary — the size check needs the
  * header before anything is written, and a file that turns out to be 900x1200
  * should never have touched the disk at all.
  *
  * The cap is enforced here rather than through multipart's `fileSize`, because
- * that limit is shared by every part in the request and the audio needs it set
- * to something much larger. Without this, "poster" could name a 150 MB file and
- * this function would happily hold all of it.
+ * that limit is shared by every part in the request and the other fields need
+ * it set to something much larger. Without this, "poster" could name a 150 MB
+ * file and this function would happily hold all of it.
  */
 async function readCapped(
   stream: AsyncIterable<Buffer>,
@@ -128,21 +149,30 @@ async function readCapped(
 }
 
 /**
- * A poster, checked as far as it can be before it is written down.
+ * A picture, checked as far as it can be before it is written down.
  *
  * Three questions in order, and the order is not arbitrary: what the bytes say
- * it is, whether that agrees with what the request claimed, and only then how
- * big it is. Asking about size first would mean reporting "not 1080x1350" about
- * a PDF.
+ * it is, whether that agrees with what the request claimed, and only then
+ * whether it is the right shape. Asking about shape first would mean reporting
+ * "not 1080x1350" about a PDF.
+ *
+ * `shape` is what makes this serve both pictures: the poster wants an exact
+ * size and the thumbnail wants a ratio, and everything before that question is
+ * identical for the two of them.
  */
-function checkPoster(buffer: Buffer, mimetype: string): { extension: string } | Refusal {
+function checkImage(
+  buffer: Buffer,
+  mimetype: string,
+  what: 'poster' | 'thumbnail',
+  shape: (size: { width: number; height: number }) => string | null,
+): { extension: string } | Refusal {
   const declared = POSTER_TYPES[mimetype.toLowerCase()]
   const actual = sniff(buffer)
   if (!actual || (declared && declared !== actual)) {
     return {
       status: 415,
       error: 'unsupported_poster',
-      message: 'a poster has to be a JPEG, a PNG or a WebP',
+      message: `a ${what} has to be a JPEG, a PNG or a WebP`,
     }
   }
 
@@ -154,16 +184,32 @@ function checkPoster(buffer: Buffer, mimetype: string): { extension: string } | 
       message: 'that file says it is an image but its header could not be read',
     }
   }
-  if (size.width !== POSTER_WIDTH || size.height !== POSTER_HEIGHT) {
+  const wrong = shape(size)
+  if (wrong) {
     return {
       status: 422,
       error: 'poster_dimensions',
       // The size received, named. A refusal that only states the rule leaves
-      // somebody guessing which of the two numbers they got wrong.
-      message: `a poster has to be exactly ${POSTER_WIDTH}x${POSTER_HEIGHT}; that one is ${size.width}x${size.height}`,
+      // somebody guessing which part of theirs was wrong.
+      message: `a ${what} ${wrong}; that one is ${size.width}x${size.height}`,
     }
   }
   return { extension: actual }
+}
+
+/** The poster's shape: exactly the portrait post these are made as. */
+const posterShape = (size: { width: number; height: number }): string | null =>
+  size.width === POSTER_WIDTH && size.height === POSTER_HEIGHT
+    ? null
+    : `has to be exactly ${POSTER_WIDTH}x${POSTER_HEIGHT}`
+
+/** The thumbnail's: the video's own shape, big enough not to look soft. */
+const thumbShape = (size: { width: number; height: number }): string | null => {
+  if (Math.abs(size.width / size.height - THUMB_RATIO) > THUMB_RATIO * THUMB_TOLERANCE) {
+    return 'has to be 16:9'
+  }
+  if (size.width < THUMB_MIN_WIDTH) return `has to be at least ${THUMB_MIN_WIDTH} wide`
+  return null
 }
 
 /**
@@ -211,12 +257,12 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
   const insertEpisode = db.prepare(`
     INSERT INTO episodes (
       slug, title, notes, guests, episode_number, published_at, status,
-      duration_ms, master_key, master_bytes, audio_key, audio_bytes, audio_type,
-      transcode_status, poster, transcript, content_hash, uploaded_at
+      duration_ms, master_key, master_bytes, video_key, video_bytes, video_type,
+      transcode_status, poster, thumbnail, transcript, content_hash, uploaded_at
     ) VALUES (
       @slug, @title, @notes, @guests, @episode_number, @published_at, @status,
-      @duration_ms, @master_key, @master_bytes, @audio_key, @audio_bytes, @audio_type,
-      @transcode_status, @poster, @transcript, @content_hash, @uploaded_at
+      @duration_ms, @master_key, @master_bytes, @video_key, @video_bytes, @video_type,
+      @transcode_status, @poster, @thumbnail, @transcript, @content_hash, @uploaded_at
     )
   `)
 
@@ -238,20 +284,26 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
   `)
 
   /**
-   * Delete everything an episode owned: both audio objects and the poster.
+   * Delete everything an episode owned: both video objects and the poster.
    *
-   * Both, and that is easy to get wrong — an episode that has been encoded owns
-   * *two* objects in the store, the master and the serving copy, and they are
-   * the same key only when there was no encode. Deleting `audio_key` alone
-   * would leave a 500 MB master in the bucket forever with nothing referencing
-   * it, which is the kind of leak nobody notices until the bill arrives.
+   * Both, and that is easy to get wrong — an episode that had to be rewritten
+   * owns *two* objects in the store, the master and the serving copy, and they
+   * are the same key only when the file arrived ready to stream. Deleting
+   * `video_key` alone would leave a gigabyte of master in the bucket forever
+   * with nothing referencing it, which is the kind of leak nobody notices until
+   * the bill arrives.
    */
   const forgetFiles = async (row: EpisodeRow): Promise<void> => {
-    const keys = new Set([row.master_key, row.audio_key])
+    const keys = new Set([row.master_key, row.video_key])
     for (const key of keys) {
       await store.remove(key).catch(() => undefined)
     }
-    if (row.poster) await discard(episodePosterFilePath(config, row.poster))
+    // Both pictures. An episode owns a poster and a thumbnail, and deleting one
+    // of them would leave the other on the volume forever with nothing pointing
+    // at it — the same leak `forgetFiles` exists to prevent in the bucket.
+    for (const picture of [row.poster, row.thumbnail]) {
+      if (picture) await discard(episodePosterFilePath(config, picture))
+    }
   }
 
   return async function routes(app: FastifyInstance) {
@@ -259,7 +311,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
      * Let a raw part body through untouched.
      *
      * Fastify parses a request body by content type and refuses one it has no
-     * parser for with a 415 — which is what an 8 MiB slice of audio is, since
+     * parser for with a 415 — which is what an 8 MiB slice of video is, since
      * nothing here declares a parser for binary. This hands the stream straight
      * to the handler instead of buffering it, so a part is written to disk as
      * it arrives rather than assembled in memory first.
@@ -277,7 +329,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
     )
 
     /**
-     * The audio and the posters, served flat.
+     * The video and the posters, served flat.
      *
      * Range support is what makes the player work at all: an episode is an hour
      * long, and somebody resuming at 34:10 has to fetch that byte range rather
@@ -286,19 +338,19 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
      * way `media.ts` does for the library.
      *
      * On R2 none of this is reached: Cloudflare's edge answers the Range and
-     * this server never sees a byte of audio. The route exists for the disk
+     * this server never sees a byte of video. The route exists for the disk
      * backend, and the test covers it there — which is the same code path a
      * station without R2 actually runs.
      *
      * Cached hard and immutable, because both are named by content: an episode's
-     * audio is its hash and a poster is a fresh id every time one is set, so
+     * video is its hash and a poster is a fresh id every time one is set, so
      * neither can ever change under a URL a page has already drawn.
      */
     await app.register(fastifyStatic, {
-      root: config.episodeAudioDir,
+      root: config.episodeVideoDir,
       // Only reached on a station keeping its archive on disk. With R2
       // configured, `publicUrl` returns a Cloudflare address and nothing ever
-      // asks this app for audio at all — which is the entire point of R2.
+      // asks this app for video at all — which is the entire point of R2.
       prefix: '/api/episode-media/',
       decorateReply: false,
       cacheControl: true,
@@ -397,7 +449,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
 
     /* --- the upload lifecycle -------------------------------------------
      *
-     * An hour of audio does not fit in a request. It is 500 MB of master, it
+     * An hour of video does not fit in a request. It is a gigabyte of master, it
      * takes minutes on a domestic connection, and a single POST carrying it
      * has three ways to go wrong that a chunked upload does not: a proxy body
      * limit, a request timeout, and a dropped connection at 90% that loses all
@@ -443,10 +495,10 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
           message: `an episode has to be under ${Math.round(config.maxEpisodeBytes / 1024 / 1024)} MB`,
         })
       }
-      if (!looksLikeAudioUpload(filename, contentType)) {
+      if (!looksLikeVideoUpload(filename, contentType)) {
         return reply
           .code(415)
-          .send({ error: 'unsupported_type', message: `${contentType || filename} is not audio` })
+          .send({ error: 'unsupported_type', message: `${contentType || filename} is not video` })
       }
 
       // Named by a fresh id rather than by content hash, because the hash is
@@ -473,7 +525,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
          * a misconfigured station hits — a bucket name with a typo in it, a key
          * without write permission, an endpoint that resolves to nothing. A
          * generic "the station could not complete that request" sends somebody
-         * looking at their audio file, which is the one thing that is fine.
+         * looking at their video file, which is the one thing that is fine.
          *
          * The store's own message is repeated: it is Cloudflare's or MinIO's
          * wording rather than ours, it names the actual problem
@@ -502,6 +554,55 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
     })
 
     /**
+     * One part's URL, again.
+     *
+     * The upload is begun with every part's URL minted at once, which is the
+     * right shape — the alternative is a round trip per 8 MiB, and an hour of
+     * video is hundreds of those. What it cannot be is the *only* way to get
+     * one: those URLs expire together (see `PART_URL_TTL_S`), and an upload
+     * long enough to outlive them is exactly the upload this archive is for.
+     *
+     * So the console asks here before it retries a part, and a part that failed
+     * because its credential had gone stale succeeds on the second attempt with
+     * a fresh one. A part that failed for any other reason — a dropped
+     * connection, a moment of packet loss — is retried with a fresh URL too,
+     * which costs one signature and removes a whole class of failure from the
+     * console's error handling: it never has to work out *why* a part failed.
+     *
+     * Nothing here touches the upload's state. Signing is arithmetic against
+     * the key, the id and the clock, so this is safe to call at any point, in
+     * any order, as many times as an upload needs it.
+     */
+    app.get(
+      '/api/episodes/uploads/:uploadId/parts/:part/url',
+      { preHandler: requireAdmin(config) },
+      async (request, reply) => {
+        const { uploadId, part } = request.params as { uploadId: string; part: string }
+        const key = (request.query as { key?: string }).key
+        const partNumber = Number(part)
+
+        if (typeof key !== 'string' || key === '') {
+          return reply.code(400).send({ error: 'no_key', message: 'which object is this a part of?' })
+        }
+        if (!Number.isInteger(partNumber) || partNumber < 1) {
+          return reply.code(400).send({ error: 'bad_part', message: 'part numbers start at 1' })
+        }
+
+        try {
+          return { url: await store.partUrl(key, uploadId, partNumber) }
+        } catch (err) {
+          request.log.error({ err, key, uploadId, partNumber }, 'could not sign a part url')
+          return reply.code(502).send({
+            error: 'store_unavailable',
+            message: `the archive's storage would not sign that part: ${
+              (err as Error).message ?? 'no reason given'
+            }`,
+          })
+        }
+      },
+    )
+
+    /**
      * One part, when the store is this server's own disk.
      *
      * Never reached on a station with R2, where the browser PUTs to Cloudflare
@@ -516,7 +617,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
       {
         preHandler: requireAdmin(config),
         // Fastify would otherwise try to parse this as JSON and reject 8 MiB of
-        // audio as a malformed body.
+        // video as a malformed body.
         bodyLimit: PART_SIZE * 2,
       },
       async (request, reply) => {
@@ -561,10 +662,10 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
     /**
      * Finish: turn a completed upload into an episode.
      *
-     * Multipart, and it carries the *poster* rather than the audio — the audio
+     * Multipart, and it carries the *poster* rather than the video — the video
      * is already in the store and is named by `uploadId` and `key`. The poster
      * is eight megabytes at most, so the request that was wrong for an hour of
-     * audio is exactly right for it, and all the validation in `checkPoster`
+     * video is exactly right for it, and all the validation in `checkPoster`
      * stays where it was.
      *
      * The episode is created pointing at the **master**, so it is playable the
@@ -572,9 +673,12 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
      * the size is an errand queued afterwards; see `lib/publish.ts`.
      */
     app.post('/api/episodes', { preHandler: requireAdmin(config) }, async (request, reply) => {
-      let posterName: string | null = null
-      let posterBuffer: Buffer | null = null
-      let posterMime = ''
+      const images: Record<'poster' | 'thumbnail', { buffer: Buffer; mimetype: string } | null> = {
+        poster: null,
+        thumbnail: null,
+      }
+      /** What each was written as, once it has been. Both are cleaned up. */
+      const written: string[] = []
       const fields = new Map<string, string>()
 
       /**
@@ -588,7 +692,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
        * it and nothing that ever looks for orphans.
        */
       const cleanup = async () => {
-        if (posterName) await discard(episodePosterFilePath(config, posterName))
+        for (const name of written) await discard(episodePosterFilePath(config, name))
         const uploadId = fields.get('uploadId')
         const key = fields.get('key')
         if (uploadId && key) await store.abortUpload(key, uploadId).catch(() => undefined)
@@ -601,27 +705,31 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
 
       try {
         for await (const part of request.parts({
-          limits: { fileSize: POSTER_MAX_BYTES, files: 1 },
+          limits: { fileSize: POSTER_MAX_BYTES, files: 2 },
         })) {
           if (part.type === 'field') {
             if (typeof part.value === 'string') fields.set(part.fieldname, part.value)
             continue
           }
-          if (part.fieldname !== 'poster') {
+          // Two named parts and nothing else. Anything else arriving as a file
+          // is drained rather than refused: the request is already carrying the
+          // receipt for an upload that has happened, and failing it over a
+          // stray part would cost that upload.
+          if (part.fieldname !== 'poster' && part.fieldname !== 'thumbnail') {
             part.file.resume()
             continue
           }
+          const what = part.fieldname
           const read = await readCapped(part.file, POSTER_MAX_BYTES)
           if ('tooLarge' in read) {
             return await refuse({
               status: 413,
               error: 'poster_too_large',
-              message: `a poster has to be under ${Math.round(POSTER_MAX_BYTES / 1024 / 1024)} MB`,
+              message: `a ${what} has to be under ${Math.round(POSTER_MAX_BYTES / 1024 / 1024)} MB`,
             })
           }
           if (read.buffer.length > 0) {
-            posterBuffer = read.buffer
-            posterMime = part.mimetype
+            images[what] = { buffer: read.buffer, mimetype: part.mimetype }
           }
         }
       } catch (err) {
@@ -644,7 +752,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
       if (!uploadId || !key || parts.length === 0) {
         return refuse({
           status: 400,
-          error: 'no_audio',
+          error: 'no_video',
           message: 'finish an upload first: POST /api/episodes/uploads',
         })
       }
@@ -652,7 +760,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
         return refuse({
           status: 400,
           error: 'no_hash',
-          message: 'an episode needs the sha256 of its audio, computed while uploading',
+          message: 'an episode needs the sha256 of its video, computed while uploading',
         })
       }
 
@@ -662,15 +770,29 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
       }
       const transcript = checkTranscript(fields.get('transcript'))
       if ('status' in transcript) return refuse(transcript)
-      if (posterBuffer === null) {
+      if (images.poster === null) {
         return refuse({
           status: 400,
           error: 'no_poster',
           message: `an episode needs a poster, sent as the \`poster\` part, at ${POSTER_WIDTH}x${POSTER_HEIGHT}`,
         })
       }
-      const poster = checkPoster(posterBuffer, posterMime)
+      if (images.thumbnail === null) {
+        return refuse({
+          status: 400,
+          error: 'no_thumbnail',
+          message: `an episode needs a thumbnail, sent as the \`thumbnail\` part, 16:9 and at least ${THUMB_MIN_WIDTH} wide`,
+        })
+      }
+      const poster = checkImage(images.poster.buffer, images.poster.mimetype, 'poster', posterShape)
       if ('status' in poster) return refuse(poster)
+      const thumbnail = checkImage(
+        images.thumbnail.buffer,
+        images.thumbnail.mimetype,
+        'thumbnail',
+        thumbShape,
+      )
+      if ('status' in thumbnail) return refuse(thumbnail)
 
       // Checked *before* the parts are assembled, so a duplicate costs nothing
       // but the upload that already happened.
@@ -682,7 +804,7 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
         await cleanup()
         return reply.code(409).send({
           error: 'duplicate',
-          message: 'that audio is already an episode',
+          message: 'that video is already an episode',
           episode: toEpisode(duplicate, store),
         })
       }
@@ -700,10 +822,14 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
 
       const bytes = (await store.size(key)) ?? 0
       const now = Date.now()
-      posterName = `${randomUUID()}.${poster.extension}`
+      const posterName = `${randomUUID()}.${poster.extension}`
+      const thumbName = `${randomUUID()}.${thumbnail.extension}`
 
       try {
-        await fs.writeFile(episodePosterFilePath(config, posterName), posterBuffer)
+        await fs.writeFile(episodePosterFilePath(config, posterName), images.poster.buffer)
+        written.push(posterName)
+        await fs.writeFile(episodePosterFilePath(config, thumbName), images.thumbnail.buffer)
+        written.push(thumbName)
 
         const result = insertEpisode.run({
           slug: uniqueSlug(title, (candidate) => slugTaken(db, candidate), now),
@@ -713,19 +839,23 @@ export function podcastRoutes({ config, db, store, publisher }: PodcastDeps): Fa
           episode_number: toInt(fields.get('episodeNumber')),
           published_at: toInt(fields.get('publishedAt')) ?? now,
           status: toStatus(fields.get('status')),
-          // What the browser's own decoder made of the master. Provisional:
-          // ffmpeg measures it properly during the encode and overwrites this.
+          // What the browser's own decoder made of the master. Right often
+          // enough to put on a card, and replaced by ffmpeg's figure on the
+          // episodes that turn out to need rewriting.
           duration_ms: Math.max(0, toInt(fields.get('durationMs')) ?? 0),
           master_key: key,
           master_bytes: bytes,
-          // The master *is* the serving copy until an encode replaces it, which
-          // is what makes an episode playable the moment this answers and what
-          // makes a station with no ffmpeg work with no special case anywhere.
-          audio_key: key,
-          audio_bytes: bytes,
-          audio_type: fields.get('contentType') || 'audio/mpeg',
+          // The master *is* the serving copy unless the file turns out to
+          // need its index moving, which is what makes an episode playable the
+          // moment this answers and what makes a station with no ffmpeg — and
+          // the ordinary file, which needs nothing — work with no special case
+          // anywhere.
+          video_key: key,
+          video_bytes: bytes,
+          video_type: fields.get('contentType') || 'video/mp4',
           transcode_status: publisher.enabled ? 'pending' : 'none',
           poster: posterName,
+          thumbnail: thumbName,
           // Optional, and absent for most episodes: a transcript is made after
           // the fact, so the ordinary way one arrives is the PATCH below rather
           // than this. Accepted here as well because an episode that already has

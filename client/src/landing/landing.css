@@ -692,6 +692,22 @@ html {
   display: inline-grid;
   vertical-align: baseline;
   text-align: left;
+  /* A plate behind the word, because of what is behind *it*: the gramophone
+     turns through this line, and a white word passing over a lit brass horn is
+     a white word nobody can read for a second and a half at a time.
+     
+     Sized by the padding and given the space back by an equal negative margin,
+     so the sentence has exactly the metrics it had before — the plate is
+     painted around the word rather than making room for itself, and the comma
+     after it does not move when this rule is added or taken away. The blur is
+     what keeps it from reading as a box: the model behind goes soft rather than
+     being covered, which on a browser that will not do it degrades to the flat
+     panel below and is still perfectly legible. */
+  padding: 0.04em 0.3em;
+  margin: -0.04em -0.3em;
+  border-radius: 8px;
+  background: rgb(10 10 10 / 62%);
+  backdrop-filter: blur(6px);
 }
 
 .flip__word {

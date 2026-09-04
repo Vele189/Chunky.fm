@@ -34,18 +34,20 @@ export interface Episode {
   status: EpisodeStatus
   durationMs: number
   /**
-   * Where the audio is, whole.
+   * Where the video is, whole.
    *
    * The one address in this API the client does not build for itself, and it
    * cannot: on a station with R2 it is a Cloudflare hostname this app has never
    * heard of, and on one without it is a route here. Only the server knows
    * which. See the note on `Episode` in the server's `lib/episode.ts`.
    */
-  audioUrl: string
-  audioType: string
-  audioBytes: number
+  videoUrl: string
+  videoType: string
+  videoBytes: number
   transcodeStatus: TranscodeStatus
   poster: string | null
+  /** The 16:9 still for the player. See `episodeThumbnailUrl`. */
+  thumbnail: string | null
   /**
    * Whether there is a transcript to ask for, rather than the transcript.
    *
@@ -142,6 +144,19 @@ export function routeFrom(location: { pathname: string; hash: string }): Podcast
 /** Where an episode's poster is, or null for one that somehow has none. */
 export const episodePosterUrl = (episode: Episode) =>
   episode.poster ? `/api/episode-poster/${episode.poster}` : null
+
+/**
+ * The 16:9 still, which is a different picture from the poster.
+ *
+ * Same route, because both live in the same directory on the server and are
+ * named the same way; different field, because they are different shapes doing
+ * different jobs — the poster is the card in the collection, this is what the
+ * player shows before the first frame decodes. Null on an episode uploaded
+ * before there were two, which the player reads as no poster attribute at all
+ * rather than as a reason to stretch the portrait one.
+ */
+export const episodeThumbnailUrl = (episode: Episode) =>
+  episode.thumbnail ? `/api/episode-poster/${episode.thumbnail}` : null
 
 /**
  * A length, the way a card says it.
@@ -253,9 +268,9 @@ export function formatBytes(bytes: number): string {
 }
 
 
-/* --- putting an hour of audio somewhere ------------------------------------
+/* --- putting an hour of video somewhere ------------------------------------
  *
- * A 500 MB file does not go in a form post. It takes minutes, a proxy will cut
+ * A file this size does not go in a form post. It takes minutes, a proxy will cut
  * the request, and a connection that drops at 90% loses all of it. So it goes
  * up in parts, and this is the client half of the protocol the server describes
  * in `lib/store.ts`.
@@ -318,28 +333,64 @@ const PART_ATTEMPTS = 3
 const backoffMs = (attempt: number) => 500 * 2 ** attempt
 
 /**
- * What this browser thinks the audio is, in milliseconds.
+ * What this browser thinks the file runs to, in milliseconds.
  *
- * Read by handing the file to an `<audio>` element and waiting for its
- * metadata, which costs nothing and works for everything a browser can play.
- * Zero when it cannot — a WAV bigger than the decoder wants to touch, an exotic
- * container — and zero is a fine answer: the server treats this as provisional
- * and ffmpeg measures it properly during the encode.
+ * Read by handing it to a `<video>` element and waiting for its metadata, which
+ * costs nothing: `preload = 'metadata'` reads the header and stops, so this
+ * does not decode a frame of an hour-long file to find out how long it is.
+ *
+ * Zero when it cannot — a container this browser will not open — and zero is a
+ * fine answer. The server takes this as what the browser made of it, and ffmpeg
+ * replaces it on the episodes that turn out to need rewriting.
  */
 export async function durationOfFile(file: File): Promise<number> {
   return new Promise((resolve) => {
-    const url = URL.createObjectURL(file)
-    const probe = new Audio()
+    let settled = false
+    let url = ''
     const done = (ms: number) => {
-      URL.revokeObjectURL(url)
-      probe.removeAttribute('src')
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (url) URL.revokeObjectURL(url)
+      probe?.removeAttribute('src')
       resolve(ms)
     }
-    probe.preload = 'metadata'
-    probe.onloadedmetadata = () =>
-      done(Number.isFinite(probe.duration) ? Math.round(probe.duration * 1000) : 0)
-    probe.onerror = () => done(0)
-    probe.src = url
+
+    /*
+     * A ceiling on the wait, and it is not defensive programming for its own
+     * sake.
+     *
+     * This is the last thing an upload does, and it runs after the bytes are
+     * already safely in the store — so a probe that never answers is an upload
+     * that finished and then hung, with the console still saying "uploading"
+     * over a file that is done. Both ends of the question fail silently in
+     * practice: a container the browser cannot open fires neither `error` nor
+     * `loadedmetadata` on some engines, and a headless or test environment has
+     * no decoder at all.
+     *
+     * Ten seconds is far past reading a header off a local file, and zero is a
+     * perfectly good answer — the server takes this as what the browser made of
+     * it, and ffmpeg measures the ones that get rewritten.
+     */
+    // The bare timer functions rather than `window.`'s: this file is the pure
+    // half of the archive and is exercised in a test runner with no DOM, where
+    // reaching for `window` is a `ReferenceError` before the try below can
+    // catch anything.
+    const timer = setTimeout(() => done(0), 10_000)
+
+    let probe: HTMLVideoElement | null = null
+    try {
+      url = URL.createObjectURL(file)
+      probe = document.createElement('video')
+      probe.preload = 'metadata'
+      probe.onloadedmetadata = () =>
+        done(probe && Number.isFinite(probe.duration) ? Math.round(probe.duration * 1000) : 0)
+      probe.onerror = () => done(0)
+      probe.src = url
+    } catch {
+      // No object URLs, or no media element to hang them on.
+      done(0)
+    }
   })
 }
 
@@ -475,7 +526,7 @@ class Sha256 {
  * `signal` cancels: the loop stops and the caller aborts the upload server-side
  * so the parts already sent are cleaned up rather than billed for.
  */
-export async function uploadAudio(
+export async function uploadVideo(
   api: EpisodeApi,
   file: File,
   options: {
@@ -501,10 +552,26 @@ export async function uploadAudio(
 
   report()
 
+  /*
+   * The hash is computed *inside* this loop rather than after it.
+   *
+   * Both need every byte of the file in order, and this way the file is read
+   * once. Reading it twice is not a rounding error at these sizes: a browser
+   * pulling two gigabytes off a disk twice is minutes of somebody's evening
+   * spent on an answer it already had, and on a laptop with the file on an
+   * external drive it is considerably worse than that. The parts go up in
+   * order, one at a time, which is exactly the order a rolling SHA-256 needs.
+   */
+  const digest = new Sha256()
+
   try {
     for (let n = 1; n <= begun.partCount; n++) {
       signal?.throwIfAborted()
       const slice = file.slice((n - 1) * begun.partSize, n * begun.partSize)
+      const bytes = new Uint8Array(await slice.arrayBuffer())
+      digest.update(bytes)
+
+      let url = begun.urls[n - 1] as string
       let lastError: unknown
 
       for (let attempt = 0; attempt < PART_ATTEMPTS; attempt++) {
@@ -512,9 +579,25 @@ export async function uploadAudio(
           report(true)
           await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt - 1)))
           signal?.throwIfAborted()
+          /*
+           * A fresh URL for the retry, whatever went wrong the first time.
+           *
+           * The URLs handed out when the upload began expire together, and an
+           * hour of video is an upload that can outlive them — the last part of
+           * a two-gigabyte file on a domestic uplink is hours after the first.
+           * Asking again costs one signature and cannot tell the difference
+           * between an expired credential and a dropped packet, which is the
+           * point: it fixes one of those and is harmless to the other.
+           *
+           * If the station cannot be reached to ask, the old URL is tried
+           * again rather than the upload being abandoned over it.
+           */
+          url = await api
+            .partUrl(begun.uploadId, begun.key, n)
+            .catch(() => begun.urls[n - 1] as string)
         }
         try {
-          const etag = await putPart(begun.urls[n - 1] as string, slice, begun.direct, signal)
+          const etag = await putPart(url, bytes, begun.direct, signal)
           parts.push({ partNumber: n, etag })
           sent += slice.size
           report()
@@ -531,23 +614,21 @@ export async function uploadAudio(
   } catch (err) {
     // Whatever went up is cleaned out of the store rather than left to be
     // charged for. Best effort: if this fails too there is nothing further to
-    // try from here, and R2 expires incomplete uploads on its own.
+    // try from here, and R2 expires incomplete uploads on its own — see the
+    // lifecycle rule in .env.example.
     await api.abortUpload(begun.uploadId, begun.key).catch(() => undefined)
     throw err
   }
 
-  const [contentHash, durationMs] = await Promise.all([
-    sha256Of(file, begun.partSize),
-    durationOfFile(file),
-  ])
-
   return {
     uploadId: begun.uploadId,
     key: begun.key,
-    contentHash,
+    contentHash: digest.hex(),
     parts,
     contentType: file.type || 'application/octet-stream',
-    durationMs,
+    // The header only: `preload = 'metadata'` on the probe means this does not
+    // decode an hour of video to find out how long it is.
+    durationMs: await durationOfFile(file),
   }
 }
 
@@ -568,7 +649,15 @@ export async function uploadAudio(
  */
 async function putPart(
   url: string,
-  slice: Blob,
+  /*
+   * The bytes, already read.
+   *
+   * A `Blob` would do, and used to: `fetch` reads one for itself. It is handed
+   * the array instead because the caller has just read exactly these bytes to
+   * hash them, and passing the Blob would mean the same 8 MiB coming off the
+   * disk a second time, once per part, over a file that may be gigabytes.
+   */
+  slice: Uint8Array<ArrayBuffer>,
   direct: boolean,
   signal?: AbortSignal,
 ): Promise<string> {
@@ -700,6 +789,26 @@ export class EpisodeApi {
   }
 
   /** Give up on one, so the parts already sent are not left to be charged for. */
+  /**
+   * A fresh URL for one part.
+   *
+   * Asked for before every retry rather than only when a URL is known to have
+   * expired, because the console cannot tell the difference: a stale presigned
+   * URL and a dropped connection both arrive here as "that part did not go".
+   * One signature is cheap and it removes the whole question. See the route.
+   */
+  async partUrl(uploadId: string, key: string, partNumber: number): Promise<string> {
+    const response = await this.#fetch(
+      `${this.#baseUrl}/api/episodes/uploads/${encodeURIComponent(uploadId)}/parts/${partNumber}/url?key=${encodeURIComponent(key)}`,
+    )
+    if (!response.ok) throw await this.#toError(response)
+    const body = (await response.json()) as { url?: string }
+    if (typeof body.url !== 'string') {
+      throw new AdminError(502, 'no_url', 'the station did not hand back a part URL')
+    }
+    return body.url
+  }
+
   async abortUpload(uploadId: string, key: string): Promise<void> {
     await this.#fetch(
       `${this.#baseUrl}/api/episodes/uploads/${encodeURIComponent(uploadId)}?key=${encodeURIComponent(key)}`,
@@ -716,8 +825,8 @@ export class EpisodeApi {
    * browser knows, and naming the type by hand is the classic way to send a
    * body the server cannot parse.
    *
-   * The audio is *not* in here. It is already in the store by the time this is
-   * called; what the form carries is the receipt — see `uploadAudio`.
+   * The video is *not* in here. It is already in the store by the time this is
+   * called; what the form carries is the receipt — see `uploadVideo`.
    */
   async create(body: FormData): Promise<Episode> {
     const response = await this.#fetch(`${this.#baseUrl}/api/episodes`, {

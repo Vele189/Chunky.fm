@@ -179,7 +179,8 @@ export function TiltItem({ children, z = 0, className = '', as = 'div' }: TiltIt
  * A card's poster, with the space it will occupy reserved before it lands.
  *
  * Every poster in this archive is 1080x1350 — the server refuses anything else,
- * see `routes/podcast.ts` — so the ratio is known and can be stated. That is
+ * see `routes/podcast.ts` — so the ratio is known and can be stated. It is not
+ * the thumbnail; that one is 16:9 and belongs to the player. That is
  * what stops the grid reflowing as images arrive, which on a page that is
  * mostly pictures is the difference between a page that settles and one that
  * jumps while somebody is trying to click it.

@@ -13,7 +13,8 @@ import { useEffect, useState } from 'react'
  * that read it on mount would keep moving for the rest of the visit.
  *
  * The rule everywhere this is used is the station's: asked to hold still,
- * things **stop** rather than slow down. See the note in `Blob.tsx`.
+ * things **stop** rather than slow down. See `BackgroundLines.tsx`, which is
+ * not drawn at all when it is asked to hold still.
  */
 export function useStill(): boolean {
   const [still, setStill] = useState(false)

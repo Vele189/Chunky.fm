@@ -16,7 +16,6 @@
  * Two things here are new rather than borrowed, and both earn their space:
  *
  *   .tilt*   Aceternity's 3D Card Effect, ported. See TiltCard.tsx.
- *   .blob    the shape that moves with the voice. See Blob.tsx.
  */
 
 * {
@@ -27,6 +26,7 @@
    inside a named region, which is what `overflow: hidden` here is protecting:
    without it a phone's address bar collapsing and expanding drags the whole
    layout up and down behind a transport that is supposed to be fixed. */
+html,
 html,
 body {
   height: 100%;
@@ -258,6 +258,13 @@ body {
 
 /* --- one card ------------------------------------------------------------- */
 
+/* The card draws the *poster*, which is portrait and is its own picture.
+ *
+ * There was a moment when the archive had one image doing both jobs and this
+ * card was 16:9 with the words under it. An episode carries two now — see the
+ * note over `checkImage` on the server — precisely so that neither shape has to
+ * be a crop of the other: the collection gets the portrait card it was designed
+ * as, and the player gets a still the shape of a frame. */
 .card {
   display: block;
   color: inherit;
@@ -275,6 +282,7 @@ body {
   transition: box-shadow 220ms ease;
 }
 
+.tilt__body[data-hovered='true'] .card__art,
 .tilt__body[data-hovered='true'] .card__art,
 .tilt__body:focus-within .card__art {
   box-shadow:
@@ -299,6 +307,7 @@ body {
   transition: filter 260ms ease;
 }
 
+.tilt__body[data-hovered='true'] .tilt__poster,
 .tilt__body[data-hovered='true'] .tilt__poster,
 .tilt__body:focus-within .tilt__poster {
   filter: brightness(1) saturate(1);
@@ -400,7 +409,11 @@ body {
   grid-template-areas:
     'bar bar'
     'left right';
-  grid-template-columns: minmax(0, 420px) minmax(0, 760px);
+  /* The video takes the larger share now that nothing is stacked under it but
+     its own name. The transcript keeps a measure you can read across and no
+     more: past about 60 characters a line stops being a line and becomes a
+     paragraph you lose your place in. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
   justify-content: center;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0 clamp(24px, 4vw, 64px);
@@ -408,13 +421,19 @@ body {
   min-height: 0;
 }
 
-/* Nothing to read: no second column, and the one that is left holds the middle
-   of the page rather than one side of it. */
+/* Nothing to read: no second column, and the video has the page.
+ *
+ * Which is as close to fullscreen as this deliberately gets. The browser's own
+ * controls carry a fullscreen button for anybody who wants the real thing, and
+ * `playsInline` on the element means a phone does not take one for itself the
+ * moment somebody presses play — see the note in Player.tsx. A page that forced
+ * it would be turning a phone sideways on behalf of a viewer who had not asked
+ * for that. */
 .player[data-beside='none'] {
   grid-template-areas:
     'bar'
     'left';
-  grid-template-columns: minmax(0, 520px);
+  grid-template-columns: minmax(0, 1400px);
 }
 
 .player__bar {
@@ -423,14 +442,13 @@ body {
   align-items: center;
 }
 
-/* The poster and everything you press, in one column.
+/* The video and its name, in one column.
  *
- * A flex stack rather than a centred cell, because it is no longer one thing:
- * the artwork, the title, the transport and — when the other column is a
- * transcript — the show notes. Centred as a group against the taller column
- * beside it, and every child allowed to shrink rather than push the page past
- * one viewport, which is what `min-height: 0` on the column and `flex-shrink`
- * on the poster are between them for. */
+ * A flex stack rather than a centred cell, because it is two things and on a
+ * phone a third (the button that reveals the transcript). Centred as a group
+ * against the taller column beside it, and every child allowed to shrink rather
+ * than push the page past one viewport, which is what `min-height: 0` on the
+ * column and `flex-shrink` on the stage are between them for. */
 .player__left {
   grid-area: left;
   display: flex;
@@ -445,9 +463,8 @@ body {
 .player__right {
   grid-area: right;
   /* For the one thing that floats over the sheet: the button that gives it back
-     to the audio after somebody has scrolled away from it. */
+     to the video after somebody has scrolled away from it. */
   position: relative;
-  grid-area: right;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -458,47 +475,74 @@ body {
   padding: clamp(8px, 2vh, 24px) 0;
 }
 
+/* The way back, set the way iOS sets one: a thin chevron and the word, in
+   white. It was grey — a quiet control, on the reasoning that the page is about
+   the episode rather than about leaving it — and grey is the wrong answer for
+   the only navigation on a page whose every other pixel is either the video or
+   the words. White, and the hover is an opacity rather than a colour, because
+   there is nowhere brighter for it to go. */
 .player__back,
 .console__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 8px 0;
   border: 0;
   background: none;
-  color: var(--muted);
+  color: var(--fg);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
-  transition: color 160ms ease;
+  opacity: 0.86;
+  transition: opacity 160ms ease;
+}
+
+/* Sized against the line it sits on rather than in pixels, so it stays in
+   proportion wherever this is used. The nudge is optical: a chevron centred on
+   its own box reads a hair low beside a cap-height word. */
+.back__chevron {
+  width: 0.62em;
+  height: 1.04em;
+  margin-top: -0.5px;
+  flex: 0 0 auto;
 }
 
 .player__back:hover,
 .console__back:hover {
-  color: var(--fg);
+  opacity: 1;
 }
 
-/* The artwork, and the blob behind it.
+/* The picture, as large as the page can make it.
  *
- * The blob is positioned against this rather than sharing a grid cell with the
- * poster, and that is not a stylistic preference — it is the difference between
- * the effect existing and not. The poster is opaque and 4:5; a blob the same
- * size sitting behind it is invisible, every frame of it, forever. So it is
- * inset *negatively* on all four sides and spills well past the artwork's
- * edges, which is where a glow coming off a speaker would actually be.
- */
+ * A 16:9 rectangle where this was a 4:5 sleeve, which changes what the
+ * constraint has to be: a portrait poster is limited by the window's height and
+ * a landscape frame is limited by the column's width. So the width is what is
+ * stated, and the height falls out of the ratio — bounded by a `vh` term, since
+ * a frame given the whole width of a wide monitor would otherwise be taller
+ * than the window it is in.
+ *
+ * There is no pixel ceiling any more. There used to be one because the video
+ * shared its column with a transport, a heading and a set of show notes, and
+ * something had to be left for them; the column holds the video and its name
+ * now, so the only reason to stop growing is running out of window. */
 .player__stage {
   position: relative;
-  /* Sized by whichever of three constraints bites first, which is what makes
-     this fit any window without a stack of breakpoints: the column's width,
-     the viewport's height, and a ceiling past which a poster stops gaining
-     anything by being larger. */
-  width: min(100%, 58vh, 440px);
-  /* It is the one thing here that can give: the transport and the title cannot
-     be made shorter, so on a short window the poster is what yields. */
+  /* The frame carries the ratio, not the element inside it.
+     
+     With the height stated and the video left to work its own width out, the
+     box ended up slightly squarer than 16:9 and `object-fit: contain`
+     letterboxed a 16:9 file inside it — black bands top and bottom of a picture
+     that fitted perfectly well. Stating the ratio here means the box is always
+     the shape of the thing in it, and the bar sits on the picture rather than
+     on a band under it. */
+  aspect-ratio: 16 / 9;
+  width: min(100%, calc(74vh * 16 / 9));
+  /* It is the one thing here that can give: a title cannot be made shorter, so
+     on a short window the picture is what yields. */
   flex: 0 1 auto;
-  isolation: isolate;
 }
 
-/* Sharing the column with the title, the transport and the notes rather than
-   having it to itself.
+/* Sharing the page with a transcript rather than having it to itself.
  *
  * Sized by *height* here, where everywhere else on this page a poster is sized
  * by width, and the swap is what makes the column fit a short window rather
@@ -510,145 +554,24 @@ body {
  * transport and the title cannot be made shorter, and a slightly smaller sleeve
  * costs nothing. The image follows it rather than the other way round. */
 .player[data-beside='transcript'] .player__stage {
-  width: auto;
-  height: min(38vh, 300px);
+  width: min(100%, calc(66vh * 16 / 9));
   min-height: 0;
 }
 
-.player[data-beside='transcript'] .player__art {
-  width: auto;
-  height: 100%;
-  max-width: 100%;
-}
-
-.player__art {
-  position: relative;
-  z-index: 1;
+.player__video {
+  display: block;
   width: 100%;
-  height: auto;
-  aspect-ratio: 4 / 5;
+  height: 100%;
   border-radius: 16px;
-  object-fit: cover;
+  /* `contain`, not `cover`. A frame is not a record sleeve: cropping one to fit
+     a box cuts off whoever is sitting at the edge of it, and a video that is
+     not quite 16:9 should letterbox against the black behind it rather than
+     lose a face. */
+  object-fit: contain;
+  background: #000;
   box-shadow:
     var(--ring-strong),
     0 30px 60px -24px rgb(0 0 0 / 90%);
-}
-
-.player__art--none {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  aspect-ratio: 4 / 5;
-  border-radius: 16px;
-  background: linear-gradient(160deg, var(--raised) 0%, var(--bg) 100%);
-}
-
-/* --- the blob -------------------------------------------------------------
- *
- * Three soft shapes stacked behind the artwork, swelling with what is coming
- * out of the speakers. The numbers arrive as custom properties written from
- * `requestAnimationFrame` in Blob.tsx — --level, --deform and --wobble, each
- * 0..1 — and everything below is a function of those three.
- *
- * Deliberately built out of blurred rounded shapes rather than an SVG path with
- * animated control points. A path morph has to be interpolated in JavaScript
- * and produces a new `d` string sixty times a second; this is three transforms
- * and a border-radius, all of which the compositor can do without ever asking
- * the main thread. On a phone that is the difference between a blob and a
- * slideshow.
- */
-
-.blob {
-  position: relative;
-  z-index: 0;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  aspect-ratio: 1;
-  pointer-events: none;
-}
-
-/* Bleeding out past the artwork on every side. See `.player__stage`: anything
-   smaller than this is a blob nobody ever sees, because the poster is opaque. */
-.player__blob {
-  position: absolute;
-  inset: -42%;
-  z-index: 0;
-  width: auto;
-  aspect-ratio: auto;
-}
-
-.blob__layer {
-  position: absolute;
-  width: 92%;
-  aspect-ratio: 1;
-  /* The idle shape: not a circle. A circle that grows and shrinks reads as a
-     pulsing dot; four different corner radii read as something soft. */
-  border-radius: 58% 42% 47% 53% / 45% 51% 49% 55%;
-  filter: blur(46px);
-  /* The whole shape scales with the level, and squashes with the deform, so a
-     loud vowel is wide and a consonant is a flicker. */
-  transform: scale(calc(0.78 + var(--level) * 0.62))
-    scaleX(calc(1 + var(--deform) * 0.16))
-    scaleY(calc(1 - var(--deform) * 0.1))
-    rotate(calc(var(--wobble) * 12deg));
-  /* Short, because this is already smoothed twice in JS (see RISE/FALL in
-     Blob.tsx). It is here to paper over a dropped frame, not to do the easing. */
-  transition:
-    transform 90ms linear,
-    opacity 300ms ease;
-  will-change: transform;
-}
-
-.blob__layer--back {
-  background: radial-gradient(circle at 50% 50%, rgb(251 44 54 / 72%), transparent 70%);
-  opacity: calc(0.42 + var(--level) * 0.58);
-}
-
-.blob__layer--mid {
-  width: 70%;
-  background: radial-gradient(circle at 45% 55%, rgb(255 100 103 / 62%), transparent 68%);
-  opacity: calc(0.34 + var(--level) * 0.62);
-  animation: blob-drift 17s ease-in-out infinite;
-}
-
-.blob__layer--front {
-  width: 54%;
-  background: radial-gradient(circle at 55% 45%, rgb(255 255 255 / 30%), transparent 66%);
-  opacity: calc(0.22 + var(--level) * 0.68);
-  animation: blob-drift 23s ease-in-out infinite reverse;
-}
-
-/* At rest the shapes keep a slow breath of their own, so a paused player is not
-   a dead page. Much smaller than the driven motion, and much slower. */
-.blob[data-live='false'] .blob__layer {
-  animation: blob-breathe 6s ease-in-out infinite;
-  opacity: 0.3;
-}
-
-@keyframes blob-breathe {
-  0%,
-  100% {
-    transform: scale(0.82);
-  }
-  50% {
-    transform: scale(0.9);
-  }
-}
-
-/* The slow wander that stops the two inner shapes sitting concentric with the
-   outer one, which is what would make the whole thing read as a target. */
-@keyframes blob-drift {
-  0%,
-  100% {
-    border-radius: 58% 42% 47% 53% / 45% 51% 49% 55%;
-  }
-  33% {
-    border-radius: 44% 56% 62% 38% / 55% 42% 58% 45%;
-  }
-  66% {
-    border-radius: 52% 48% 38% 62% / 60% 55% 45% 40%;
-  }
 }
 
 /* --- what the episode is -------------------------------------------------- */
@@ -698,259 +621,447 @@ body {
   text-align: center;
 }
 
-/* --- the scrubber ---------------------------------------------------------
+/* --- the transport, over the picture ----------------------------------------
  *
- * A real `<input type="range">` rather than a div with a pointer handler, and
- * that is not laziness: a range input is keyboard-operable, announces itself to
- * a screen reader, and handles drag capture and touch on its own. All of that
- * would have to be rebuilt, badly, to gain nothing but a easier time styling it.
+ * YouTube's bar, drawn in this page's own units. The component is
+ * `Controls.tsx` and the note at the top of it says which of these are
+ * decisions rather than looks; this is where the numbers are.
  *
- * The cost is that it has to be styled twice, once per engine, because the
- * pseudo-elements are not shared. The `--progress` custom property is what lets
- * the filled portion be painted with a gradient on the track instead of needing
- * a third element that the thumb would then sit on top of.
+ * Three of them matter more than the rest:
+ *
+ *   3px    the resting height of the scrubber. Thin enough to be a hairline
+ *          across the foot of the picture rather than a chrome bar on it.
+ *   5px    what it grows to under a pointer, along with a knob — which is the
+ *          only reason 3px is allowed to be the resting state.
+ *   48px   the height of the row under it. A 40px target with room around it,
+ *          which is what a thumb needs and what a cursor expects.
+ *
+ * The red is YouTube's own #f00 rather than this page's `--live`, and that is
+ * deliberate in the one place on this project where a second red is allowed:
+ * `--live` means *the station is on the air right now*, and a scrubber wearing
+ * it inside an archive — the one part of this station that is never live —
+ * would be the strongest signal on the page pointing at the wrong thing.
  */
 
-/* Never scrolls away: the notes move under it, this does not. */
-.player__controls {
-  flex: 0 0 auto;
+.tape {
+  position: absolute;
+  inset: 0;
+  /* Above the video, which is a replaced element and paints over everything a
+     stacking context would otherwise put in front of it. */
+  z-index: 2;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  justify-content: flex-end;
+  border-radius: inherit;
+  /* The scrim: darkness that gathers only where the bar is, so a face at the
+     bottom of the frame stays readable and the middle of the picture is never
+     touched. Fades with the bar itself. */
+  background: linear-gradient(to top, rgb(0 0 0 / 72%) 0%, rgb(0 0 0 / 34%) 46px, transparent 128px);
+  opacity: 0;
+  transition: opacity 220ms ease;
+  pointer-events: none;
 }
 
-.player__scrub {
-  width: 100%;
-  max-width: 460px;
+.tape[data-shown='true'] {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-.player__range {
-  width: 100%;
-  height: 20px;
-  margin: 0;
+/* The picture, as a button. Sits under the bar and over the video, so a click
+   anywhere that is not a control is play/pause — every video player on the web,
+   and the one gesture nobody has to be taught. */
+.tape__surface {
+  position: absolute;
+  inset: 0;
+  border: 0;
   background: none;
   cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
+  /* Reachable while the bar is hidden, which is the whole point of it: a paused
+     video with the bar faded out is still a video you can click to play. */
+  pointer-events: auto;
 }
 
-.player__range::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: var(--pill);
-  background: linear-gradient(
-    to right,
-    var(--fg) 0%,
-    var(--fg) var(--progress, 0%),
-    var(--raised-soft) var(--progress, 0%),
-    var(--raised-soft) 100%
-  );
+.tape__surface:focus {
+  outline: none;
 }
 
-.player__range::-moz-range-track {
-  height: 4px;
-  border-radius: var(--pill);
-  background: linear-gradient(
-    to right,
-    var(--fg) 0%,
-    var(--fg) var(--progress, 0%),
-    var(--raised-soft) var(--progress, 0%),
-    var(--raised-soft) 100%
-  );
-}
-
-.player__range::-webkit-slider-thumb {
-  width: 12px;
-  height: 12px;
-  margin-top: -4px;
+/* The one thing drawn in the middle, and only while paused. */
+.tape__start {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  transform: translate(-50%, -50%);
   border: 0;
-  border-radius: var(--pill);
-  background: var(--fg);
-  appearance: none;
-  -webkit-appearance: none;
-  transition: transform 140ms ease;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
 }
 
-.player__range::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border: 0;
-  border-radius: var(--pill);
-  background: var(--fg);
-  transition: transform 140ms ease;
+.tape__start:hover {
+  background: #f00;
+  transform: translate(-50%, -50%) scale(1.04);
 }
 
-.player__range:hover::-webkit-slider-thumb,
-.player__range:active::-webkit-slider-thumb {
-  transform: scale(1.35);
+.tape__start svg {
+  /* Nudged, because a triangle centred on its box reads left of centre inside a
+     circle. The one optical correction in this file. */
+  width: 30px;
+  height: 30px;
+  margin-left: 3px;
 }
 
-.player__range:hover::-moz-range-thumb,
-.player__range:active::-moz-range-thumb {
-  transform: scale(1.35);
-}
-
-.player__range:focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: 6px;
-  border-radius: var(--pill);
-}
-
-.player__clock {
+.tape__bar {
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  margin-top: 2px;
-  color: var(--faint);
-  /* Tabular, so the elapsed time does not shuffle its own left edge every
-     second as the digits change width. This is the reason the token exists. */
+  flex-direction: column;
+  padding: 0 12px 6px;
+}
+
+/* --- the scrubber ---------------------------------------------------------- */
+
+/* The target, which is taller than the thing it draws: 16px of pointer catching
+   a 3px line, so the bar can be a hairline and still be hittable. */
+.tape__track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 16px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.tape__rail {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  background: rgb(255 255 255 / 22%);
+  transition: height 120ms ease;
+}
+
+.tape__loaded,
+.tape__played {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+}
+
+/* What has arrived but not been watched. Lighter than the track, darker than
+   the playhead: three greys in one line, which is the whole readout. */
+.tape__loaded {
+  background: rgb(255 255 255 / 38%);
+}
+
+.tape__played {
+  background: #f00;
+}
+
+/* The knob: nothing at rest, and a red dot the moment the bar is pointed at.
+   Scaled rather than shown, so it grows out of the line it belongs to. */
+.tape__knob {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 13px;
+  height: 13px;
+  transform: translate(50%, -50%) scale(0);
+  border-radius: 50%;
+  background: #f00;
+  transition: transform 120ms ease;
+}
+
+.tape__track:hover .tape__rail,
+.tape__track:focus-visible .tape__rail {
+  height: 5px;
+}
+
+.tape__track:hover .tape__knob,
+.tape__track:focus-visible .tape__knob,
+.tape__track:active .tape__knob {
+  transform: translate(50%, -50%) scale(1);
+}
+
+.tape__track:focus-visible {
+  outline: 2px solid rgb(255 255 255 / 70%);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+/* Where the pointer is, in minutes and seconds, above the line. */
+.tape__preview {
+  position: absolute;
+  bottom: 18px;
+  padding: 3px 6px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: rgb(0 0 0 / 82%);
+  color: #fff;
   font-family: var(--font-numeric);
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
-/* --- the transport -------------------------------------------------------- */
+/* --- the row --------------------------------------------------------------- */
 
-.player__transport {
+.tape__row {
   display: flex;
   align-items: center;
-  gap: 28px;
-  /* Nothing below it now that the speed and volume row is gone, so the
-     bottom margin is only separating it from the notes' rule. */
-  margin: clamp(12px, 2vh, 24px) 0 0;
+  gap: 2px;
+  height: 42px;
 }
 
-.player__skip {
+.tape__button {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 0;
   border: 0;
-  border-radius: var(--pill);
   background: none;
-  color: var(--fg-dim);
+  color: #fff;
   cursor: pointer;
-  transition:
-    color 160ms ease,
-    background 160ms ease;
+  opacity: 0.92;
+  transition: opacity 140ms ease;
 }
 
-.player__skip:hover {
-  background: var(--raised);
-  color: var(--fg);
+.tape__button:hover {
+  opacity: 1;
 }
 
-/* The one control that is the point of the thing it sits in, so it gets the
-   accent and the larger of the two sizes. See --control-lg in tokens.css. */
-.player__play {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  border: 0;
-  border-radius: var(--pill);
-  background: var(--fg);
-  color: var(--bg);
+/* Says the speed is not 1×, which is the only state a gear has to carry. */
+.tape__button[data-on='true'] {
+  color: #f00;
+  opacity: 1;
+}
+
+.tape__button svg {
+  width: 24px;
+  height: 24px;
+}
+
+.tape__button:focus-visible {
+  outline: 2px solid rgb(255 255 255 / 70%);
+  outline-offset: -4px;
+  border-radius: 6px;
+}
+
+/* --- volume ---------------------------------------------------------------- */
+
+/* A button that grows a slider sideways when it is pointed at, which is how a
+   control used twice a session earns a place beside one used every few
+   seconds. The slider is `width` rather than `display`, so it slides out from
+   under the speaker rather than appearing beside it. */
+.tape__volume {
+  display: flex;
+  align-items: center;
+}
+
+.tape__level {
+  display: flex;
+  align-items: center;
+  width: 0;
+  height: 40px;
+  overflow: hidden;
   cursor: pointer;
-  box-shadow: 0 10px 30px -10px rgb(255 255 255 / 30%);
-  transition:
-    transform 140ms ease,
-    box-shadow 200ms ease;
+  touch-action: none;
+  transition: width 180ms ease;
 }
 
-.player__play:hover {
-  transform: scale(1.05);
+.tape__volume:hover .tape__level,
+.tape__volume:focus-within .tape__level {
+  width: 62px;
+  padding-right: 8px;
 }
 
-.player__play:active {
-  transform: scale(0.97);
+.tape__level-rail {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 32%);
 }
 
-/* No optical nudge on the play triangle, deliberately.
- *
- * A play glyph normally needs one — a triangle centred by its bounding box
- * looks left of centre in a circle. Phosphor's `play-fill` already carries it:
- * the path spans 64..240 on a 256 grid, so its box sits 24 units right of
- * centre before anything here touches it. Adding the usual few pixels on top
- * would push it visibly past the middle. */
-
-.player__skip:focus-visible,
-.player__play:focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: 4px;
+.tape__level-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: #fff;
 }
 
-/* --- show notes ----------------------------------------------------------- */
+/* White here, unlike the seek bar: the red on this page means the playhead, and
+   a red volume slider would be claiming to be one. */
+.tape__level .tape__knob {
+  width: 11px;
+  height: 11px;
+  background: #fff;
+  transform: translate(50%, -50%) scale(1);
+}
 
-/* The one thing on this page that scrolls.
- *
- * `flex: 1 1 auto` with `min-height: 0`: it takes what is left after the
- * artwork, the heading and the transport, and no more. When the notes are
- * short it is simply short; when they are an hour's worth it scrolls, and the
- * transport above it does not move. */
-/* --- what there is to read -------------------------------------------------
- *
- * Two things can end up in the scrolling region, and they are laid out
- * differently because they are different sizes of thing. The show notes are a
- * paragraph or two with a heading over them, at a reading measure. The
- * transcript is an hour of talk and takes the whole column; its own rules are
- * further down.
- *
- * `.player__pane` is the scroller both of them share — the overflow, the
- * scrollbar and the fade at the foot — and it carries `min-height: 0`, which is
- * the property that makes a flex child scroll instead of growing.
- */
+/* --- the clock and the gap -------------------------------------------------- */
 
-.player__notes-region {
+.tape__clock {
+  margin: 0 8px 0 6px;
+  color: #fff;
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.tape__of {
+  opacity: 0.6;
+}
+
+/* What makes it two clusters rather than a row: everything before this is left,
+   everything after it is right, and the middle is the picture. */
+.tape__gap {
+  flex: 1 1 auto;
+}
+
+/* --- the speed menu --------------------------------------------------------- */
+
+.tape__menu-holder {
+  position: relative;
+  display: flex;
+}
+
+.tape__menu {
+  position: absolute;
+  right: 0;
+  bottom: 46px;
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
+  min-width: 108px;
+  padding: 6px 0;
+  border-radius: 10px;
+  background: rgb(28 28 28 / 96%);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 55%);
+}
+
+.tape__rate {
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  color: rgb(255 255 255 / 82%);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tape__rate:hover {
+  background: rgb(255 255 255 / 10%);
+  color: #fff;
+}
+
+.tape__rate[data-on='true'] {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* --- a thumb rather than a pointer ------------------------------------------
+ *
+ * The volume control goes. A phone has hardware volume, its own player has no
+ * software one for the same reason, and a slider that only appears on hover is
+ * a slider that never appears at all on a device with nothing to hover. The
+ * rest of the bar grows instead: 44px is the target a thumb wants, and the row
+ * has the room once the speaker and its slider are out of it.
+ */
+@media (pointer: coarse) {
+  .tape__volume {
+    display: none;
+  }
+
+  .tape__button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .tape__row {
+    height: 46px;
+  }
+
+  /* A wider band to aim at, since the pointer here is a fingertip rather than
+     a point. The line it draws is unchanged. */
+  .tape__track {
+    height: 22px;
+  }
+
+  /* Nothing hovers, so the knob is simply always there. */
+  .tape__knob {
+    transform: translate(50%, -50%) scale(1);
+  }
+}
+
+/* --- fullscreen ------------------------------------------------------------- */
+
+/* The frame is what goes fullscreen, so that this bar goes with it — see the
+   note in Controls.tsx. Fullscreen gives it the whole screen and none of the
+   page's own sizing, so both are taken off here. */
+.player__stage:fullscreen {
   width: 100%;
-  max-width: 62ch;
-  margin: 0 auto;
+  height: 100%;
+  max-width: none;
+  border-radius: 0;
+  background: #000;
 }
 
-/* The heading is fixed; the paragraphs under it are what shrinks. */
-.player__pane-heading {
-  flex: 0 0 auto;
+.player__stage:fullscreen .player__video {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
 }
 
-/* Under the transport rather than in a column of its own, because the other
-   column is a transcript. Capped and ruled off: it is an introduction sitting
-   beside the controls now, not the thing you came to read, and left uncapped a
-   long set of notes would push the transport off a laptop screen. */
-.player[data-beside='transcript'] .player__notes-region {
-  flex: 0 1 auto;
-  max-height: 26vh;
-  padding-top: clamp(10px, 1.8vh, 20px);
-  border-top: 1px solid rgb(255 255 255 / 6%);
+.tape[data-full='true'] {
+  border-radius: 0;
 }
 
-.player__pane {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--raised-soft) transparent;
-  /* A hint that there is more below, which a scrollbar alone does not give on
-     a trackpad where it is hidden until you touch it. */
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+/* Bigger targets and a taller scrim, which is what every player does at this
+   size and what a screen two feet from your face needs. */
+.tape[data-full='true'] .tape__row {
+  height: 54px;
 }
 
-.player__pane::-webkit-scrollbar {
-  width: 10px;
+.tape[data-full='true'] .tape__button {
+  width: 48px;
+  height: 48px;
 }
 
-.player__pane::-webkit-scrollbar-track {
-  background: transparent;
+.tape[data-full='true'] .tape__button svg {
+  width: 28px;
+  height: 28px;
 }
 
-.player__pane::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
-  border-radius: var(--pill);
-  background: var(--raised-soft);
-  background-clip: content-box;
+.tape[data-full='true'] .tape__clock {
+  font-size: 13px;
 }
+
+/* --- what there is to read -------------------------------------------------
+ *
+ * One thing, now: the transcript. This section used to describe a shared
+ * scroller (`.player__pane`) because the show notes could end up in the same
+ * region — and before that there were a scrubber, a transport and three button
+ * rules here as well. All of it went with the page's own controls: the browser
+ * draws the transport, and an introduction to a conversation belongs on the
+ * card you read before starting it rather than beside a video that is playing.
+ *
+ * The transcript's own rules are below, and it carries its own overflow.
+ */
+
 
 /* The way in to the transcript, on a phone.
  *
@@ -984,27 +1095,8 @@ body {
 /* What the pane is called when there is only one thing it can be. Same words,
    same weight and same colour as an unchosen tab, so an episode with a
    transcript and one without do not look like two different designs. */
-.player__pane-heading {
-  margin-bottom: 16px;
-  color: var(--faint);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 
-.player__notes p {
-  margin: 0 0 16px;
-  color: var(--fg-dim);
-  font-size: 14px;
-  line-height: 1.65;
-}
 
-.player__notes p:last-child {
-  /* Clears the fade at the foot of the scroller, so the last line is readable
-     rather than half-masked. */
-  margin-bottom: 28px;
-}
 
 /* --- what was said ---------------------------------------------------------
  *
@@ -1328,15 +1420,18 @@ body {
 }
 
 .console__left::-webkit-scrollbar,
+.console__left::-webkit-scrollbar,
 .console__right::-webkit-scrollbar {
   width: 10px;
 }
 
 .console__left::-webkit-scrollbar-track,
+.console__left::-webkit-scrollbar-track,
 .console__right::-webkit-scrollbar-track {
   background: transparent;
 }
 
+.console__left::-webkit-scrollbar-thumb,
 .console__left::-webkit-scrollbar-thumb,
 .console__right::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
@@ -1396,6 +1491,7 @@ body {
 }
 
 .console__field input,
+.console__field input,
 .console__field textarea {
   width: 100%;
   padding: 10px 12px;
@@ -1412,6 +1508,7 @@ body {
   line-height: 1.6;
 }
 
+.console__field input:focus-visible,
 .console__field input:focus-visible,
 .console__field textarea:focus-visible {
   outline: 2px solid var(--fg);
@@ -1491,6 +1588,120 @@ body {
   margin-bottom: 20px;
   font-size: 15px;
 }
+
+/* --- a file, dropped -------------------------------------------------------
+ *
+ * The station's own dropzone, at field size. `.dropzone` in styles.css is where
+ * this shape started — the dashed rule, the badge, the two lines of words — and
+ * the differences are the ones the component documents: this holds one file
+ * rather than a pile, and it is a `<label>` wrapped round a real input rather
+ * than a div with a click handler, so the keyboard and the form both still work
+ * exactly as they did when it was a plain file field.
+ */
+
+.drop {
+  display: flex;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.drop__label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.drop__body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 12px 14px;
+  border: 1.4px dashed rgb(255 255 255 / 16%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 2%);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.drop:hover .drop__body,
+.drop:focus-within .drop__body {
+  border-color: rgb(255 255 255 / 30%);
+  background: rgb(255 255 255 / 4%);
+}
+
+/* Something is over it right now. Solid rather than dashed, because the edge
+   has stopped being an invitation and become a target. */
+.drop[data-over='true'] .drop__body {
+  border-style: solid;
+  border-color: var(--fg);
+  background: rgb(38 38 38 / 60%);
+}
+
+/* Holding a file: the dashes go, because the invitation has been taken. */
+.drop[data-chosen='true'] .drop__body {
+  border-style: solid;
+  border-color: rgb(255 255 255 / 12%);
+  background: var(--raised);
+}
+
+.drop__mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 6%);
+  color: var(--fg-dim);
+}
+
+.drop__mark svg {
+  width: 20px;
+  height: 20px;
+}
+
+.drop__said {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The file's own name, which can be anything: clipped rather than wrapped, so a
+   long export name cannot make one of two side-by-side fields taller than the
+   other. */
+.drop__name {
+  overflow: hidden;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drop__hint {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* The input is still the control. Hidden from view and not from the form. */
+.drop__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* What the console makes of the file it was given — the size of a video, the
+   dimensions of a thumbnail, or what is wrong with either — takes the hint's
+   place inside the tile rather than being a second line under it. One thing is
+   said about a file, in one place. See `FileDrop`. */
 
 /* --- an upload in flight ---------------------------------------------------
  *
@@ -1642,6 +1853,8 @@ body {
 
 .row__view,
 .row__toggle,
+.row__view,
+.row__toggle,
 .row__delete {
   padding: 0 12px;
   height: var(--control);
@@ -1660,6 +1873,7 @@ body {
 }
 
 .row__view:hover,
+.row__view:hover,
 .row__toggle:hover {
   background: var(--raised-soft);
   color: var(--fg);
@@ -1673,6 +1887,7 @@ body {
   color: var(--live-text);
 }
 
+.row__toggle:disabled,
 .row__toggle:disabled,
 .row__delete:disabled {
   opacity: 0.5;
@@ -1839,21 +2054,13 @@ body {
      phone-sized poster on a screen with room for a real one.
    *
    * Back to being sized by width, which undoes the height-driven poster the
-   * two-column layout needs. Up there the poster is what gives when the column
+   * two-column layout needs. Up there the picture is what gives when the column
    * is too tall; down here nothing is competing for that height — the
-   * transcript is behind a button — and a width the sleeve is drawn from is
-   * simpler and cannot squash it. Both properties are named because both are
-   * set above; leaving `height` at its desktop value is exactly how a 4:5
-   * poster ends up 64px wide and 300px tall. */
+   * transcript is behind a button — and a width the frame is drawn from is
+   * simpler and cannot squash it. The ratio on the frame does the rest. */
   .player__stage,
   .player[data-beside='transcript'] .player__stage {
-    width: min(100%, 34vh, 340px);
-    height: auto;
-  }
-
-  .player[data-beside='transcript'] .player__art {
     width: 100%;
-    height: auto;
   }
 
   .player__right {
@@ -1867,10 +2074,6 @@ body {
 
   .player__title {
     -webkit-line-clamp: 2;
-  }
-
-  .player__transport {
-    gap: 22px;
   }
 
   /* The way in to the words, which exists only at this width. */
@@ -1913,21 +2116,8 @@ body {
   }
 
   /* Nothing in that column may be squeezed: it scrolls instead. */
-  .player[data-beside='transcript'][data-reading='false'] .player__stage,
-  .player[data-beside='transcript'][data-reading='false'] .player__notes-region {
+  .player[data-beside='transcript'][data-reading='false'] .player__stage {
     flex: 0 0 auto;
-  }
-
-  /* And the notes stop being a scroller of their own, because a scroller inside
-     a scroller on a phone is two things a thumb can drag and one of them is
-     always the wrong one. */
-  .player[data-beside='transcript'] .player__left .player__notes-region {
-    max-height: none;
-  }
-
-  .player[data-beside='transcript'] .player__left .player__pane {
-    overflow: visible;
-    mask-image: none;
   }
 
   /* Open: everything above the words gives up what it can.
@@ -1935,31 +2125,26 @@ body {
    * The poster to a thumbnail with the title beside it rather than under it,
    * which is where the screen actually comes from — a 4:5 poster at a phone's
    * width is two thirds of the viewport on its own. The transport stays exactly
-   * as it is: it is the reason the page is one viewport, and a transcript is
-   * read *while listening*, so the play button is the last thing that may
-   * shrink. */
+   * as it is: the video keeps its own controls, and they are the browser's, so
+   * there is nothing of ours left up here that could be made smaller. */
   .player[data-reading='true'] .player__left {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       'art words'
-      'controls controls'
       'reveal reveal';
     align-items: center;
     gap: 12px 14px;
     padding-bottom: 4px;
   }
 
+  /* Wider than the 64px the sleeve used to shrink to, because 64px of a 16:9
+     frame is 36px tall — a strip rather than a thumbnail, and too small to make
+     out what is happening in it. */
   .player[data-reading='true'] .player__stage {
     grid-area: art;
-    width: 64px;
+    width: 104px;
     height: auto;
-  }
-
-  /* The blob is a glow around a record sleeve; around a 64px thumbnail it is a
-     smudge behind the title. */
-  .player[data-reading='true'] .player__blob {
-    display: none;
   }
 
   .player[data-reading='true'] .player__heading {
@@ -1982,19 +2167,9 @@ body {
     display: none;
   }
 
-  .player[data-reading='true'] .player__controls {
-    grid-area: controls;
-  }
-
   .player[data-reading='true'] .player__reveal {
     grid-area: reveal;
     justify-self: center;
-  }
-
-  /* An introduction to a conversation somebody is now in the middle of reading
-     the whole of. It is one tap away again. */
-  .player[data-reading='true'] .player__notes-region {
-    display: none;
   }
 
   /* The sheet's ends, on a screen where the whole sheet is about six lines
@@ -2053,11 +2228,12 @@ body {
 }
 
 /* A short window on a desk — a laptop with a dock and a browser bar, which is
-   most laptops. The artwork is what gives way, because it is the one thing
-   here that is only ever decoration once you have pressed play. */
+   most laptops. The picture is what gives way, since the alternative is a title
+   and a control bar off the bottom of the screen. */
 @media (min-width: 901px) and (max-height: 720px) {
-  .player__stage {
-    width: min(100%, 46vh, 300px);
+  .player__stage,
+  .player[data-beside='transcript'] .player__stage {
+    width: min(100%, calc(58vh * 16 / 9));
   }
 
   .player__heading {
@@ -2067,23 +2243,17 @@ body {
 
 /* --- taking the motion out ------------------------------------------------
  *
- * The blob is the whole of what this page adds in the way of movement, and it
- * is exactly the kind of thing — large, organic, continuous — that this setting
- * exists for. So it stops entirely rather than being slowed: what is left is a
- * still shape behind the artwork, which is a perfectly good thing to look at.
- *
- * The card tilt goes too. The lift and the brightness stay, because neither is
+ * The card tilt goes. The lift and the brightness stay, because neither is
  * motion in the sense that matters here: they say "this is the one you are
  * pointing at", which is information rather than decoration.
+ *
+ * The video is not touched, and that is the right answer rather than an
+ * oversight: it is the content of the page, not decoration on it, and it does
+ * not play until somebody presses play. This setting is about motion nobody
+ * asked for.
  */
 
 @media (prefers-reduced-motion: reduce) {
-  .blob__layer {
-    animation: none !important;
-    transform: scale(0.86) !important;
-    transition: opacity 400ms ease;
-  }
-
   .tilt__body {
     transform: none !important;
     transition: none;
