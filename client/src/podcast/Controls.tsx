@@ -27,10 +27,19 @@ import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef,
  *    expands sideways into a slider on hover, which is how a control that
  *    matters twice a session earns its place beside one that matters every few
  *    seconds.
- *  - **It goes away.** Three seconds after the last movement, while playing,
- *    the bar and the scrim fade out; any movement brings them back, and a
- *    paused video keeps them. A control bar over a face for the whole of an
- *    hour is a control bar in the way.
+ *  - **It goes away — under a pointer, or in fullscreen.** Three seconds after
+ *    the last movement, while playing, the bar and the scrim fade out; any
+ *    movement brings them back, and a paused video keeps them.
+ *
+ *    **On a phone, inline, it does not.** A mouse brings the bar back for free
+ *    by moving, and a thumb cannot: a faded bar takes `pointer-events` with it,
+ *    so the first tap wakes it and only the second one presses the thing that
+ *    was tapped. Every action costing two taps is what "the buttons are hard to
+ *    press" turns out to mean, and it is not a size problem — the targets are
+ *    44px. Fading exists because a bar over a face for an hour is in the way,
+ *    and inline on a phone the video is a third of the screen with a title
+ *    under it: there is no face for it to be in the way of. In fullscreen there
+ *    is, so there it fades on touch as well, and a tap wakes it.
  *  - **The keys are YouTube's.** Space and `k` play, `j`/`l` and the arrows
  *    seek, `m` mutes, `f` is fullscreen, `0`–`9` jump to a tenth. Bound to the
  *    page rather than to the element, because the thing somebody wants after
@@ -83,6 +92,14 @@ export function Controls({ media, stage }: ControlsProps) {
   const [rate, setRate] = useState(1)
   const [full, setFull] = useState(false)
   const [shown, setShown] = useState(true)
+  /**
+   * Whether the thing pointing at this is a thumb.
+   *
+   * Watched rather than read once, because it genuinely changes under a page:
+   * a tablet with a keyboard folded back, a laptop whose screen is a touch
+   * screen, a phone with a mouse paired to it.
+   */
+  const [coarse, setCoarse] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   /** Where the pointer is along the scrubber, as seconds, for the tooltip. */
   const [hover, setHover] = useState<number | null>(null)
@@ -143,6 +160,14 @@ export function Controls({ media, stage }: ControlsProps) {
     }
   }, [media])
 
+  useEffect(() => {
+    const query = window.matchMedia('(pointer: coarse)')
+    const read = () => setCoarse(query.matches)
+    read()
+    query.addEventListener('change', read)
+    return () => query.removeEventListener('change', read)
+  }, [])
+
   /* --- fullscreen ---------------------------------------------------------- */
 
   useEffect(() => {
@@ -175,22 +200,26 @@ export function Controls({ media, stage }: ControlsProps) {
 
   /* --- showing and hiding --------------------------------------------------- */
 
+  /** A thumb inline keeps the bar; see the note at the top. */
+  const stays = coarse && !full
+
   const wake = useCallback(() => {
     setShown(true)
     window.clearTimeout(idle.current)
+    if (stays) return
     // Paused, being scrubbed, or with the speed menu open: the bar stays. The
     // first because a paused video is one somebody is deciding about, and the
     // other two because it is being used right now.
     idle.current = window.setTimeout(() => {
       if (media && !media.paused && !scrubbing.current && !menuOpen) setShown(false)
     }, IDLE_MS)
-  }, [media, menuOpen])
+  }, [media, menuOpen, stays])
 
   useEffect(() => {
-    if (!playing) setShown(true)
+    if (!playing || stays) setShown(true)
     else wake()
     return () => window.clearTimeout(idle.current)
-  }, [playing, wake])
+  }, [playing, stays, wake])
 
   /* --- the things the buttons do -------------------------------------------- */
 
@@ -347,7 +376,15 @@ export function Controls({ media, stage }: ControlsProps) {
       data-shown={shown || !playing ? 'true' : 'false'}
       data-full={full ? 'true' : 'false'}
       onPointerMove={wake}
+      // A tap is not a move: without this, touching a control in fullscreen —
+      // where the bar does fade — would press it and then let the timer that
+      // was already running hide the bar a moment later, mid-gesture.
+      onPointerDown={wake}
       onPointerLeave={() => {
+        // A mouse leaving means the pointer is elsewhere. A *touch* pointer
+        // "leaves" at the end of every tap, which would hide the bar the
+        // instant somebody pressed play.
+        if (stays) return
         if (playing && !scrubbing.current && !menuOpen) setShown(false)
       }}
     >
@@ -359,16 +396,14 @@ export function Controls({ media, stage }: ControlsProps) {
         className="tape__surface"
         onClick={() => {
           /*
-           * On a phone the first tap is for the controls, not for the video.
+           * A tap that only brings the bar back, when the bar is away.
            *
-           * There is no pointer to hover with, so a bar that has faded out is
-           * a bar with no way back except a tap — and if that tap also paused
-           * the episode, reaching the scrubber would mean stopping what you
-           * are watching first. Every touch player behaves this way; on a
-           * mouse there is nothing to fix, because moving to the picture has
-           * already woken it.
+           * Reached on a phone in fullscreen, which is the one place a thumb
+           * meets a faded bar now: there is no pointer to hover with, and if
+           * the tap that brings it back also paused the episode, reaching the
+           * scrubber would mean stopping what you are watching first.
            */
-          if (!shown && window.matchMedia('(pointer: coarse)').matches) {
+          if (!shown && coarse) {
             wake()
             return
           }
