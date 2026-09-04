@@ -2226,25 +2226,33 @@ h2 {
   }
 }
 
-/* --- the desk, on one screen -------------------------------------------------
+/* --- the desk, in three columns ---------------------------------------------
  *
- * Three columns, and the page stops scrolling: each column is its own scroller,
- * so the transport stays where it was put while the room is read and the
- * library is dug through. Heights come from the flex chain rather than from a
- * constant subtracted off `100dvh`, because the chrome above this (the shell's
- * padding, the top bar, the console's own header) is three separate numbers
- * that would all have to be kept in step by hand.
+ * Three columns wide enough to be read, and the page scrolls.
  *
- * `:has` is what keeps this off the listener page, which is a scroll on
- * purpose. Where it is not supported nothing here applies and the console is
- * the ordinary three-column page it is below this width, which is a fair
- * fallback rather than a broken one.
+ * It did not, and that is what this note is mostly about. The console was built
+ * to be one screen of work: the shell took `100dvh`, the main pane hid its
+ * overflow, and each column scrolled inside itself, so the transport stayed
+ * where it was put while the room was read and the library dug through. It is a
+ * good shape for a desk that fits, and the console stopped fitting — every
+ * card that has been added since sits in a column that then has to scroll, and
+ * a page with three scrollers and a wheel that means something different over
+ * each of them is worse to use than a page that simply scrolls.
+ *
+ * So the columns are a grid and nothing more. What is gone with the height:
+ * `height: 100dvh` on the shell, `overflow: hidden` on the main pane, and the
+ * per-column `overflow-y: auto` — and with them the `:has()` guard that kept
+ * all of it off the listener page.
+ *
+ * The lists inside cards keep their own caps (`.floor__hands`, `.reach__list`):
+ * those are about a list of names not taking over the card it is in, which is
+ * true whatever the page does.
  *
  * 1360 rather than the 1280 this used to start at. Three columns is only worth
  * having if each one has room to be read, and once the cards inside them were
  * given a card's worth of padding, 1280 divided three ways was a desk where
  * every list was one word wide. Between 1000 and 1360 the two-column shape
- * below is the better answer: the same cards, with room.
+ * above is the better answer: the same cards, with room.
  */
 @media (min-width: 1360px) {
   .console__columns {
@@ -2252,42 +2260,10 @@ h2 {
       minmax(340px, 0.85fr)
       minmax(0, 1.35fr)
       minmax(340px, 0.95fr);
-    align-items: stretch;
-  }
-
-  .station:has(.console--desk) {
-    height: 100dvh;
-  }
-
-  .station__main:has(.console--desk) {
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .console--desk {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .console--desk .console__columns {
-    flex: 1;
-    min-height: 0;
-  }
-
-  /* Each column takes the scrolling its own cards would otherwise hand to the
-     page. The gutter is held open whether or not it is scrolling, so a card
-     does not shift sideways when a track is queued. */
-  .console__column {
-    min-height: 0;
-    overflow-y: auto;
-    scrollbar-gutter: stable;
-  }
-
-  /* Except the room, which does not scroll as a column: the wishes sit at a
-     height of their own and the conversation underneath them takes the rest,
-     scrolling inside itself the way a conversation should. */
-  .console__column--room {
-    overflow: hidden;
+    /* `start`, not `stretch`: with nothing capping the columns' height, a
+       stretched column makes every card in the short ones as tall as the
+       tallest column beside them, which is a page of half-empty boxes. */
+    align-items: start;
   }
 }
 
@@ -3587,11 +3563,10 @@ h2 {
  */
 
 .card--comments {
-  /* Tall enough to be a conversation, capped so the console stays one screen of
-     work rather than a page you scroll to reach the library. On a desk it takes
-     whatever its column has left under the wishes and scrolls inside itself;
-     below that width it is a card in a stack like any other, with a cap so a
-     busy room does not bury everything under it. */
+  /* Tall enough to be a conversation, and capped, which is now the only reason
+     left: a busy room should not bury the cards under it. It used to be capped
+     so that the console stayed one screen of work — see the note above the
+     three-column rule, where that idea is buried. */
   max-height: 480px;
 }
 

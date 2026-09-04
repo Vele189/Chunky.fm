@@ -86,9 +86,22 @@ export interface MediaStore {
   completeUpload(key: string, uploadId: string, parts: UploadedPart[]): Promise<void>
   /** Give up, and leave nothing behind. */
   abortUpload(key: string, uploadId: string): Promise<void>
-  /** Write an object outright. Used for the transcoded copy and the poster. */
-  put(key: string, body: Buffer, contentType: string): Promise<void>
-  /** Read one back, for transcoding. */
+  /**
+   * Write an object outright. Used for the remuxed copy and the poster.
+   *
+   * A poster is a few hundred kilobytes and arrives as a `Buffer`. A remuxed
+   * episode is the size of the master it came from — a gigabyte is ordinary —
+   * and arrives as a stream off the disk it was written to, because holding one
+   * in memory on a container this small is how a station is killed by its own
+   * archive. A stream has to state its length: S3 signs the request before it
+   * has seen the body, and R2 refuses one that arrives without a
+   * `Content-Length` it can check.
+   */
+  put(key: string, body: Buffer | Readable, contentType: string, bytes?: number): Promise<void>
+  /**
+   * Read one back: the head of it, to see how it was written, or all of it, to
+   * hand to ffmpeg. See `lib/video.ts`.
+   */
   getStream(key: string): Promise<Readable>
   /** How big an object is, or null if it is not there. */
   size(key: string): Promise<number | null>
@@ -117,13 +130,52 @@ export function partCountFor(bytes: number): number {
 /**
  * How long a presigned part URL is good for.
  *
- * An hour, which sounds generous for a single 8 MiB PUT and is not: these are
- * handed out in batches at the start of an upload, and the last part of a
- * 500 MB file on a slow connection may not be reached for a long time. Short
- * enough that a URL scraped out of a network log is not a standing write
- * credential for the bucket.
+ * Six hours, and it was one, which is the single most important number on this
+ * page for an hour-long video.
+ *
+ * These are handed out in a batch at the start of an upload, so the clock on
+ * the *last* part starts when the *first* one does. An hour of 1080p is a
+ * gigabyte or two; a domestic uplink is 10 Mbps if the household is lucky, and
+ * a gigabyte at 10 Mbps is a little over a quarter of an hour — which is fine
+ * until somebody uploads two hours of 4K over a connection shared with the
+ * evening's television, and the upload that was going perfectly well at part
+ * 300 of 512 starts answering 403 because the credential minted five hours ago
+ * has quietly gone stale.
+ *
+ * Six hours is past any upload a person will sit through, and it is not the
+ * whole answer either: `GET .../parts/:n/url` mints a fresh one on demand, and
+ * the console asks for it before every retry. This is the cheap half — the
+ * number that stops the situation arising — and that route is the half that
+ * survives it arising anyway.
+ *
+ * Still bounded, and this is why it is not simply seven days (SigV4's ceiling):
+ * a URL scraped out of a network log is a write credential for one part of one
+ * key, and how long it lasts is how long that is worth anything.
  */
-const PART_URL_TTL_S = 3600
+const PART_URL_TTL_S = 6 * 3600
+
+/**
+ * What every object in this bucket is cached as.
+ *
+ * A year, immutable, and it is not optimistic: every key here is named by
+ * something that cannot change under it. A master is a fresh UUID, a rewritten
+ * copy is the content hash of what it came from, a poster is a fresh id every
+ * time one is set. There is no key whose bytes are ever replaced, so there is
+ * no cache to invalidate.
+ *
+ * Stated at *write* time because that is the only time it can be. Cloudflare's
+ * edge caches an R2 object according to the headers the object carries, and an
+ * object stored without a `Cache-Control` is one the edge will re-fetch far
+ * more often than it needs to — which for an hour of video is the difference
+ * between a cache hit at a data centre in the same city and a gigabyte pulled
+ * from the bucket again. On the seek-heavy access pattern a video player has,
+ * that is most of what R2 was chosen for.
+ *
+ * `immutable` is the part that matters to a *player* rather than to the edge:
+ * without it a browser revalidates on every range request when somebody scrubs,
+ * which is a round trip per drag of the scrubber.
+ */
+const FOREVER = 'public, max-age=31536000, immutable'
 
 /* -------------------------------------------------------------------------- */
 /*  R2                                                                         */
@@ -168,7 +220,12 @@ function r2Store(config: NonNullable<Config['r2']>): MediaStore {
 
     async createUpload(key, contentType) {
       const out = await client.send(
-        new CreateMultipartUploadCommand({ Bucket, Key: key, ContentType: contentType }),
+        new CreateMultipartUploadCommand({
+          Bucket,
+          Key: key,
+          ContentType: contentType,
+          CacheControl: FOREVER,
+        }),
       )
       if (!out.UploadId) throw new Error('R2 began an upload without giving it an id')
       return { uploadId: out.UploadId, key }
@@ -206,9 +263,19 @@ function r2Store(config: NonNullable<Config['r2']>): MediaStore {
       )
     },
 
-    async put(key, body, contentType) {
+    async put(key, body, contentType, bytes) {
       await client.send(
-        new PutObjectCommand({ Bucket, Key: key, Body: body, ContentType: contentType }),
+        new PutObjectCommand({
+          Bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          CacheControl: FOREVER,
+          // Stated for a stream, worked out for a buffer. Without it the SDK
+          // would have to buffer the whole body to find out how long it is,
+          // which is the thing streaming here exists to avoid.
+          ContentLength: bytes ?? (Buffer.isBuffer(body) ? body.length : undefined),
+        }),
       )
     },
 
@@ -252,7 +319,7 @@ function r2Store(config: NonNullable<Config['r2']>): MediaStore {
  * written. It is a receipt, not a checksum anybody compares across systems.
  */
 function localStore(config: Config): MediaStore {
-  const root = config.episodeAudioDir
+  const root = config.episodeVideoDir
   const staging = path.join(config.tmpDir, 'uploads')
 
   const objectPath = (key: string) => path.join(root, key.replaceAll('/', '__'))
@@ -310,7 +377,10 @@ function localStore(config: Config): MediaStore {
     async put(key, body) {
       const destination = objectPath(key)
       await fs.mkdir(path.dirname(destination), { recursive: true })
-      await fs.writeFile(destination, body)
+      // A stream is written through rather than collected first, for the reason
+      // the interface gives: the thing coming through here is an episode.
+      if (Buffer.isBuffer(body)) await fs.writeFile(destination, body)
+      else await pipeline(body, createWriteStream(destination))
     },
 
     async getStream(key) {

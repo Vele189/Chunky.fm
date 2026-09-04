@@ -692,6 +692,22 @@ html {
   display: inline-grid;
   vertical-align: baseline;
   text-align: left;
+  /* A plate behind the word, because of what is behind *it*: the gramophone
+     turns through this line, and a white word passing over a lit brass horn is
+     a white word nobody can read for a second and a half at a time.
+     
+     Sized by the padding and given the space back by an equal negative margin,
+     so the sentence has exactly the metrics it had before — the plate is
+     painted around the word rather than making room for itself, and the comma
+     after it does not move when this rule is added or taken away. The blur is
+     what keeps it from reading as a box: the model behind goes soft rather than
+     being covered, which on a browser that will not do it degrades to the flat
+     panel below and is still perfectly legible. */
+  padding: 0.04em 0.3em;
+  margin: -0.04em -0.3em;
+  border-radius: 8px;
+  background: rgb(10 10 10 / 62%);
+  backdrop-filter: blur(6px);
 }
 
 .flip__word {
@@ -1574,16 +1590,75 @@ html {
  * Nothing is eased here either. This follows a finger exactly and has no
  * momentum of its own; a transition would mean the panel was still arriving
  * after the scroll had stopped. */
+/* Where the light on the bezel is, right now.
+ *
+ * Registered rather than left a plain custom property, and that is the whole
+ * mechanism: an unregistered one animates discretely — 0deg until halfway and
+ * then 360deg — and a registered `<angle>` interpolates, so one keyframe pair
+ * turns the gradient below instead of flicking it. */
+@property --stage-sweep {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
 .stage__panel {
   transform-origin: center center;
   padding: 10px;
+  /* The bezel's own edge, lit and travelling. Aceternity UI's Hover Border
+     Gradient (<https://ui.aceternity.com/components/hover-border-gradient>),
+     with the one change that matters here: theirs lights up under a cursor and
+     this does not wait to be pointed at. The panel is a screen the section is
+     showing you, not a control, and a border that only appears on hover would
+     be saying "press me" about a thing there is nothing to press on.
+
+     Two background layers rather than a masked overlay: the fill is clipped to
+     the padding box and the gradient to the border box, so a transparent
+     border *is* the ring, and nothing is painted over the contents. The
+     gradient is dim gold nearly all the way round with one bright arc in it,
+     and `from var(--stage-sweep)` walks that arc round the perimeter. Both
+     ends of the stop list are the same dim gold, so 360deg meets 0deg with no
+     seam.
+
+     It travels unevenly on purpose-ish: the angles of a conic gradient map to
+     the edges of a rectangle, so the light crosses the long top and bottom
+     slowly and turns the short sides quickly. On a panel this wide that reads
+     like light running along an edge, which is what it is meant to be. */
+  border: 1.5px solid transparent;
   border-radius: 26px;
-  background: var(--raised);
+  background:
+    linear-gradient(var(--raised), var(--raised)) padding-box,
+    conic-gradient(
+        from var(--stage-sweep),
+        rgb(198 160 74 / 20%) 0deg,
+        rgb(198 160 74 / 20%) 170deg,
+        rgb(226 189 106 / 55%) 250deg,
+        #ffdf9a 300deg,
+        rgb(226 189 106 / 55%) 345deg,
+        rgb(198 160 74 / 20%) 360deg
+      )
+      border-box;
   box-shadow:
     0 9px 20px rgb(0 0 0 / 29%),
     0 37px 37px rgb(0 0 0 / 26%),
     0 84px 50px rgb(0 0 0 / 15%),
     0 149px 60px rgb(0 0 0 / 4%);
+  animation: stage-sweep 7s linear infinite;
+}
+
+@keyframes stage-sweep {
+  to {
+    --stage-sweep: 360deg;
+  }
+}
+
+/* The station's rule: asked to hold still, things stop rather than slow down.
+   The arc parks where it started, so the bezel keeps its gold edge and only the
+   travelling stops. */
+@media (prefers-reduced-motion: reduce) {
+  .stage__panel {
+    animation: none;
+  }
 }
 
 .stage__screen {
@@ -1674,6 +1749,21 @@ html {
 
 /* The line under it, and the honest half of every cell: the drawings are
    pictures of instruments and this is what each one is for, in words. */
+/* One cell in the grid is a drawing with no words under it: see the LIVE meter
+   in Landing.tsx. Its sentence is still here for anything reading the page
+   rather than looking at it — the idiom is `.limits__spoken`'s, which is the
+   station's own. */
+.bento__cell--spoken .bento__says {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .bento__says {
   margin: 0;
   color: var(--fg);
@@ -1799,43 +1889,12 @@ html {
  * imported unchanged like the one under the pile of records.
  */
 
+/* Nothing but the meter, centred. The readout that used to sit under it — the
+   playhead, the record, the head count — is gone with the rules that dressed
+   it; see the note on the cell in Landing.tsx. */
 .tuned {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-/* `center` rather than `space-between`: the three of them are one line of
-   readout — where the record is, what it is, and how many are on it — and
-   spreading them to the corners of a wide cell turns one fact into three
-   separate ones. `justify-content` rather than `margin-left: auto` on the last
-   of them, which is what used to push the count to the far right and is the
-   idiom for a row that is being spread. */
-.tuned__what {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
   justify-content: center;
-  gap: 12px;
-}
-
-.tuned__where {
-  color: var(--fg);
-  font-family: var(--font-numeric);
-  font-size: 20px;
-  letter-spacing: -0.02em;
-}
-
-.tuned__of {
-  color: var(--fg-dim);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.tuned__who {
-  color: var(--faint);
-  font-size: 12px;
 }
 
 /* --- the room, filling -----------------------------------------------------
@@ -2079,6 +2138,20 @@ html {
 
 .beam__lit {
   stroke-width: 1.25;
+}
+
+/* Heavier on a phone. The line is the same length as the section and the
+   section is three times as tall there, so the lit window is a shorter part of
+   a longer line: at a hairline it reads as a line that is on rather than as one
+   being drawn. Half a pixel is the difference between the two. */
+@media (max-width: 720px) {
+  .beam__path {
+    stroke-width: 1.25;
+  }
+
+  .beam__lit {
+    stroke-width: 1.75;
+  }
 }
 
 /* What the section's own layout was before the beam was put around it, plus the
@@ -2684,14 +2757,21 @@ button.kept__card:hover .kept__art {
   z-index: 0;
   width: 100%;
   height: 100%;
-  /* The paths take `currentColor`, so the whole set is one declaration. Faint:
-     this is behind quotations somebody typed and must never be the thing being
-     read. */
+  /* Each path carries its own `--line-colour`; see SPARKS in
+     BackgroundLines.tsx, which is also where the restraint lives: the palette
+     is pale rather than saturated, so a hue reads as light rather than as a
+     mark on the screen. `color` is the fallback for a path drawn without one.
+     The opacity here is the one knob over the whole set, a little under full
+     so that nothing crossing the section ever arrives at the weight of the
+     quotations it is behind; the keyframe fades each stroke in and out under
+     it. */
   color: rgb(255 255 255 / 30%);
+  opacity: 0.9;
   pointer-events: none;
 }
 
 .lines__path {
+  stroke: var(--line-colour, currentColor);
   animation: line-crosses 11s linear infinite;
   /* Spread over the loop rather than randomised per render. Prime-ish spacing
      against the duration, so the set never settles into a rhythm you can
@@ -3002,8 +3082,17 @@ button.kept__card:hover .kept__art {
   perspective: 800px;
 }
 
+/* The words above the machine are the page's, not the drawing's.
+ *
+ * Everything inside `.macbook` is sized in `em` of the machine's unit, and the
+ * title is inside it: a heading carries its own `clamp` and did not notice, but
+ * the lede under it has no size of its own and was inheriting the unit — 17px
+ * on a laptop, which looked deliberate, and 7px on a phone, which is where it
+ * showed. Back to the body's own size, so the sentence over the machine is the
+ * same sentence it would be over anything else. */
 .macbook__title {
   margin-bottom: 3em;
+  font-size: 14px;
   text-align: center;
 }
 
@@ -3247,7 +3336,22 @@ button.kept__card:hover .kept__art {
    screen's worth of frame past it to open one. */
 @media (max-width: 720px) {
   .macbook {
-    min-height: 140vh;
+    min-height: 120vh;
+  }
+
+  /* One under the next, and the dots go with the row. Four short nouns set as a
+     row is right where they fit on one line; on a phone they wrap into two and
+     a half lines with a dot stranded at the start of each new one, which reads
+     as a list that has come apart rather than as one thing said four ways. */
+  .been__holds {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-top: 32px;
+  }
+
+  .been__holds-item + .been__holds-item::before {
+    display: none;
   }
 }
 

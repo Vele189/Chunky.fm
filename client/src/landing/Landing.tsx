@@ -23,17 +23,7 @@ import { ListenerView } from './ListenerView.js'
 import { NextSession } from './NextSession.js'
 import { MacbookScroll } from './MacbookScroll.js'
 import { MovingColumns } from './MovingColumns.js'
-import {
-  BEEN_ON,
-  clock,
-  initial,
-  ROOM,
-  saidBy,
-  SESSION,
-  SHEET,
-  SLEEVES,
-  WISHES,
-} from './session.js'
+import { BEEN_ON, initial, ROOM, saidBy, SHEET, SLEEVES, WISHES } from './session.js'
 import { type ArchiveCard, useArchive } from './useArchive.js'
 import { useOnScreen } from './useOnScreen.js'
 import { useStill } from './useStill.js'
@@ -495,10 +485,23 @@ const Creed = memo(function Creed() {
  * Not the sheet's own gaps, which are fourteen to twenty-two seconds apart
  * because they are a real song's worth of spacing. At that rate a reader who
  * stopped at this cell would watch one line change and conclude it was a
- * picture. Two seconds is a lie about the record and the truth about the
- * feature, which is the trade every drawing on this page makes.
+ * picture. This is a lie about the record and the truth about the feature,
+ * which is the trade every drawing on this page makes.
+ *
+ * It was two seconds, and two seconds is slow for the *other* cell on this
+ * clock. The room gains a bubble when the playhead crosses one of `ROOM`'s
+ * timestamps, and those fall two to four sheet lines apart — so at two seconds
+ * a line the chat sat still for the better part of ten, which is a chat that
+ * has stopped rather than a room talking around a record.
+ *
+ * At 0.7 the room gains one every two or three seconds, which is a conversation
+ * happening rather than one being replayed, and the whole sample session comes
+ * round in ten. The sheet is fast at this — a line is lit for less than a
+ * second — and that is the right way round: the sheet is a drawing of words
+ * keeping up with a record and reads at a glance either way, while the room is
+ * the cell somebody actually watches to see whether anything arrives.
  */
-const A_LINE = 2000
+const A_LINE = 700
 
 /**
  * How many lines light in place before the sheet starts moving under them.
@@ -716,21 +719,23 @@ const Inside = memo(function Inside() {
           {/* The one everything else on this page is downstream of, and the only
               cell given the whole width. The meter is the station's own, and it
               moves because the page says sound is coming out rather than because
-              any is — same rule as the one under the pile of records. */}
+              any is — same rule as the one under the pile of records.
+
+              The meter alone, where this used to carry a readout under it: the
+              playhead, the record's name and the head count. Three facts that
+              the drawn station two sections down is already showing, said here
+              in a cell whose whole argument is a single word — LIVE — with a
+              needle moving beside it. Its sentence is kept in the document and
+              out of the picture, the idiom `.limits__spoken` uses, so the one
+              cell drawn without a caption is not also the one cell that says
+              nothing to a reader who cannot see it. */}
           <BentoCell
             wide
+            className="bento__cell--spoken"
             says="Everyone on the same second of it."
             shows={
               <div className="tuned" aria-hidden="true">
                 <Waveform live />
-                <div className="tuned__what">
-                  {/* The same playhead the sheet is on, so the number over the
-                    meter and the line being sung beside it are the same moment
-                    of the same record. */}
-                <span className="tuned__where">{clock(SHEET[sung]?.at ?? 0)}</span>
-                  <span className="tuned__of">{SESSION.title}</span>
-                  <span className="tuned__who">{SESSION.listeners} listening</span>
-                </div>
               </div>
             }
           />
@@ -855,7 +860,7 @@ const Talks = memo(function Talks() {
         <p className="talks__line">Or somebody takes the second seat for the whole evening.</p>
         <p className="talks__line">They can talk, and say what goes on next.</p>
         <p className="talks__line talks__line--said">
-          What they cannot do, the station refuses them — not the page.
+          What they cannot do, the station refuses them, not the page.
         </p>
       </div>
 
@@ -876,7 +881,7 @@ const Talks = memo(function Talks() {
       <div className="talks__stack">
         <p className="talks__line">When the mic opens, the music steps back.</p>
         <p className="talks__line talks__line--said">
-          Not on a desk in here — in every room at the same instant.
+          Not on a desk in here, but in every room at the same instant.
         </p>
       </div>
 
@@ -1454,7 +1459,7 @@ const Call = memo(function Call() {
       </div>
       <p className="call__note">
         The station is on when somebody is running it. If it isn’t, the page will say so. Leave it
-        open and it will come back on by itself — or listen to a night that already happened.
+        open and it will come back on by itself, or listen to a night that already happened.
       </p>
     </section>
   )

@@ -45,7 +45,7 @@ export function Podcast() {
   const [archive, setArchive] = useState<Loading>({ state: 'loading' })
 
   /**
-   * The episode being listened to, held separately from the archive list.
+   * The episode being watched, held separately from the archive list.
    *
    * Two reasons, and the second is the load-bearing one. A card in the grid
    * carries everything the player needs, so opening one can draw immediately
@@ -148,7 +148,7 @@ export function Podcast() {
         ? `${episode.title} · chunky.fm`
         : route.kind === 'console'
           ? 'The archive · chunky.fm'
-          : 'The podcast · chunky.fm'
+          : 'The Fourth Door · chunky.fm'
     document.title = name
   }, [route, episode])
 
@@ -206,10 +206,11 @@ export function Podcast() {
             <a className="masthead__home" href="/">
               chunky.fm
             </a>
-            <h1 className="masthead__heading">The podcast</h1>
+            <h1 className="masthead__heading">The Fourth Door</h1>
             <p className="masthead__line">
-              Conversations from the station, kept. A session ends and takes its tracklist and its
-              chat with it; these are the nights that were worth holding on to.
+              Long conversations, filmed and kept. The station is an evening and lets its nights go;
+              these are the ones that were worth holding on to, whole, for anybody who was not in
+              the room.
             </p>
             {archive.state === 'ready' && archive.episodes.length > 0 && (
               <p className="masthead__count">
@@ -220,7 +221,6 @@ export function Podcast() {
 
           <footer className="foot">
             <a href="/">The station</a>
-            <a href="/how-it-works">How it works</a>
             {/*
               Deliberately a plain fragment link rather than a button. It is the
               only way into the console, it is not a secret (the password is),

@@ -111,7 +111,7 @@ export interface PlayRow {
  * would draw as neither up nor down.
  *
  * Draft is the default and that is the whole point of having it. An episode is
- * an audio file, a poster and five fields typed into a form, and the gap
+ * a video file, a poster and five fields typed into a form, and the gap
  * between the upload finishing and the description being right is exactly the
  * window in which somebody would otherwise find it.
  */
@@ -130,11 +130,12 @@ export type EpisodeStatus = 'draft' | 'published'
 /**
  * Where an episode's serving copy has got to.
  *
- * `pending` is the window between the master landing and the encode finishing:
- * minutes, for an hour of audio. `ready` means there is a small copy to serve.
- * `failed` means ffmpeg would not have it, and the master is served instead —
- * which is why a failed transcode does not stop an episode being published. It
- * is a note about size, not about whether the episode works.
+ * `pending` is the window between the master landing and this station having
+ * looked at it — usually a moment, since most files need nothing doing to them.
+ * `ready` means what is served starts and seeks immediately. `failed` means
+ * ffmpeg would not have it, and the master is served instead — which is why a
+ * failed rewrite does not stop an episode being published. It is a note about
+ * how quickly the episode starts, not about whether it works.
  *
  * `none` is a station with no ffmpeg at all, where the master *is* the serving
  * copy and always was. Distinguished from `failed` because one is a deployment
@@ -169,27 +170,41 @@ export interface EpisodeRow {
   /**
    * The key the *master* is stored under: what was uploaded, untouched.
    *
-   * Kept forever and never served to a listener. It is the thing that cannot be
-   * recreated — re-encoding from a lossy copy for a different bitrate later is
-   * a generation of quality nobody gets back — so it survives even when the
-   * serving copy is thrown away and remade.
+   * Kept forever. For most episodes it is also what is served, since a file
+   * exported for the web needs nothing doing to it; when one does, the rewrite
+   * is a stream copy rather than an encode, so this is not protecting quality
+   * from a second generation. What it protects against is the rewrite having
+   * quietly dropped something nobody thought to check for.
    */
   master_key: string
   /** How big the master is, so the console can say what it is holding. */
   master_bytes: number
   /**
-   * The key a listener actually fetches, which is usually a much smaller
-   * re-encode of the master and is the master itself when there is no encode.
+   * The key a listener actually fetches.
+   *
+   * The master itself for most episodes, because most files arrive ready to
+   * stream; a rewritten copy with its index moved to the front for the ones
+   * that did not. See `lib/publish.ts`, which decides which, and `lib/video.ts`
+   * for how it tells.
    */
-  audio_key: string
-  audio_bytes: number
+  video_key: string
+  video_bytes: number
   /** What the serving copy is, so a URL can be served with the right type. */
-  audio_type: string
+  video_type: string
   transcode_status: TranscodeStatus
   /** Why the encode failed, for the console. Null unless `failed`. */
   transcode_error: string | null
   /** Basename inside `<storage>/episodes/posters`, or null before one is set. */
   poster: string | null
+  /**
+   * The 16:9 still, in the same directory, or null on a row that predates it.
+   *
+   * A second picture rather than a crop of the first: a portrait poster
+   * pillarboxed into the player is a black frame with a strip in it, and a
+   * 16:9 still cut to a portrait card loses more than half its width. The two
+   * are different shapes because the collection and the player are.
+   */
+  thumbnail: string | null
   /**
    * What was said, with a clock on it. Null for an episode nobody has
    * transcribed.
@@ -356,22 +371,29 @@ CREATE TABLE IF NOT EXISTS episodes (
   -- status column makes. Draft by default: an episode nobody has finished
   -- describing should not already be on the page.
   status          TEXT    NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
-  -- Provisional until the encode measures it. The browser reports what its own
-  -- decoder made of the file at upload time, which is right often enough to
-  -- put on a card and is replaced by ffmpeg's answer when the encode lands.
+  -- What the browser's own decoder made of the file at upload time, which is
+  -- right often enough to put on a card. Replaced by ffmpeg's answer on the
+  -- episodes that get rewritten, and left alone on the ones that do not.
   duration_ms     INTEGER NOT NULL,
   -- What was uploaded, kept and never served. See EpisodeRow.
   master_key      TEXT    NOT NULL UNIQUE,
   master_bytes    INTEGER NOT NULL DEFAULT 0,
-  -- What listeners fetch. The same as master_key until an encode replaces it,
-  -- which is what makes a station with no ffmpeg work without a special case.
-  audio_key       TEXT    NOT NULL,
-  audio_bytes     INTEGER NOT NULL DEFAULT 0,
-  audio_type      TEXT    NOT NULL DEFAULT 'audio/mpeg',
+  -- What listeners fetch. The same as master_key unless the file had to be
+  -- rewritten to start quickly, which is what makes a station with no ffmpeg —
+  -- and the ordinary case of a file that was already fine — work without a
+  -- special case.
+  video_key       TEXT    NOT NULL,
+  video_bytes     INTEGER NOT NULL DEFAULT 0,
+  video_type      TEXT    NOT NULL DEFAULT 'video/mp4',
   transcode_status TEXT   NOT NULL DEFAULT 'none'
     CHECK (transcode_status IN ('pending', 'ready', 'failed', 'none')),
   transcode_error TEXT,
   poster          TEXT,
+  -- The 16:9 still the player shows before the first frame decodes, which is
+  -- not the poster: see the note above checkImage in routes/podcast.ts for why
+  -- an episode carries two pictures rather than cropping one into the other.
+  -- Nullable for the rows that predate it.
+  thumbnail       TEXT,
   -- What was said, as uploaded. Null until somebody transcribes the episode;
   -- see EpisodeRow, and note that it is never part of an episode over the wire.
   transcript      TEXT,
@@ -453,9 +475,46 @@ const ADDED_COLUMNS: [table: string, column: string, spec: string][] = [
   ['schedule', 'kind', "TEXT NOT NULL DEFAULT 'set' CHECK (kind IN ('set', 'talk'))"],
   ['schedule', 'title', 'TEXT'],
   ['episodes', 'transcript', 'TEXT'],
+  ['episodes', 'thumbnail', 'TEXT'],
+]
+
+/**
+ * Columns that changed their name, when the archive changed what it holds.
+ *
+ * The podcast was audio and is now video, and three columns said so: the key a
+ * listener fetches, how big it is, and what type it is. Renaming rather than
+ * adding a second set and leaving the first, because a table carrying both
+ * `audio_key` and `video_key` would be a question every reader of this file has
+ * to answer for themselves, forever, about a distinction that no longer exists.
+ *
+ * A rename keeps whatever was in the column, which is the right answer for an
+ * archive that already has episodes in it: an audio file is still what those
+ * rows point at, the player will still fetch it, and a browser will still play
+ * an m4a out of a `<video>` element — with nothing to look at, which is a fair
+ * description of an audio episode in a video archive. New uploads are video.
+ *
+ * What a rename does *not* carry over is the column's default, so a row
+ * inserted without a type would still get `audio/mpeg` on a database old enough
+ * to have been renamed. Nothing inserts one — every write states all three —
+ * and rebuilding the table to correct a default nothing reads would be a much
+ * larger operation than the thing it fixed.
+ */
+const RENAMED_COLUMNS: [table: string, from: string, to: string][] = [
+  ['episodes', 'audio_key', 'video_key'],
+  ['episodes', 'audio_bytes', 'video_bytes'],
+  ['episodes', 'audio_type', 'video_type'],
 ]
 
 function migrate(db: Db): void {
+  // Renames first: a column cannot be added under a name something else is
+  // still using, and on a fresh database neither loop does anything at all.
+  for (const [table, from, to] of RENAMED_COLUMNS) {
+    const columns = db.pragma(`table_info(${table})`) as { name: string }[]
+    const names = new Set(columns.map((column) => column.name))
+    if (!names.has(from) || names.has(to)) continue
+    db.exec(`ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to}`)
+  }
+
   for (const [table, column, spec] of ADDED_COLUMNS) {
     const columns = db.pragma(`table_info(${table})`) as { name: string }[]
     if (columns.some((existing) => existing.name === column)) continue

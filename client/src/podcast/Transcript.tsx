@@ -24,7 +24,7 @@ import { type TranscriptCue, activeCueIndex, fetchTranscript, parseTranscript } 
  *
  * The words are fetched here rather than with the episode, and only when this
  * is on screen: an hour of talk is a hundred kilobytes of text, and the reader
- * who only wanted the audio should not pay for it. See `Episode.hasTranscript`.
+ * who only wanted to watch should not pay for it. See `Episode.hasTranscript`.
  */
 
 export interface TranscriptProps {
@@ -50,7 +50,7 @@ type Sheet =
  * Local to this file rather than in `src/hooks/`, because it is asked by
  * exactly one component and the whole of it is a fetch and two pieces of state.
  * Keyed on the slug, and everything is forgotten the moment that changes: last
- * episode's words scrolling under this episode's audio would be worse than no
+ * episode's words scrolling under this episode's video would be worse than no
  * words at all — the same rule `useLyrics` follows when a track changes.
  */
 function useTranscript(slug: string): Sheet {
@@ -218,7 +218,7 @@ export function Transcript({ slug, positionSeconds, onSeek }: TranscriptProps) {
           className="transcript__follow"
           onClick={() => setFollowing(true)}
         >
-          Follow the audio
+          Follow along
         </button>
       )}
     </>
@@ -235,7 +235,7 @@ const EMPTY: TranscriptCue[] = []
  * something: it moves the episode. That means the keyboard reaches it and a
  * screen reader announces it as the control it is, which for a transcript is
  * the difference between a wall of text and a way of getting around an hour of
- * audio.
+ * video.
  */
 function TurnLine({
   cue,

@@ -205,7 +205,22 @@ export async function buildApp({
   await app.register(multipart, {
     limits: {
       fileSize: config.maxUploadBytes,
-      files: 1,
+      /**
+       * Two, and it was one.
+       *
+       * An episode carries two images now: a portrait poster for its card in
+       * the collection, and the 16:9 still the player shows before the first
+       * frame decodes. They are different shapes because they are doing
+       * different jobs, and neither can be cropped out of the other without
+       * losing the framing somebody chose.
+       *
+       * The video is *not* one of these — it goes to the store in its own
+       * chunked upload and never passes through this parser — so two is the
+       * whole of it. Worth stating rather than raising later by reflex: busboy
+       * destroys the request stream when this is exceeded, which surfaces as
+       * `ERR_STREAM_PREMATURE_CLOSE` and a 500 that says nothing about files.
+       */
+      files: 2,
       /**
        * Sixteen, and it used to be eight.
        *
