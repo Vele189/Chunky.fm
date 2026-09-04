@@ -110,6 +110,16 @@ export interface HarnessOptions {
   turnFetch?: typeof fetch
   /** Bind a real port: required for anything that opens a websocket. */
   listen?: boolean
+  /**
+   * Whether uploaded episodes are actually encoded.
+   *
+   * False by default, which is *not* what production does. An encode is a real
+   * ffmpeg process that writes to the database after the request has already
+   * answered, so a test that is about anything else would be racing a
+   * background job against its own teardown. `test/transcode.test.ts` covers
+   * the encode itself, directly.
+   */
+  transcode?: boolean
 }
 
 export async function startHarness(
@@ -141,6 +151,7 @@ export async function startHarness(
     lyricsFetch = async () => new Response(null, { status: 404 }),
     turnFetch = async () => new Response(null, { status: 404 }),
     listen = false,
+    transcode = false,
   }: HarnessOptions = {},
 ): Promise<Harness> {
   const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'chunky-test-'))
@@ -151,6 +162,8 @@ export async function startHarness(
     audioDir: path.join(storageDir, 'audio'),
     artworkDir: path.join(storageDir, 'artwork'),
     posterDir: path.join(storageDir, 'posters'),
+    episodeAudioDir: path.join(storageDir, 'episodes', 'audio'),
+    episodePosterDir: path.join(storageDir, 'episodes', 'posters'),
     tmpDir: path.join(storageDir, 'tmp'),
     dbPath: ':memory:',
     adminPassword: ADMIN_PASSWORD,
@@ -161,6 +174,13 @@ export async function startHarness(
     // a literal to present and does not have to recompute an HMAC to do it.
     coHostKey: CO_HOST_KEY,
     maxUploadBytes: 10 * 1024 * 1024,
+    // Small, so the episode tests can exercise the size refusal without
+    // generating two gigabytes to be refused.
+    maxEpisodeBytes: 64 * 1024 * 1024,
+    // The disk backend, which is what every test here runs against: it is the
+    // same chunked protocol as R2 against a directory, so the upload path under
+    // test is the one production uses. The R2 tests point this at MinIO.
+    r2: null,
     // Never resolved: the harness stubs the fetch itself. See `lyricsFetch`.
     lrclibBaseUrl: 'http://lrclib.invalid',
     // Never read: the harness passes `logger: false`. Present so the shape is
@@ -185,7 +205,7 @@ export async function startHarness(
   const app = await buildApp({
     config,
     db,
-    logger: false,
+    logger: process.env.CHUNKY_TEST_LOG ? { level: 'error' } : false,
     playback,
     heartbeatIntervalMs,
     backstopIntervalMs,
@@ -209,6 +229,7 @@ export async function startHarness(
     handBurst,
     handRefillMs,
     micSweepIntervalMs,
+    transcode,
     lyricsFetch,
     turnFetch,
   })

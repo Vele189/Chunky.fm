@@ -6,6 +6,7 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import type { Config } from '../config.js'
 import type { SessionKind } from '../db.js'
 import { requireAdmin } from '../lib/auth.js'
+import { POSTER_MAX_BYTES, POSTER_TYPES, sniff } from '../lib/poster.js'
 import { discard, posterFilePath } from '../lib/storage.js'
 import type { Schedule } from '../schedule.js'
 
@@ -21,36 +22,20 @@ import type { Schedule } from '../schedule.js'
  * Writing it is admin-only, like every other write in this API.
  */
 
-/** A poster is 1080x1350, Instagram's portrait post. This is that with room. */
-const MAX_POSTER_BYTES = 8 * 1024 * 1024
-
 /**
- * What a poster may be, and the extension it is stored under.
+ * What a poster may be, and how its first bytes are read.
  *
- * The declared content type is a hint from whoever is uploading, so it is
- * checked against the first bytes of the file rather than believed. Not a
- * security boundary on its own (the file is served as an attachment-free static
- * asset either way) but it keeps a mistyped upload from becoming a poster that
- * no browser will draw.
+ * Both live in `lib/poster.ts` now, because the podcast archive takes a poster
+ * too and two copies of a file-format check is how one of them ends up
+ * accepting something the other refuses. The declared content type is a hint
+ * from whoever is uploading, so it is checked against the file rather than
+ * believed.
+ *
+ * What this route deliberately does *not* borrow from there is the size check.
+ * An episode poster must be exactly 1080x1350; a session poster is whatever
+ * somebody made in a hurry on a phone, and refusing it an hour before the doors
+ * open would be the tool getting in the way of the night.
  */
-const POSTER_TYPES: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-}
-
-function sniff(head: Buffer): string | null {
-  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'jpg'
-  if (head.length >= 8 && head.subarray(0, 8).toString('hex') === '89504e470d0a1a0a') return 'png'
-  if (
-    head.length >= 12 &&
-    head.subarray(0, 4).toString('ascii') === 'RIFF' &&
-    head.subarray(8, 12).toString('ascii') === 'WEBP'
-  ) {
-    return 'webp'
-  }
-  return null
-}
 
 /**
  * How long a title may be.
@@ -140,7 +125,7 @@ export function scheduleRoutes({ config, schedule }: ScheduleDeps): FastifyPlugi
 
       try {
         for await (const part of request.parts({
-          limits: { fileSize: MAX_POSTER_BYTES, files: 1 },
+          limits: { fileSize: POSTER_MAX_BYTES, files: 1 },
         })) {
           if (part.type === 'field' && part.fieldname === 'startsAt') {
             const parsed = Number(part.value)
@@ -188,7 +173,7 @@ export function scheduleRoutes({ config, schedule }: ScheduleDeps): FastifyPlugi
             await discard(posterFilePath(config, stored))
             return reply.code(413).send({
               error: 'poster_too_large',
-              message: `a poster has to be under ${Math.round(MAX_POSTER_BYTES / 1024 / 1024)} MB`,
+              message: `a poster has to be under ${Math.round(POSTER_MAX_BYTES / 1024 / 1024)} MB`,
             })
           }
         }

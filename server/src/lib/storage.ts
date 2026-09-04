@@ -4,9 +4,14 @@ import type { Config } from '../config.js'
 
 export async function ensureStorageDirs(config: Config): Promise<void> {
   await Promise.all(
-    [config.audioDir, config.artworkDir, config.posterDir, config.tmpDir].map((dir) =>
-      fs.mkdir(dir, { recursive: true }),
-    ),
+    [
+      config.audioDir,
+      config.artworkDir,
+      config.posterDir,
+      config.episodeAudioDir,
+      config.episodePosterDir,
+      config.tmpDir,
+    ].map((dir) => fs.mkdir(dir, { recursive: true })),
   )
 }
 
@@ -20,6 +25,24 @@ export function artworkFilePath(config: Config, artworkPath: string): string {
 
 export function posterFilePath(config: Config, poster: string): string {
   return path.join(config.posterDir, path.basename(poster))
+}
+
+/**
+ * An episode's audio, in the archive.
+ *
+ * `path.basename` for the reason the three above use it, and it matters more
+ * here than for a track: a track's filename is a content hash this server
+ * chose, while an episode is reached by a slug somebody typed into a form. The
+ * name on disk is still server-chosen (see `routes/podcast.ts`), and this is
+ * the second lock on that rather than the first.
+ */
+export function episodeAudioFilePath(config: Config, filename: string): string {
+  return path.join(config.episodeAudioDir, path.basename(filename))
+}
+
+/** An episode's poster. See `episodeAudioFilePath`. */
+export function episodePosterFilePath(config: Config, poster: string): string {
+  return path.join(config.episodePosterDir, path.basename(poster))
 }
 
 /** Unlink without caring whether the file was ever created. */

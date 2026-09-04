@@ -10,6 +10,9 @@ import { PlayLog } from './history.js'
 import { registerErrorHandlers } from './lib/errors.js'
 import { emptyLibrary } from './lib/library.js'
 import { ensureStorageDirs } from './lib/storage.js'
+import { Publisher } from './lib/publish.js'
+import { mediaStore } from './lib/store.js'
+import { transcodingAvailable } from './lib/transcode.js'
 import { LyricsService } from './lyrics.js'
 import { MIC_HURRY_MS, Mic } from './mic.js'
 import { Mutes } from './mutes.js'
@@ -31,6 +34,7 @@ import { listenRoutes } from './routes/listen.js'
 import { lyricsRoutes } from './routes/lyrics.js'
 import { mediaRoutes } from './routes/media.js'
 import { playbackRoutes } from './routes/playback.js'
+import { podcastRoutes } from './routes/podcast.js'
 import { queueRoutes } from './routes/queue.js'
 import { uploadRoutes } from './routes/upload.js'
 import { wishesRoutes } from './routes/wishes.js'
@@ -111,6 +115,17 @@ export interface BuildAppOptions {
   signalRefillMs?: number
   signInBurst?: number
   signInRefillMs?: number
+  /**
+   * Whether episodes are encoded after upload.
+   *
+   * Detected from the environment when unset, which is what production does.
+   * The tests set it false: an encode is a real ffmpeg process writing to the
+   * database *after* the request that queued it has answered, and a test that
+   * tore its harness down while one was in flight would be flaky for reasons
+   * that have nothing to do with what it was checking. The tests that *are*
+   * about encoding set it true and wait.
+   */
+  transcode?: boolean
   /** The seam tests mock LRCLIB through; production reaches the real archive. */
   lyricsFetch?: typeof fetch
   /** The same, for Cloudflare's relay. See `CloudflareTurn`. */
@@ -145,6 +160,7 @@ export async function buildApp({
   signalRefillMs,
   signInBurst,
   signInRefillMs,
+  transcode,
   lyricsFetch,
   turnFetch,
 }: BuildAppOptions): Promise<FastifyInstance> {
@@ -159,6 +175,12 @@ export async function buildApp({
     // exchanging addresses at all. See `Config.logLevel`.
     logger: logger ?? { level: config.logLevel },
     bodyLimit: 1024 * 1024,
+    // Fastify's default is 100 characters, and R2 hands out multipart upload
+    // ids of two to three hundred — so `DELETE /api/episodes/uploads/:uploadId`
+    // answered 414 rather than routing, and an abandoned upload could never be
+    // cleaned up. Invisible against the disk backend, whose upload id is a
+    // 36-character uuid, which is why the tests are green on it.
+    maxParamLength: 512,
     trustProxy: config.trustProxy,
   })
 
@@ -184,7 +206,21 @@ export async function buildApp({
     limits: {
       fileSize: config.maxUploadBytes,
       files: 1,
-      fields: 8,
+      /**
+       * Sixteen, and it used to be eight.
+       *
+       * Eight was enough for every form in this API until the archive's upload
+       * was split in two: finishing one now carries the episode's own fields
+       * *and* the five that say where its audio already is (`uploadId`, `key`,
+       * `contentHash`, `parts`, `contentType`), which is nine before anybody
+       * types a guest list.
+       *
+       * Worth knowing how that failed, because it was not obvious: exceeding
+       * this limit makes busboy destroy the request stream, which surfaces as
+       * `ERR_STREAM_PREMATURE_CLOSE` and a 500 — an error that says nothing at
+       * all about field counts.
+       */
+      fields: 16,
     },
   })
 
@@ -303,6 +339,22 @@ export async function buildApp({
 
   const lyrics = new LyricsService({ db, baseUrl: config.lrclibBaseUrl, fetchFn: lyricsFetch })
 
+  // Where the archive's audio lives: Cloudflare R2 when it is configured, this
+  // station's own volume when it is not. Neither is a fallback for the other;
+  // see `lib/store.ts`.
+  const store = mediaStore(config)
+
+  // And what makes an hour of audio small enough to listen to on a phone. The
+  // check is done once, here, rather than per upload: it shells out to ffmpeg,
+  // and the answer cannot change while the process is running.
+  const canTranscode = transcode ?? (await transcodingAvailable())
+  if (!canTranscode) {
+    app.log.warn(
+      'no usable ffmpeg: episodes will be served exactly as uploaded, which for a master is very large',
+    )
+  }
+  const publisher = new Publisher({ config, db, store, log: app.log, canTranscode })
+
   // Cloudflare hands out relay credentials rather than holding one, so they are
   // minted here and shared: a room arriving together is thirty listeners asking
   // `/api/rtc` inside a few seconds, and thirty calls to be told the same
@@ -374,10 +426,14 @@ export async function buildApp({
   await app.register(paddingRoutes({ config, padding }))
   // Before the client routes and well before the app-shell fallback, which is
   // what was answering these with a page of HTML. See `crawlRoutes`.
-  await app.register(crawlRoutes())
+  await app.register(crawlRoutes({ db }))
   await app.register(listenRoutes({ config }))
   await app.register(uploadRoutes({ config, db, lyrics }))
   await app.register(mediaRoutes({ config, db }))
+  // Outside every gate on this list, and outside the air handler above that
+  // empties the library. The archive is the one thing here that is not about
+  // tonight: see the note at the top of `routes/podcast.ts`.
+  await app.register(podcastRoutes({ config, db, store, publisher }))
   await app.register(lyricsRoutes({ config, db, lyrics }))
   await app.register(playbackRoutes({ config, db, station }))
   await app.register(queueRoutes({ config, db, station }))
@@ -453,6 +509,9 @@ export async function buildApp({
   app.addHook('preClose', async () => {
     station.close()
     clearInterval(micSweep)
+    // Before the database closes and before the storage directory goes: an
+    // encode is a background job holding both. See `Publisher.close`.
+    await publisher.close()
     await realtime.close()
     // A session left open by a stop keeps a null `ended_at`, which reads as
     // "still on air" forever. Closed quietly: the sockets are already drained,

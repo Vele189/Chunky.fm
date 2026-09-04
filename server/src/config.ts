@@ -10,6 +10,23 @@ export interface Config {
   artworkDir: string
   /** Session posters. Public, unlike the audio and the artwork: see `Schedule`. */
   posterDir: string
+  /**
+   * The podcast archive: episode audio, and the posters that go with it.
+   *
+   * Under the storage volume like everything else, and deliberately *not* under
+   * `audioDir` — which is the library, and the library is emptied every time a
+   * session ends (see the air handler in `app.ts`, and `emptyLibrary`). The
+   * station is an evening; this is the thing the evening is kept in. A podcast
+   * filed under the library would survive exactly until the next time somebody
+   * pressed "end broadcast", which is the one failure worth designing the
+   * directory layout around.
+   *
+   * Public, like the session poster and unlike the library: an episode is for
+   * somebody who is not in the room and has no key to present. See
+   * `routes/podcast.ts`.
+   */
+  episodeAudioDir: string
+  episodePosterDir: string
   /** Uploads land here first and are only moved once they parse as audio. */
   tmpDir: string
   dbPath: string
@@ -50,6 +67,70 @@ export interface Config {
    */
   coHostKey: string
   maxUploadBytes: number
+  /**
+   * The most an episode's master may weigh.
+   *
+   * A separate number from `maxUploadBytes`, and the two are not the same kind
+   * of limit. A track goes *through* this process — streamed to a temp file,
+   * parsed, moved — so its ceiling is about what the container can be asked to
+   * handle. An episode's master goes straight from the browser to R2 and never
+   * touches this server at all, so its ceiling is only a rule about what the
+   * archive will accept: it is checked when the upload is *begun*, from a
+   * number the client states, rather than by counting bytes as they arrive.
+   *
+   * Two gigabytes. An hour of 24-bit/48k stereo WAV is about 1 GB, which is the
+   * largest thing anybody sensibly hands a podcast, and this is that with room.
+   */
+  maxEpisodeBytes: number
+  /**
+   * Cloudflare R2, or null for a station that keeps its archive on disk.
+   *
+   * All five or none, for the reason `turnFromEnv` wants all three: a bucket
+   * with no credentials is a bucket every upload will fail against, and finding
+   * that out means watching somebody wait through a 500 MB upload that was
+   * never going to complete. Better to refuse at boot, where somebody is
+   * looking.
+   *
+   * Null is not a degraded mode. It is the compose stack, and `npm run dev`,
+   * and any station that would rather own its own disk: the archive lives on
+   * the volume, the same chunked upload runs against this server instead of
+   * against R2, and everything else behaves identically. See `lib/store.ts`,
+   * which exists so that there is one client and two backends rather than two
+   * of each.
+   */
+  r2: {
+    accountId: string
+    bucket: string
+    accessKeyId: string
+    secretAccessKey: string
+    /**
+     * Where a listener actually fetches audio from: the bucket's public custom
+     * domain, so Cloudflare's edge serves the bytes and answers the Range
+     * requests a scrubbing player makes.
+     *
+     * Required rather than optional, and that is the whole point of choosing
+     * R2. A bucket reachable only through this API would put every listener's
+     * bandwidth back through Railway, which is the thing being avoided.
+     */
+    publicBaseUrl: string
+    /**
+     * Where the S3 API is, when it is not R2's own address.
+     *
+     * Unset in production and derived from the account id. It exists as a seam
+     * for two real cases: the tests, which run the whole upload against a MinIO
+     * container so the R2 path is exercised without anybody's credentials, and
+     * a station that would rather use a different S3-compatible provider — for
+     * which this plus `forcePathStyle` is the whole of the difference.
+     */
+    endpoint: string | null
+    /**
+     * Address buckets as a path rather than a subdomain.
+     *
+     * R2 does not need this and MinIO does, which is the only reason it is
+     * here. Set automatically whenever `endpoint` is.
+     */
+    forcePathStyle: boolean
+  } | null
   /**
    * Where the station asks about lyrics. LRCLIB is public and keyless, so this
    * is an address rather than a credential; point it at a mirror if the public
@@ -246,6 +327,42 @@ function coHostKeyFrom(adminPassword: string): string {
 
 const DEFAULT_MAX_UPLOAD_BYTES = 150 * 1024 * 1024
 
+/** See `Config.maxEpisodeBytes`. An hour of 24-bit stereo WAV, with room. */
+const DEFAULT_MAX_EPISODE_BYTES = 2 * 1024 * 1024 * 1024
+
+/**
+ * R2, from the environment. All five or none; see `Config.r2`.
+ *
+ * The public base URL is stripped of a trailing slash for the reason `ORIGIN`
+ * in the client's vite config is: everything below appends its own path, and a
+ * double slash in the middle of a media URL is a 404 from some CDNs and a
+ * cache miss from the rest.
+ */
+function r2FromEnv(env: NodeJS.ProcessEnv): Config['r2'] {
+  const parts = {
+    accountId: env.R2_ACCOUNT_ID?.trim() ?? '',
+    bucket: env.R2_BUCKET?.trim() ?? '',
+    accessKeyId: env.R2_ACCESS_KEY_ID?.trim() ?? '',
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY?.trim() ?? '',
+    publicBaseUrl: (env.R2_PUBLIC_BASE_URL?.trim() ?? '').replace(/\/+$/, ''),
+  }
+  // Optional, and deliberately not counted in the all-or-none rule below: an
+  // unset endpoint is R2 itself, which is the ordinary case.
+  const endpoint = env.R2_ENDPOINT?.trim() || null
+  const named = Object.entries(parts).filter(([, value]) => value !== '')
+  if (named.length === 0) return null
+  if (named.length < 5) {
+    const missing = Object.entries(parts)
+      .filter(([, value]) => value === '')
+      .map(([key]) => `R2_${key.replace(/[A-Z]/g, (c) => `_${c}`).toUpperCase()}`)
+    throw new Error(
+      `R2 is half-configured: ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing. ` +
+        'Set all five, or none of them to keep the archive on disk.',
+    )
+  }
+  return { ...parts, endpoint, forcePathStyle: endpoint !== null } as NonNullable<Config['r2']>
+}
+
 /**
  * Google's public STUN, as the out-of-the-box answer.
  *
@@ -333,12 +450,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     audioDir: path.join(storageDir, 'audio'),
     artworkDir: path.join(storageDir, 'artwork'),
     posterDir: path.join(storageDir, 'posters'),
+    // Two levels rather than `episode-audio` and `episode-posters` side by side
+    // with the library, so that what is archive and what is tonight is legible
+    // from `ls` alone. Whoever is looking at a full disk at midnight should not
+    // have to read this file to find out which directory is safe to empty.
+    episodeAudioDir: path.join(storageDir, 'episodes', 'audio'),
+    episodePosterDir: path.join(storageDir, 'episodes', 'posters'),
     tmpDir: path.join(storageDir, 'tmp'),
     dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(storageDir, 'chunky.sqlite'),
     adminPassword,
     stationKey: stationKeyFromEnv(env),
     coHostKey: env.CO_HOST_KEY?.trim() || coHostKeyFrom(adminPassword),
     maxUploadBytes: intFromEnv(env.MAX_UPLOAD_BYTES, DEFAULT_MAX_UPLOAD_BYTES, 'MAX_UPLOAD_BYTES'),
+    maxEpisodeBytes: intFromEnv(
+      env.MAX_EPISODE_BYTES,
+      DEFAULT_MAX_EPISODE_BYTES,
+      'MAX_EPISODE_BYTES',
+    ),
+    r2: r2FromEnv(env),
     lrclibBaseUrl: env.LRCLIB_BASE_URL?.trim() || 'https://lrclib.net',
     logLevel: env.LOG_LEVEL?.trim() || 'info',
     stunUrls: listFromEnv(env.STUN_URLS, DEFAULT_STUN_URLS),

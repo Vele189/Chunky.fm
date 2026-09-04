@@ -75,6 +75,11 @@ function origin(): Plugin {
  *                   reason `/how-it-works` is one: a separate bundle, served
  *                   without its `.html` because that is the address the link
  *                   somebody is sent actually says
+ *   /podcast        the archive, its own document
+ *   /podcast/<slug> one episode, the same document: it reads the slug out of
+ *                   its own address bar. A real path rather than a fragment
+ *                   because this is the one address here meant to be pasted
+ *                   into a message and read by a crawler
  *
  * `/listen` needs no rule in either place: Vite's SPA fallback answers it with
  * the station, and nginx names it outright.
@@ -123,6 +128,17 @@ function doorway(): Plugin {
       return
     }
 
+    // The archive and every episode under it, all one document. A prefix test
+    // rather than an exact one, because the slug is part of the address and
+    // there is no list of them here to check against. `/podcastly` is
+    // deliberately not caught, the same way `/welcomely` is not `/welcome`:
+    // the boundary is the separator, not the letters.
+    if (path === '/podcast' || (path ?? '').startsWith('/podcast/')) {
+      req.url = query === undefined ? '/podcast.html' : `/podcast.html?${query}`
+      next()
+      return
+    }
+
     if (path === '/') {
       if ((new URLSearchParams(query ?? '').get(INVITE) ?? '') !== '') {
         res.statusCode = 302
@@ -164,6 +180,11 @@ export default defineConfig({
         // globe, a gramophone and three.js, and none of that belongs on a phone
         // whose whole job is one button. See `src/cohost/main.tsx`.
         cohost: 'cohost.html',
+        // The archive. A fifth entry for the reason the co-host's page is a
+        // third: the station's bundle carries a globe, a gramophone and
+        // three.js, and none of it has anything to do with reading show notes
+        // and pressing play. See `src/podcast/main.tsx`.
+        podcast: 'podcast.html',
         // No script tag on this one, and it is still an input rather than a
         // file in public/: it needs `%ORIGIN%` and `%BUILT%` substituted, and
         // public/ is copied byte for byte without going near a plugin.
