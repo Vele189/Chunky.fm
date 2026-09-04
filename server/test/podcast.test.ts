@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { EpisodeRow } from '../src/db.js'
-import type { Episode } from '../src/lib/episode.js'
+import { TRANSCRIPT_MAX_LENGTH, type Episode } from '../src/lib/episode.js'
 import {
   ADMIN_PASSWORD,
   type Harness,
@@ -613,6 +613,153 @@ describe('PATCH /api/episodes/:id', () => {
       method: 'PATCH',
       url: `/api/episodes/${episode.id}`,
       payload: { status: 'published' },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+})
+
+describe('a transcript', () => {
+  /** The shape a transcription tool actually writes: `HH:MM:SS Speaker N: …`. */
+  const TRANSCRIPT = [
+    'Untitled - August 23, 2026',
+    '',
+    '00:00:00 Speaker 1: All right, there we go.',
+    '',
+    '00:04:31 Speaker 2: So for anyone who is listening but is not familiar.',
+  ].join('\n')
+
+  it('is not part of an episode, only the fact of it', async () => {
+    // A hundred kilobytes of text per episode, in a list that hands back sixty
+    // of them, is why this is a boolean and a second route.
+    const episode = await publish(harness, { transcript: TRANSCRIPT })
+
+    expect(episode.hasTranscript).toBe(true)
+    expect(JSON.stringify(episode)).not.toContain('there we go')
+  })
+
+  it('comes back whole at its own address', async () => {
+    const episode = await publish(harness, { transcript: TRANSCRIPT })
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: `/api/episodes/${episode.slug}/transcript`,
+    })
+
+    expect(res.statusCode).toBe(200)
+    // Untouched, header line and all: the browser decides what a transcript
+    // looks like, and it cannot if the server has already reflowed it.
+    expect((res.json() as { transcript: string }).transcript).toBe(TRANSCRIPT)
+  })
+
+  it('is open, like the episode it belongs to', async () => {
+    const priv = await startHarness({ stationKey: 'a-door-code' })
+    try {
+      const episode = await publish(priv, { transcript: TRANSCRIPT })
+      const res = await priv.app.inject({
+        method: 'GET',
+        url: `/api/episodes/${episode.slug}/transcript`,
+      })
+      expect(res.statusCode).toBe(200)
+    } finally {
+      await priv.cleanup()
+    }
+  })
+
+  it('answers 404 for an episode nobody has transcribed', async () => {
+    // Not an error. The considered answer, the same one the station's lyrics
+    // route gives for a song nobody has written the words to.
+    const episode = await publish(harness)
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: `/api/episodes/${episode.slug}/transcript`,
+    })
+
+    expect(res.statusCode).toBe(404)
+    expect((res.json() as { error: string }).error).toBe('no_transcript')
+  })
+
+  it('keeps a draft transcript to the admin, and 404s a stranger', async () => {
+    const { episode } = (await upload(harness, {
+      fields: { title: 'Leaving Johannesburg', transcript: TRANSCRIPT },
+    })).json() as { episode: Episode }
+
+    const stranger = await harness.app.inject({
+      method: 'GET',
+      url: `/api/episodes/${episode.slug}/transcript`,
+    })
+    const admin = await harness.app.inject({
+      method: 'GET',
+      url: `/api/episodes/${episode.slug}/transcript`,
+      headers: authHeaders,
+    })
+
+    expect(stranger.statusCode).toBe(404)
+    expect(admin.statusCode).toBe(200)
+  })
+
+  it('can be added to an episode that is already up, and taken off again', async () => {
+    // The ordinary way one arrives: an episode is published on the night and
+    // transcribed the week after.
+    const episode = await publish(harness)
+    expect(episode.hasTranscript).toBe(false)
+
+    const added = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/episodes/${episode.id}`,
+      headers: authHeaders,
+      payload: { transcript: TRANSCRIPT },
+    })
+    expect((added.json() as { episode: Episode }).episode.hasTranscript).toBe(true)
+
+    const cleared = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/episodes/${episode.id}`,
+      headers: authHeaders,
+      payload: { transcript: null },
+    })
+    expect((cleared.json() as { episode: Episode }).episode.hasTranscript).toBe(false)
+    const gone = await harness.app.inject({
+      method: 'GET',
+      url: `/api/episodes/${episode.slug}/transcript`,
+    })
+    expect(gone.statusCode).toBe(404)
+  })
+
+  it('survives a change to something else', async () => {
+    // The same trap the notes have: publishing an episode must not clear it.
+    const { episode } = (await upload(harness, {
+      fields: { title: 'Leaving Johannesburg', transcript: TRANSCRIPT },
+    })).json() as { episode: Episode }
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/episodes/${episode.id}`,
+      headers: authHeaders,
+      payload: { status: 'published' },
+    })
+
+    expect((res.json() as { episode: Episode }).episode.hasTranscript).toBe(true)
+  })
+
+  it('is refused rather than truncated when it is too long', async () => {
+    // Truncating would produce a transcript that looks complete and stops in
+    // the middle of an answer, which is the thing this must not do.
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/episodes/${(await publish(harness)).id}`,
+      headers: authHeaders,
+      payload: { transcript: 'x'.repeat(TRANSCRIPT_MAX_LENGTH + 1) },
+    })
+
+    expect(res.statusCode).toBe(413)
+    expect((res.json() as { error: string }).error).toBe('transcript_too_long')
+  })
+
+  it('is admin-only to set', async () => {
+    const episode = await publish(harness)
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/episodes/${episode.id}`,
+      payload: { transcript: TRANSCRIPT },
     })
     expect(res.statusCode).toBe(401)
   })

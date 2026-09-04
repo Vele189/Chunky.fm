@@ -5,12 +5,14 @@ import {
   type EpisodeApi,
   type EpisodeStatus,
   type UploadProgress,
+  TRANSCRIPT_MAX_LENGTH,
   episodePath,
   formatBytes,
   formatDate,
   formatLength,
   uploadAudio,
 } from '../lib/episodes.js'
+import { parseTranscript } from '../lib/transcript.js'
 import { useAdminSession } from '../hooks/useAdminSession.js'
 
 /**
@@ -71,6 +73,49 @@ async function posterSize(file: File): Promise<{ width: number; height: number }
     }
     image.src = url
   })
+}
+
+/**
+ * A chosen transcript file, read and looked over before it is sent anywhere.
+ *
+ * Read here rather than posted as a file part, and that is a decision worth
+ * stating: an episode upload already carries one file (the poster) through a
+ * multipart parser configured for exactly one, and a transcript is text — a few
+ * hundred kilobytes of it — which travels perfectly well as a field. It also
+ * means the console can *say something about it* before it is sent, which is
+ * the same courtesy the poster gets.
+ *
+ * What it says is what the player will make of it, using the player's own
+ * parser: how many lines carry a time, and where the last one falls. A file
+ * with no timestamps in it is not refused — it is still the words that were
+ * said, and the page lays it out as paragraphs — but somebody who thought they
+ * were uploading a timed transcript should find out here rather than from a
+ * pane that does not move.
+ */
+async function readTranscript(file: File): Promise<{ text: string; note: string } | { error: string }> {
+  let text: string
+  try {
+    text = await file.text()
+  } catch {
+    return { error: 'that file could not be read' }
+  }
+  if (text.trim() === '') return { error: 'that transcript is empty' }
+  if (text.length > TRANSCRIPT_MAX_LENGTH) {
+    return {
+      error: `that transcript is ${text.length.toLocaleString('en')} characters; the limit is ${TRANSCRIPT_MAX_LENGTH.toLocaleString('en')}`,
+    }
+  }
+
+  const cues = parseTranscript(text)
+  if (cues.length === 0) {
+    return { text, note: 'no timestamps in it — it will be shown as plain paragraphs' }
+  }
+  const last = cues[cues.length - 1]?.timeMs ?? 0
+  const named = new Set(cues.map((cue) => cue.speaker).filter(Boolean)).size
+  return {
+    text,
+    note: `${cues.length.toLocaleString('en')} timed lines${named > 0 ? `, ${named} speakers` : ''}, up to ${formatLength(last)}`,
+  }
 }
 
 /** `<input type="date">` wants `yyyy-mm-dd` in the *local* calendar. */
@@ -238,6 +283,17 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
   const [publishedAt, setPublishedAt] = useState(() => toDateInput(Date.now()))
   const [status, setStatus] = useState<EpisodeStatus>('draft')
   const [posterNote, setPosterNote] = useState<string | null>(null)
+  /**
+   * The transcript, read out of its file the moment one is chosen.
+   *
+   * Held here rather than pulled off the form at submit time, because reading a
+   * file is asynchronous and the note under the field is the point: by the time
+   * anybody presses the button, the console has already said how many timed
+   * lines are in it. Null for an episode uploaded without one, which is most of
+   * them — see the row control below, which is how a transcript usually arrives.
+   */
+  const [transcript, setTranscript] = useState<string | null>(null)
+  const [transcriptNote, setTranscriptNote] = useState<string | null>(null)
 
   /** Say something about the poster the moment it is chosen, not after upload. */
   const inspect = useCallback(async (file: File | undefined) => {
@@ -256,6 +312,28 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
         : `${size.width}x${size.height} — has to be ${POSTER_WIDTH}x${POSTER_HEIGHT}`,
     )
   }, [])
+
+  /** The same courtesy the poster gets: say what it is, before it goes. */
+  const inspectTranscript = useCallback(
+    async (file: File | undefined) => {
+      if (!file) {
+        setTranscript(null)
+        setTranscriptNote(null)
+        return
+      }
+      const read = await readTranscript(file)
+      if ('error' in read) {
+        setTranscript(null)
+        setTranscriptNote(read.error)
+        onError(read.error)
+        return
+      }
+      setTranscript(read.text)
+      setTranscriptNote(read.note)
+      onError(null)
+    },
+    [onError],
+  )
 
   const submit = useCallback(
     async (event: FormEvent) => {
@@ -293,6 +371,16 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
       // its own chunked upload first, and what the form carries is the receipt.
       data.delete('audio')
 
+      /*
+        The transcript goes as text, not as the file it was chosen from — see
+        `readTranscript`. Deleting the input's own entry is not tidiness: the
+        server's multipart parser is configured for exactly one file part and
+        the poster is it, so a second one arriving here would be refused by
+        busboy rather than by anything that could explain itself.
+      */
+      data.delete('transcriptFile')
+      if (transcript !== null) data.set('transcript', transcript)
+
       setBusy(true)
       onError(null)
       const controller = new AbortController()
@@ -319,6 +407,8 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
         setEpisodeNumber('')
         setStatus('draft')
         setPosterNote(null)
+        setTranscript(null)
+        setTranscriptNote(null)
         onDone()
       } catch (err) {
         if (controller.signal.aborted) {
@@ -332,7 +422,7 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
         setBusy(false)
       }
     },
-    [api, busy, publishedAt, onDone, onError, setBusy],
+    [api, busy, publishedAt, transcript, onDone, onError, setBusy],
   )
 
   return (
@@ -412,6 +502,21 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
           {posterNote && <small className="upload__poster-note">{posterNote}</small>}
         </label>
       </div>
+
+      {/* Optional, and last of the three files, because it is the one that
+          usually is not ready yet: a machine transcription takes as long as the
+          conversation did. An episode uploaded without one gains it later from
+          the row control on the right. */}
+      <label className="console__field">
+        <span>Transcript &mdash; optional (.txt, .vtt, .srt)</span>
+        <input
+          name="transcriptFile"
+          type="file"
+          accept=".txt,.vtt,.srt,.md,text/plain"
+          onChange={(event) => void inspectTranscript(event.target.files?.[0])}
+        />
+        {transcriptNote && <small className="upload__poster-note">{transcriptNote}</small>}
+      </label>
 
       <div className="console__row console__row--end">
         <label className="console__check">
@@ -507,6 +612,94 @@ interface EpisodeListProps {
   onError: (message: string | null) => void
 }
 
+/**
+ * Giving an episode its words, after the fact.
+ *
+ * The ordinary way a transcript arrives, and the reason this is a row control
+ * rather than only a field on the upload form: an episode goes up on the night
+ * it is finished, and the transcription is done afterwards — a machine one
+ * takes as long as the conversation did, and then somebody reads it through.
+ * An archive where the only chance to add one was at upload time would be an
+ * archive whose existing episodes could never have any.
+ *
+ * A label wrapping a hidden file input rather than a button, because the
+ * browser will not open a file picker for anything else, and because a `<label>`
+ * is already a real control for the keyboard and for a screen reader. It reads
+ * "Transcript" when there is none and carries a tick when there is, and the
+ * clear button only exists in the second case — a transcript uploaded against
+ * the wrong episode has to be removable, and nothing else here can remove it.
+ */
+function TranscriptControl({
+  api,
+  episode,
+  busy,
+  act,
+  onError,
+}: {
+  api: EpisodeApi
+  episode: AdminEpisode
+  busy: boolean
+  act: (run: () => Promise<unknown>) => Promise<void>
+  onError: (message: string | null) => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+
+  const chose = useCallback(
+    async (file: File | undefined) => {
+      // Cleared here rather than after the request, so choosing the same file
+      // twice — which is what somebody does after fixing it — fires `change`
+      // again. A file input does not, if its value has not changed.
+      if (input.current) input.current.value = ''
+      if (!file) return
+      const read = await readTranscript(file)
+      if ('error' in read) {
+        onError(read.error)
+        return
+      }
+      await act(() => api.update(episode.id, { transcript: read.text }))
+    },
+    [act, api, episode.id, onError],
+  )
+
+  return (
+    <span className="row__transcript">
+      <label
+        className="row__toggle"
+        title={
+          episode.hasTranscript
+            ? 'Replace the transcript for this episode'
+            : 'Add a transcript to this episode'
+        }
+      >
+        {episode.hasTranscript ? 'Transcript ✓' : 'Transcript'}
+        <input
+          ref={input}
+          className="row__file"
+          type="file"
+          accept=".txt,.vtt,.srt,.md,text/plain"
+          disabled={busy}
+          onChange={(event) => void chose(event.target.files?.[0])}
+        />
+      </label>
+
+      {episode.hasTranscript && (
+        <button
+          type="button"
+          className="row__clear"
+          disabled={busy}
+          title="Take the transcript off this episode"
+          onClick={() => {
+            if (!window.confirm(`Take the transcript off "${episode.title}"?`)) return
+            void act(() => api.update(episode.id, { transcript: null }))
+          }}
+        >
+          clear
+        </button>
+      )}
+    </span>
+  )
+}
+
 function EpisodeList({ episodes, api, busy, setBusy, onChanged, onError }: EpisodeListProps) {
   const act = useCallback(
     async (run: () => Promise<unknown>) => {
@@ -553,6 +746,14 @@ function EpisodeList({ episodes, api, busy, setBusy, onChanged, onError }: Episo
             <a className="row__view" href={episodePath(episode.slug)}>
               View
             </a>
+
+            <TranscriptControl
+              api={api}
+              episode={episode}
+              busy={busy}
+              act={act}
+              onError={onError}
+            />
 
             <button
               type="button"

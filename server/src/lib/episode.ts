@@ -48,6 +48,20 @@ export interface Episode {
    */
   transcodeStatus: TranscodeStatus
   poster: string | null
+  /**
+   * Whether there is a transcript to fetch, rather than the transcript.
+   *
+   * An hour of talk is a hundred kilobytes of text, and the archive route hands
+   * back sixty episodes at once: carrying the words here would make the grid —
+   * a page of pictures and titles — a six-megabyte response so that one reader
+   * in twenty can press a button. So the episode says *that there is one* and
+   * `GET /api/episodes/:slug/transcript` says what it is, asked for only when
+   * somebody opens it.
+   *
+   * A boolean rather than a length or a URL: the page's only question is
+   * whether to draw the toggle at all.
+   */
+  hasTranscript: boolean
   uploadedAt: number
 }
 
@@ -74,6 +88,7 @@ export function toEpisode(row: EpisodeRow, store: MediaStore): Episode {
     audioBytes: row.audio_bytes,
     transcodeStatus: row.transcode_status,
     poster: row.poster,
+    hasTranscript: row.transcript !== null && row.transcript !== '',
     uploadedAt: row.uploaded_at,
   }
 }
@@ -112,6 +127,27 @@ export const NOTES_MAX_LENGTH = 8_000
 
 /** One line naming who was on. Not a list of credits. */
 export const GUESTS_MAX_LENGTH = 200
+
+/**
+ * How long a transcript may be.
+ *
+ * Two hundred thousand characters, which is not a round guess: talk runs at
+ * roughly nine hundred characters a minute, so this is about four hours of
+ * conversation with the speaker labels and the timestamps on top of it — well
+ * past the longest thing this archive is ever going to hold, and still bounded.
+ *
+ * The ceiling exists twice over. This is a column in a row that is read every
+ * time the console lists the archive, and it is a multipart *field*, which
+ * busboy holds in memory whole; the parser's own limit is a megabyte (see the
+ * multipart registration in app.ts), and 200k characters cannot exceed that
+ * even if every one of them is three bytes of UTF-8.
+ *
+ * Unlike the notes, going over is refused rather than truncated. A transcript
+ * cut off at the ceiling would look complete and simply stop in the middle of
+ * an answer, which is a worse thing to discover in six months than an upload
+ * that would not go through today.
+ */
+export const TRANSCRIPT_MAX_LENGTH = 200_000
 
 /**
  * The addresses an episode may not claim, because the page already means
@@ -163,6 +199,35 @@ export function toNotes(value: string): string | null {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
     .slice(0, NOTES_MAX_LENGTH)
+  return clean.length > 0 ? clean : null
+}
+
+/**
+ * A transcript as it goes into the database, or null for an episode with none.
+ *
+ * Barely touched, and that is deliberate: this is somebody's transcription tool
+ * output and every line of it is load-bearing, so unlike the notes there is no
+ * collapsing of blank runs and no reflowing. Three things happen. Line endings
+ * are normalised, because a file written on Windows and one written on a Mac
+ * must parse the same way in the browser; the control characters that are not
+ * newline or tab go, for the reason they go everywhere else in this file — this
+ * ends up in the markup of a public page; and a BOM is dropped, which a text
+ * file exported from a word processor routinely opens with and which would
+ * otherwise sit in front of the first timestamp and stop it being one.
+ *
+ * Length is *not* enforced here. The route refuses an over-long transcript with
+ * its actual size named, because silently returning a shortened one is exactly
+ * the failure this is trying to avoid; see `TRANSCRIPT_MAX_LENGTH`.
+ */
+export function toTranscript(value: string): string | null {
+  const clean = value
+    .replace(/^\ufeff/, '')
+    .replace(/\r\n?/g, '\n')
+    // Newline and tab spared by name; a transcript's own indentation is the
+    // only thing here that ever means anything.
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]+/g, '')
+    .trim()
   return clean.length > 0 ? clean : null
 }
 

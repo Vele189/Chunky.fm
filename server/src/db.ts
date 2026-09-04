@@ -190,6 +190,22 @@ export interface EpisodeRow {
   transcode_error: string | null
   /** Basename inside `<storage>/episodes/posters`, or null before one is set. */
   poster: string | null
+  /**
+   * What was said, with a clock on it. Null for an episode nobody has
+   * transcribed.
+   *
+   * The text exactly as it was uploaded, the way `lyrics.synced` keeps LRCLIB's
+   * own text: the shape (`00:04:31 Speaker 2: …`) is parsed in the browser, by
+   * `lib/transcript.ts`, because the parse is what decides how it is *drawn*
+   * and a server that pre-chewed it into cues would have to be redeployed to
+   * change a rendering decision. Kept whole also means an admin who uploads the
+   * wrong file gets the wrong file back rather than something derived from it.
+   *
+   * The one column here that is genuinely large — an hour of talk is around a
+   * hundred kilobytes — and it is deliberately not sent with the episode: see
+   * `Episode.hasTranscript`, and the route that serves this on its own.
+   */
+  transcript: string | null
   content_hash: string
   uploaded_at: number
 }
@@ -356,6 +372,9 @@ CREATE TABLE IF NOT EXISTS episodes (
     CHECK (transcode_status IN ('pending', 'ready', 'failed', 'none')),
   transcode_error TEXT,
   poster          TEXT,
+  -- What was said, as uploaded. Null until somebody transcribes the episode;
+  -- see EpisodeRow, and note that it is never part of an episode over the wire.
+  transcript      TEXT,
   -- The same dedupe the library has, and it earns more here: an archive is
   -- added to one file at a time over months, and uploading March's episode
   -- twice is a thing somebody actually does.
@@ -433,6 +452,7 @@ const ADDED_COLUMNS: [table: string, column: string, spec: string][] = [
   ['sessions', 'kind', "TEXT NOT NULL DEFAULT 'set' CHECK (kind IN ('set', 'talk'))"],
   ['schedule', 'kind', "TEXT NOT NULL DEFAULT 'set' CHECK (kind IN ('set', 'talk'))"],
   ['schedule', 'title', 'TEXT'],
+  ['episodes', 'transcript', 'TEXT'],
 ]
 
 function migrate(db: Db): void {
