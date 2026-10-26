@@ -5,8 +5,11 @@ License, Version 1.1.
                  https://github.com/floriankarsten/space-grotesk
   Cousine:       Copyright (c) Steve Matteson
                  https://fonts.google.com/specimen/Cousine
+  Big Shoulders Display:
+                 Copyright 2019 The Big Shoulders Project Authors
+                 https://github.com/xotypeco/big_shoulders
 
 Full licence text: https://openfontlicense.org/open-font-license-official-text/
 
-Both were fetched from Google Fonts and subset to latin. Only the URLs in
+All three were fetched from Google Fonts and subset to latin. Only the URLs in
 fonts.css were changed; the font binaries are unmodified.

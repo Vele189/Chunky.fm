@@ -37,7 +37,14 @@ async function fetchSchedule(signal: AbortSignal): Promise<ScheduledSession | nu
   }
 }
 
-export function NextSession() {
+/**
+ * The announcement, if there is a live one, or null.
+ *
+ * A hook rather than only a section because the poster page says it in three
+ * places: the ticker, the section, and the bar at the foot. Three fetches of
+ * the same open read would be three chances to disagree, so they share one.
+ */
+export function useNextSession(): ScheduledSession | null {
   const [next, setNext] = useState<ScheduledSession | null>(null)
 
   useEffect(() => {
@@ -46,35 +53,57 @@ export function NextSession() {
     return () => stop.abort()
   }, [])
 
-  if (!isUpcoming(next, Date.now())) return null
+  return isUpcoming(next, Date.now()) ? next : null
+}
+
+/**
+ * What is being promised, in one line: "A conversation, with Sipho".
+ *
+ * Both halves come from the announcement rather than from this page, which is
+ * the point of them being on it at all: everything else in this section is a
+ * time and a picture, and a stranger deciding whether to turn up on Saturday
+ * is deciding between an evening of records and an evening of somebody
+ * talking. Before these fields existed the page could only ever imply the
+ * first, whichever one it was.
+ */
+export function promiseOf(next: ScheduledSession): string {
+  return next.title ? `${kindPromise(next.kind)}, ${next.title}` : kindPromise(next.kind)
+}
+
+export function NextSession({ next }: { next: ScheduledSession | null }) {
+  if (next === null) return null
 
   const art = posterUrl(next)
   const when = nextSessionLabel(next.startsAt, Date.now())
-  /**
-   * What is being promised, in one line: "A conversation, with Sipho".
-   *
-   * Both halves come from the announcement rather than from this page, which is
-   * the point of them being on it at all: everything else in this section is a
-   * time and a picture, and a stranger deciding whether to turn up on Saturday
-   * is deciding between an evening of records and an evening of somebody
-   * talking. Before these fields existed the page could only ever imply the
-   * first, whichever one it was.
-   */
-  const promise = next.title ? `${kindPromise(next.kind)}, ${next.title}` : kindPromise(next.kind)
+  const promise = promiseOf(next)
 
   return (
-    <section className="upcoming" id="next-session">
-      <div className="section__head section__head--mid">
-        <h2 className="section__title">The next one</h2>
+    <section className="band band--press upcoming" id="next-session">
+      <div className="upcoming__words">
+        <p className="kicker">The next one</p>
+        <h2 className="upcoming__when">
+          <time dateTime={new Date(next.startsAt).toISOString()}>{when}</time>
+        </h2>
+        <p className="upcoming__what" data-testid="upcoming-what">
+          {promise}
+        </p>
+        {/* Not "tune in now": the station is not on, and a button that opened a
+            dark room would be the page overselling. Somebody who presses this is
+            deciding to come back, and the listener page will tell them the same
+            thing this section just did. */}
+        <p className="upcoming__after">
+          Nothing is playing yet. The address is the same one it always is.
+        </p>
+        <a className="button button--ink" href={stationUrl()}>
+          Take me there
+        </a>
       </div>
 
       {/* The one image on this page that is carrying information rather than
           decorating: it is the announcement, drawn by whoever is running the
-          session, and it is often the only place the theme is written down. An
-          empty alt on it told a screen reader there was nothing there. The date
-          is repeated from the line below because the poster is what a sighted
-          reader reads first, and the alt has to stand where the picture does,
-          which now includes what kind of night it is. */}
+          session, and it is often the only place the theme is written down. The
+          date is repeated in the alt because the poster is what a sighted reader
+          reads first, and the alt has to stand where the picture does. */}
       {art && (
         <img
           className="upcoming__poster"
@@ -82,24 +111,6 @@ export function NextSession() {
           alt={`Poster for the next session. ${promise}, ${when}`}
         />
       )}
-
-      <p className="upcoming__what" data-testid="upcoming-what">
-        {promise}
-      </p>
-
-      <p className="upcoming__when">
-        <time dateTime={new Date(next.startsAt).toISOString()}>{when}</time>
-      </p>
-      {/* Not "tune in now": the station is not on, and a button that opened a
-          dark room would be the page overselling. Somebody who presses this is
-          deciding to come back, and the listener page will tell them the same
-          thing this section just did. */}
-      <p className="section__body upcoming__after">
-        Nothing is playing yet. The address is the same one it always is.
-      </p>
-      <a className="button" href={stationUrl()}>
-        Take me there
-      </a>
     </section>
   )
 }

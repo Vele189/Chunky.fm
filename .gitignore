@@ -46,8 +46,10 @@ yarn-error.log*
 # client build output
 client/dist/
 
-# The hero model as it came off Sketchfab: 30 MB, 25 PNG textures. What ships is
-# the 1 MB `client/src/assets/models/gramophone.glb` built from it, which is
-# committed. Only `npm run assets:models` needs this file, and only when the
-# model itself changes. See the README.
+# The old hero model as it came off Sketchfab: 30 MB. The landing page no longer
+# draws it (the poster revamp replaced the gramophone), but a copy may still be
+# sitting in a working tree, and it must never be committed.
 client/assets-src/gramophone.glb
+
+# Local Claude Code config: agents, settings. Not shared with the repo.
+.claude/

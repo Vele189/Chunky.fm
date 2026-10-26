@@ -46,7 +46,7 @@
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="chunky.fm — everyone hears the same second of the same song." />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="theme-color" content="#111110" />
 
     <!-- The same station, said in the one form a machine will not misread.
 
@@ -122,6 +122,20 @@
          of the bundle. Both cases are ones where a stylesheet may not have
          landed either, so this is small enough to inline and asks for nothing. -->
     <style>
+      /* The poster's ink and newsprint, written out because tokens.css has not
+         arrived yet. Without them the prelude is black on white and the page
+         flashes when the bundle repaints it. */
+      body {
+        margin: 0;
+        background: #111110;
+        color: #e9e5da;
+        font-family: 'Cousine', ui-monospace, 'SF Mono', monospace;
+      }
+      .prelude h1,
+      .prelude h2 {
+        font-family: 'Big Shoulders Display', 'Arial Narrow', Impact, sans-serif;
+        text-transform: uppercase;
+      }
       .prelude {
         max-width: 34rem;
         margin: 0 auto;

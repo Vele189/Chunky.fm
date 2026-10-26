@@ -75,4 +75,40 @@
   /* Everything that counts (clocks, tallies, head counts, track numbers)
      so a digit changing never shifts what is beside it. */
   --font-numeric: 'Cousine', ui-monospace, 'SF Mono', monospace;
+
+  /* --- the poster ---------------------------------------------------------
+   * The revamp, as values: newsprint and ink, printed in two riso colours.
+   * The Figma file's "poster" collection is where these come from (page
+   * "revamp — poster"), and the names match it one for one.
+   *
+   * They sit beside the station's tokens rather than replacing them because
+   * the change goes one page at a time. The landing page is drawn from these
+   * already; the station still draws from the ones above until it is moved
+   * over, and a single set of names doing both jobs would have repainted it
+   * half-finished.
+   *
+   * Two colours do work and the rest are paper. Press is the only thing that
+   * starts sound (Play, Tune in); mark is a count or an index, never an
+   * action. Red is still --live and still means only "on the air". */
+  --ink: #111110;
+  --charcoal: #1e1d1b;
+  --newsprint: #e9e5da;
+  --bone: #d6d0c1;
+  --smudge: #8c877b;
+  /* The smudge above is for paper. On ink it reads as a hole, so quiet text on
+     a dark band takes the lighter of the two. */
+  --smudge-on-ink: #a8a397;
+  --rule-dark: #3a3833;
+  --rule-light: #b9b3a3;
+  --press: #3255a4;
+  --press-deep: #22407f;
+  --mark: #ff48b0;
+
+  /* A poster has no rounded corners, so this is a name for zero rather than a
+     value anybody should be tempted to change. */
+  --poster-radius: 0;
+  --rule: 1px;
+
+  /* Condensed and heavy, for anything set as a headline. Never for a sentence. */
+  --font-display: 'Big Shoulders Display', 'Arial Narrow', Impact, sans-serif;
 }
