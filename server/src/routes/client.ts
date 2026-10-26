@@ -52,6 +52,19 @@ export interface ClientBundle {
    */
   podcast: Buffer
   /**
+   * The design written down, or null if the build predates it.
+   *
+   * Optional where the five documents above are required, and it is the only
+   * document here that is. Each of those is something a listener or a crawler
+   * asks for, so a build missing one would come up healthy and answer a real
+   * address with a 404 — a station that shipped without its client. This is an
+   * internal reference *about* the station rather than a part of it, and
+   * refusing to boot over a swatch list would take a broadcast off the air for
+   * a page nobody listening has ever opened. Absent, `/brand` falls through and
+   * is answered the way any other address that is nothing is.
+   */
+  brand: Buffer | null
+  /**
    * What an address that is nothing gets, or null if the build predates it.
    *
    * Optional where the three documents above are required, and for the same
@@ -108,10 +121,18 @@ export async function loadClientBundle(clientDir: string): Promise<ClientBundle>
     read('podcast.html'),
   ])
 
-  // See `notFound` above for why this one is allowed to be absent.
+  // See `notFound` and `brand` above for why these two are allowed to be
+  // absent where the five documents are not.
   let notFound: Buffer | null = null
   try {
     notFound = await fs.readFile(path.join(clientDir, '404.html'))
+  } catch {
+    // A build from before the page existed.
+  }
+
+  let brand: Buffer | null = null
+  try {
+    brand = await fs.readFile(path.join(clientDir, 'brand.html'))
   } catch {
     // A build from before the page existed.
   }
@@ -131,7 +152,7 @@ export async function loadClientBundle(clientDir: string): Promise<ClientBundle>
     }),
   )
 
-  return { index, landing, how, cohost, podcast, notFound, root }
+  return { index, landing, how, cohost, podcast, brand, notFound, root }
 }
 
 /**
@@ -181,6 +202,13 @@ export function doorwayHook(bundle: ClientBundle) {
       // out of its own address bar. See the `podcast` kind in `lib/doorway.ts`.
       case 'podcast':
         void sendDocument(reply, bundle.podcast)
+        return
+      // The one document allowed not to be in the build. A build without it
+      // carries on to the fallback, so `/brand` is answered exactly the way an
+      // address that is nothing is — which is what it is on that build.
+      case 'brand':
+        if (bundle.brand === null) return done()
+        void sendDocument(reply, bundle.brand)
         return
       case 'pass':
         return done()

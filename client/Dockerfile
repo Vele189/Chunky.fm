@@ -7,7 +7,9 @@ RUN npm ci
 # and scripts/ as well as src/, so they all have to be here or tsc fails on
 # files it was told to include but cannot find.
 COPY tsconfig.json vite.config.ts ./
-COPY index.html landing.html cohost.html how-it-works.html podcast.html ./
+# Every page vite.config.ts names as an input has to be on this line: Vite
+# fails the whole build on one it cannot find (brand.html did exactly that).
+COPY index.html landing.html cohost.html how-it-works.html podcast.html brand.html ./
 COPY src ./src
 COPY test ./test
 COPY scripts ./scripts

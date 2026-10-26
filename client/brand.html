@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>chunky.fm · the design, written down</title>
+
+    <!-- The sixth document, and the only one addressed to somebody making
+         something rather than to somebody listening.
+
+         It exists because the design now has to leave this repository. An email
+         is drawn in a tool that has never seen `tokens.css`, and the person
+         drawing it needs the palette, the two faces, the radii and the rule
+         about red in a form they can look at. Written as a page here rather
+         than as a PDF handed over once, for the reason `shared.css` exists: a
+         copy of the design is a copy that drifts, and this one is drawn *by*
+         the design rather than about it.
+
+         So it carries a bundle where `/how-it-works` deliberately does not.
+         There is nothing on this page that needs React and nothing that talks
+         to the station, but a page whose subject is Space Grotesk, the LIVE
+         badge and a #0a0a0a sheet is worth nothing rendered in Helvetica on
+         white. The entry imports `tokens.css` and `shared.css` and no styles of
+         its own for anything either of them already draws, which is what makes
+         the specimens below the objects themselves rather than pictures of
+         them. See `src/brand/main.ts`.
+
+         Every hex, every ratio and every pixel value on this page is read out
+         of the stylesheet at runtime rather than typed into this markup. That
+         is the whole trick, and the reason is that a brand page listing a
+         colour the product no longer uses is worse than no brand page: it is
+         wrong with authority, and nothing about it looks wrong. -->
+    <meta
+      name="description"
+      content="The chunky.fm design as values: the palette, the two faces, the radii, the objects, and how to carry all of it into an email."
+    />
+
+    <!-- Nothing here is for a crawler. This is an internal reference, it is
+         about the station rather than being it, and a search result offering a
+         swatch list to somebody looking for a radio station helps nobody.
+         robots.txt disallows this path too. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0a0a0a" />
+  </head>
+  <body>
+    <div class="brand">
+      <nav class="brand__rail" aria-label="Sections">
+        <p class="brand__rail-mark">chunky<span class="wordmark__tld">.fm</span></p>
+        <p class="brand__rail-sub">The design, written down</p>
+        <a href="#rule">The rule</a>
+        <a href="#colour">Colour</a>
+        <a href="#contrast">Contrast</a>
+        <a href="#type">Type</a>
+        <a href="#shape">Shape</a>
+        <a href="#objects">Objects</a>
+        <a href="#space">Space</a>
+        <a href="#email">Email</a>
+        <a href="#verdict">Do &amp; don't</a>
+      </nav>
+
+      <main class="brand__body">
+        <header class="masthead">
+          <div class="masthead__top">
+            <span class="wordmark">chunky<span class="wordmark__tld">.fm</span></span>
+            <span class="onair__badge"><span class="onair__dot"></span>LIVE</span>
+          </div>
+          <h1>One sheet, one accent, and one thing allowed to be bright.</h1>
+          <p class="masthead__lede">
+            The station is a near-black sheet with translucent panels floating on it. White
+            is the only accent and it means <em>you can press this</em>. Red is the only
+            signal and it means <em>the station is on the air right now</em>. Every other
+            value in the system is a grey chosen so that those two stay the loudest things
+            on the screen.
+          </p>
+          <p class="masthead__note">
+            Every value below is read out of the station's own stylesheet as this page
+            loads, so it cannot describe a design the station has stopped using.
+          </p>
+        </header>
+
+        <!-- 1 ------------------------------------------------------------ -->
+        <section id="rule">
+          <div class="sec__head">
+            <p class="label">The rule</p>
+            <h2>Three sentences that decide almost everything else</h2>
+            <p>
+              If a question is not answered further down, it is answered here. These are
+              the reasons the palette is shaped the way it is, so something new can be
+              judged against them rather than against a list of swatches.
+            </p>
+          </div>
+
+          <div class="rules">
+            <div>
+              <h3>Brightness is a budget</h3>
+              <p>
+                On a page where a single red dot means the station is on the air, a second
+                bright thing is noise. Give a layout exactly one loud element and let the
+                greys hold everything else. If two things are competing, one of them is
+                wrong.
+              </p>
+            </div>
+            <div>
+              <h3>Red is reserved</h3>
+              <p>
+                Red never decorates. It appears on the LIVE badge, on the level meter's
+                mark, on a mic break and on the control that ends a broadcast. Anywhere
+                else it is a lie about the station's state. Where a red surface is
+                genuinely needed it is the wash, never the solid fill.
+              </p>
+            </div>
+            <div>
+              <h3>Nothing moves without something to report</h3>
+              <p>
+                The meter goes flat over silence. The record stops rather than gliding to
+                a stylish halt. A badge that goes off air keeps its exact shape and loses
+                its colour. Motion here is a readout, and where there is nothing to read
+                out it holds still.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2 ------------------------------------------------------------ -->
+        <section id="colour">
+          <div class="sec__head">
+            <p class="label">Colour</p>
+            <h2>Eleven values, and only two of them are colours</h2>
+            <p>
+              Click a swatch to copy its hex. The grey line under each is the binding
+              part: the role is the rule, and the hex is only how the role is spelled this
+              week. Two of these are translucent by design, so their chips are shown over
+              the sheet, which is the only place they ever sit.
+            </p>
+          </div>
+
+          <div class="group">
+            <p class="label">Surfaces <em>darkest to lightest</em></p>
+            <div class="swatches">
+              <button class="swatch" type="button" data-token="--bg">
+                <span class="swatch__use">The sheet. Every page, and every email body.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--panel">
+                <span class="swatch__use">Chrome that floats over the sheet.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--card">
+                <span class="swatch__use">Content blocks laid on the sheet.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--raised">
+                <span class="swatch__use">Quiet buttons, off-air badges, chips.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--raised-soft">
+                <span class="swatch__use">Hover on a quiet button. Never at rest.</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="group">
+            <p class="label">Text <em>brightest to quietest</em></p>
+            <div class="swatches">
+              <button class="swatch" type="button" data-token="--fg">
+                <span class="swatch__use">Headings, and anything you can press.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--fg-soft">
+                <span class="swatch__use">The default colour of body copy.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--fg-dim">
+                <span class="swatch__use">Long copy, ledes, quiet button labels.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--muted">
+                <span class="swatch__use">Second lines, captions, metadata.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--faint">
+                <span class="swatch__use">Labels and the .fm suffix. Not paragraphs.</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="group">
+            <p class="label">Signals <em>state only, never decoration</em></p>
+            <div class="swatches">
+              <button class="swatch" type="button" data-token="--live">
+                <span class="swatch__use">On the air. The dot, and nothing else.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--live-text">
+                <span class="swatch__use">Red as type, where --live would not hold up.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--live-wash">
+                <span class="swatch__use">The badge, and the one destructive control.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--ok">
+                <span class="swatch__use">The socket is open. An 8px dot, at most.</span>
+              </button>
+              <button class="swatch" type="button" data-token="--warn">
+                <span class="swatch__use">Trouble it recovers from. Warm, not alarming.</span>
+              </button>
+            </div>
+          </div>
+
+          <p class="note">
+            <b>For anything that is not a browser.</b> Translucency means nothing in an
+            email client or a printer. Each swatch above carries its flattened equivalent,
+            composited over the sheet, and that is the value to type into a tool that has
+            no idea what is behind it. The two hairlines flatten the same way, and their
+            values are in <a href="#shape">Shape</a>.
+          </p>
+        </section>
+
+        <!-- 3 ------------------------------------------------------------ -->
+        <section id="contrast">
+          <div class="sec__head">
+            <p class="label">Contrast</p>
+            <h2>What each colour is actually cleared to carry</h2>
+            <p>
+              Measured against the sheet as the page loads. One value in the set does not
+              clear the threshold for normal body text, and it is worth knowing which
+              before it ends up carrying a paragraph somebody has to read.
+            </p>
+          </div>
+
+          <div class="tablewrap">
+            <table id="contrast-table">
+              <thead>
+                <tr>
+                  <th scope="col">Colour</th>
+                  <th scope="col">Token</th>
+                  <th scope="col">On the sheet</th>
+                  <th scope="col">Cleared for</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <p class="note">
+            <b>The one to watch is --faint.</b> It sits just under the 4.5:1 that normal
+            text needs. That is correct for the small uppercase labels it was drawn for,
+            where a brighter line always sits beside it and the label is not the thing
+            being read. It is wrong for a paragraph, for an email footer, and for an
+            unsubscribe link. Those move up to <code>--muted</code>.
+          </p>
+        </section>
+
+        <!-- 4 ------------------------------------------------------------ -->
+        <section id="type">
+          <div class="sec__head">
+            <p class="label">Type</p>
+            <h2>Space Grotesk speaks, Cousine counts</h2>
+            <p>
+              Two faces and one division of labour. Space Grotesk carries everything said
+              in words. Cousine carries everything that is a number, a code or a machine
+              label, so a digit changing never shifts what sits beside it. Both are under
+              the SIL Open Font License and both are vendored into the bundle, which is
+              what lets the station serve its own design with no outbound network at all.
+            </p>
+          </div>
+
+          <div class="specimen">
+            <p class="label">Space Grotesk — display <em>600 · −0.035em · 1.0</em></p>
+            <p class="spec-display">A room with a record on</p>
+            <div class="weights">
+              <span style="font-weight: 300">Light 300</span>
+              <span style="font-weight: 400">Regular 400</span>
+              <span style="font-weight: 500">Medium 500</span>
+              <span style="font-weight: 600">Semibold 600</span>
+              <span style="font-weight: 700">Bold 700</span>
+            </div>
+          </div>
+
+          <div class="specimen">
+            <p class="label">Space Grotesk — section, lede, body <em>600 / 400 / 400</em></p>
+            <p class="spec-section">Everyone hears the same second</p>
+            <p class="spec-lede">
+              Thirty listeners, one clock, and a needle that has been down since Tuesday.
+            </p>
+            <p class="spec-body">
+              The station does not stream audio. It broadcasts a small piece of state, and
+              every listener's browser plays the file itself, aligned to the station's
+              clock. Keep running copy near sixty-five characters wide, and do not set
+              more than a line of it above regular weight.
+            </p>
+          </div>
+
+          <div class="specimen">
+            <p class="label">Cousine — numerals and labels <em>400 / 700 · tabular</em></p>
+            <p class="spec-mono">02:41 / 04:17 &nbsp;·&nbsp; 31 listening</p>
+            <p class="label">On the air since 19:04 — track 7 of 12</p>
+          </div>
+
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Role</th>
+                  <th scope="col">Size</th>
+                  <th scope="col">Weight</th>
+                  <th scope="col">Tracking</th>
+                  <th scope="col">Line</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Display</td><td class="num">40 → 88</td><td class="num">600</td><td class="num">−0.035em</td><td class="num">1.0</td></tr>
+                <tr><td>Section</td><td class="num">22 → 34</td><td class="num">600</td><td class="num">−0.025em</td><td class="num">1.1</td></tr>
+                <tr><td>Lede</td><td class="num">19 → 26</td><td class="num">400</td><td class="num">−0.015em</td><td class="num">1.5</td></tr>
+                <tr><td>Panel title</td><td class="num">18</td><td class="num">600</td><td class="num">−0.01em</td><td class="num">27px</td></tr>
+                <tr><td>Body</td><td class="num">14</td><td class="num">400</td><td class="num">0</td><td class="num">1.5</td></tr>
+                <tr><td>Caption</td><td class="num">13</td><td class="num">400 / 500</td><td class="num">0</td><td class="num">18px</td></tr>
+                <tr><td>Label</td><td class="num">11 → 12</td><td class="num">400</td><td class="num">+0.08em</td><td class="num">1.4</td></tr>
+                <tr><td>Wordmark</td><td class="num">18</td><td class="num">700</td><td class="num">−0.45px</td><td class="num">27px</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="note">
+            <b>This table is the one thing on the page nobody can read off a token.</b>
+            The scale lives in the rules of <code>styles.css</code> and
+            <code>landing/landing.css</code> rather than in a variable, so these numbers
+            are remembered rather than measured. If the scale changes, this is wrong until
+            somebody changes it too.
+          </p>
+
+          <p class="note">
+            <b>Negative tracking above, positive below.</b> Everything from panel-title
+            size upward tightens as it grows, which is most of what keeps a large heading
+            reading as one object rather than a row of words. Only the small uppercase
+            labels open up, and only in Cousine. Never letterspace lowercase Space Grotesk
+            at body size.
+          </p>
+
+          <p class="note">
+            <b>Fallback stacks, which matter more off the web than on it.</b> Webfonts do
+            not load in Outlook for Windows and are unreliable in several mobile clients,
+            so always write the whole stack: <code>'Space Grotesk', 'Helvetica Neue',
+            Arial, sans-serif</code> and <code>'Cousine', 'Courier New', monospace</code>.
+            Cousine is metric-compatible with Courier New, so the numeric face degrades
+            without moving a layout. Space Grotesk to Arial does move, so leave a headline
+            box room to grow.
+          </p>
+        </section>
+
+        <!-- 5 ------------------------------------------------------------ -->
+        <section id="shape">
+          <div class="sec__head">
+            <p class="label">Shape</p>
+            <h2>The radius says what kind of thing it is</h2>
+            <p>
+              Radius here is a category rather than a taste. A full pill means you can
+              press it, or it is reporting a state. A 16px corner means it is a container.
+              The turntable's 28px belongs to the turntable.
+            </p>
+          </div>
+
+          <div class="shapes">
+            <figure>
+              <div class="shapes__box" style="border-radius: var(--pill)"></div>
+              <figcaption><b>pill</b><span>Buttons, badges, dots, meter bars, labels</span></figcaption>
+            </figure>
+            <figure>
+              <div class="shapes__box" style="border-radius: 16px"></div>
+              <figcaption><b>16px</b><span>Cards and panels. The default container</span></figcaption>
+            </figure>
+            <figure>
+              <div class="shapes__box" style="border-radius: 14px"></div>
+              <figcaption><b>14px</b><span>A block nested inside a 16px card</span></figcaption>
+            </figure>
+            <figure>
+              <div class="shapes__box" style="border-radius: 10px"></div>
+              <figcaption><b>10px</b><span>Small tiles, thumbnails, fields</span></figcaption>
+            </figure>
+            <figure>
+              <div class="shapes__box" style="border-radius: 6px"></div>
+              <figcaption><b>6px</b><span>Chips, and code set inline</span></figcaption>
+            </figure>
+            <figure>
+              <div class="shapes__box" style="border-radius: 28px"></div>
+              <figcaption><b>28px</b><span>The turntable. Reserved</span></figcaption>
+            </figure>
+          </div>
+
+          <p class="note">
+            <b>Edges are rings, not borders.</b> Every hairline in the system is drawn as
+            an inset 1px shadow, at <code data-ring="--ring"></code> where it is only
+            describing an edge and <code data-ring="--ring-strong"></code> where the edge
+            has to carry weight. That is deliberate rather than clever: a panel keeps its
+            exact size whether it has a ring or not, so nothing shifts by a pixel when a
+            card gains an edge on hover. In any medium that cannot do an inset shadow,
+            substitute a real 1px border at
+            <b data-flat-ring="--ring"></b> or <b data-flat-ring="--ring-strong"></b>.
+          </p>
+
+          <p class="note">
+            <b>Drop shadows are rare, and there are two.</b> The turntable carries
+            <code>0 25px 50px rgb(0 0 0 / 25%)</code> and the floating bar carries a
+            softer version of the same. A card on the sheet gets a ring and nothing else.
+            If two blocks need a shadow to separate them, what is actually wrong is the
+            space between them.
+          </p>
+        </section>
+
+        <!-- 6 ------------------------------------------------------------ -->
+        <section id="objects">
+          <div class="sec__head">
+            <p class="label">Objects</p>
+            <h2>The five things that make it recognisable</h2>
+            <p>
+              These are drawn by <code>shared.css</code>, which the station and the landing
+              page both import, which is why they are identical in both. The specimens
+              below are those same rules rather than copies of them, so what is on this
+              page is what is on the station. Anything new should be assembled out of them
+              before it is drawn from scratch.
+            </p>
+          </div>
+
+          <div class="objects">
+            <div class="obj">
+              <p class="label">The wordmark</p>
+              <div class="obj__stage">
+                <span class="wordmark" style="font-size: 32px; line-height: 1.4">chunky<span class="wordmark__tld">.fm</span></span>
+                <span class="wordmark">chunky<span class="wordmark__tld">.fm</span></span>
+              </div>
+              <p class="obj__cap">
+                Always lowercase, always the word and the suffix with no space between
+                them. Bold, tracked in by a hair. The name takes <code>--fg</code> and the
+                <code>.fm</code> takes <code>--faint</code>, and that grey is the whole
+                lockup: there is no symbol beside it, no stacked variant and no version in
+                capitals. Below about 14px the suffix stops separating, so that is the
+                floor.
+              </p>
+            </div>
+
+            <div class="obj">
+              <p class="label">The LIVE badge</p>
+              <div class="obj__stage">
+                <span class="onair__badge"><span class="onair__dot"></span>LIVE</span>
+                <span class="onair__badge onair__badge--off"><span class="onair__dot"></span>OFF AIR</span>
+              </div>
+              <p class="obj__cap">
+                The loudest object in the identity, and the reason nothing else is allowed
+                to be red. Off the air it keeps its exact footprint and loses its colour,
+                so the space it occupies never moves when the station stops. Do not resize
+                it, do not restate it as a solid red fill, and do not put it on anything
+                that is not about a broadcast happening now.
+              </p>
+            </div>
+
+            <div class="obj">
+              <p class="label">The buttons</p>
+              <div class="obj__stage">
+                <button class="button" type="button" style="height: var(--control-lg); padding: 0 22px">Tune in</button>
+                <button class="button" type="button">Send</button>
+                <button class="button button--quiet" type="button">Browse the archive</button>
+                <button class="button button--danger" type="button">End the broadcast</button>
+                <button class="button" type="button" disabled>Queue full</button>
+              </div>
+              <p class="obj__cap">
+                One white pill for the thing the group is for, and quiet grey for
+                everything standing beside it. Two heights and one rule for choosing:
+                the larger where the control is the point of whatever it sits in, the
+                smaller where it stands in a row of its peers. The destructive one is a
+                wash rather than a fill, because a solid red button would be a second
+                bright thing competing with the badge.
+              </p>
+            </div>
+
+            <div class="obj">
+              <p class="label">The deck</p>
+              <div class="obj__stage obj__stage--deck">
+                <div class="deck" data-spinning="true">
+                  <div class="deck__well">
+                    <div class="deck__platter">
+                      <div class="deck__record">
+                        <div class="deck__label deck__label--blank"></div>
+                      </div>
+                      <div class="deck__sheen"></div>
+                      <div class="deck__spindle"></div>
+                    </div>
+                  </div>
+                </div>
+                <p class="obj__cap">
+                  340px square with a 300px well inside it, and fixed rather than fluid: a
+                  record that changed size with the window would stop reading as an object
+                  sitting on a page. The sheen and the spindle hold still while the record
+                  turns, because a spindle is part of the deck rather than part of the
+                  record. It turns at a speed you can read as turning rather than at 33⅓,
+                  and it <b>stops</b> when the audio stops. The tonearm rides over all of
+                  this and is drawn in <code>Turntable.tsx</code>; it is left off here
+                  rather than copied, since a copy is a thing that drifts.
+                </p>
+              </div>
+            </div>
+
+            <div class="obj">
+              <p class="label">The level meter</p>
+              <div class="obj__stage">
+                <div class="levels" data-live="true">
+                  <span class="levels__mark">LVL</span>
+                  <div class="levels__bars" id="brand-levels"></div>
+                </div>
+              </div>
+              <p class="obj__cap">
+                3px white bars, 3px apart, in a 32px band. Over silence every bar sits
+                flat rather than carrying on dancing, and that is the one place this whole
+                system is most easily made to lie: a meter moving over nothing is the only
+                element here capable of actively misreporting the station. In a still
+                piece such as an email, draw it flat, and never animate it as decoration.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7 ------------------------------------------------------------ -->
+        <section id="space">
+          <div class="sec__head">
+            <p class="label">Space</p>
+            <h2>One inner padding, and gaps large enough to look like mistakes</h2>
+            <p>
+              Spacing runs on a four-pixel grid. Two numbers do most of the work, and one
+              rule about section rhythm explains why the landing page's gaps look wrong in
+              a screenshot and correct on a screen.
+            </p>
+          </div>
+
+          <div class="tablewrap">
+            <table id="space-table">
+              <thead>
+                <tr>
+                  <th scope="col">Measure</th>
+                  <th scope="col">Value</th>
+                  <th scope="col">Where</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Card padding</td>
+                  <td class="num" data-token-value="--card-pad"></td>
+                  <td class="dim">Every card. One number, so a heading, a list and a footer inside it cannot disagree about where the left margin is</td>
+                </tr>
+                <tr>
+                  <td>Control height</td>
+                  <td class="num" data-token-value="--control"></td>
+                  <td class="dim">A control standing in a row of its peers</td>
+                </tr>
+                <tr>
+                  <td>Control height, large</td>
+                  <td class="num" data-token-value="--control-lg"></td>
+                  <td class="dim">The control a group exists for. A phone lifts both</td>
+                </tr>
+                <tr><td>Stack gap</td><td class="num">12px</td><td class="dim">Between siblings in a column</td></tr>
+                <tr><td>Inline gap</td><td class="num">8px</td><td class="dim">Icon to label, dot to text, button to button</td></tr>
+                <tr><td>Page gutter</td><td class="num">32 / 24 / 20</td><td class="dim">Desktop, then under 940px, then under 560px</td></tr>
+                <tr><td>Content cap</td><td class="num">1080px</td><td class="dim">The measure everything is centred in</td></tr>
+                <tr><td>Section rhythm</td><td class="num">200 / 140 / 104</td><td class="dim">Between bands on the landing page, at those same three widths</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="note">
+            <b>Why the gaps are that large.</b> The station is a room you sit in, where
+            everything has to be visible at once. A page in front of it is something you
+            are read to, at the pace of somebody scrolling, and its sections are spaced so
+            you rarely see two of them whole. One idea per screen. Carry that into an
+            email: one message per block, and more air between blocks than feels
+            comfortable in the layout tool.
+          </p>
+        </section>
+
+        <!-- 8 ------------------------------------------------------------ -->
+        <section id="email">
+          <div class="sec__head">
+            <p class="label">Email</p>
+            <h2>The system at six hundred pixels</h2>
+            <p>
+              A working template built out of nothing but the values above, with every
+              translucent one already flattened. Use it as the shape to start from: bar
+              with the state badge, one headline, one panel carrying the thing the email is
+              actually about, one white pill, and a footer nobody has to squint at.
+            </p>
+          </div>
+
+          <div class="mockwrap">
+            <div class="mock">
+              <div class="mock__bar">
+                <span class="wordmark">chunky<span class="wordmark__tld">.fm</span></span>
+                <span class="mock__badge"><span class="mock__dot"></span>ON AIR NOW</span>
+              </div>
+
+              <div class="mock__pad">
+                <p class="mock__kicker">Tuesday night · 19:04</p>
+                <h3>Thirty people just heard the same second of this record.</h3>
+                <p>
+                  The needle went down at four minutes past seven and it has not come up.
+                  Open the station now and you land wherever everybody else already is,
+                  which tonight is somewhere in the back half of side two.
+                </p>
+
+                <div class="mock__panel">
+                  <div class="mock__sleeve"></div>
+                  <div class="mock__meta">
+                    <b>Sunday Morning</b>
+                    <span>The Velvet Underground &amp; Nico</span>
+                    <span class="mock__time">02:41 / 02:54 · track 1 of 11</span>
+                  </div>
+                </div>
+
+                <div class="mock__cta">
+                  <a class="mock__btn" href="#email">Tune in</a>
+                  <a class="mock__btn mock__btn--quiet" href="#email">Browse the archive</a>
+                </div>
+              </div>
+
+              <div class="mock__foot">
+                You are getting this because you asked the station to tell you when it
+                comes on. <a href="#email">Stop these</a> and it never will again.
+              </div>
+            </div>
+          </div>
+
+          <p class="note">
+            <b>What changes on the way out of a browser.</b> Body copy goes up a step,
+            because the web's 14px is read on a screen somebody chose to look at and an
+            email is read wherever it lands. Every translucent fill becomes the flattened
+            value from <a href="#colour">Colour</a>. Every inset ring becomes a real 1px
+            border. Everything else stays exactly as it is.
+          </p>
+
+          <p class="note">
+            <b>The pill will not round in Outlook for Windows.</b> Word's rendering engine
+            ignores <code>border-radius</code>. Either accept a square button there, which
+            still reads correctly as white on the sheet, or wrap it in a VML roundrect
+            fallback. Do not solve it with a picture of a button: images are blocked by
+            default in several clients, and a blocked image on a dark template leaves a
+            white hole where the one thing you wanted pressed used to be.
+          </p>
+
+          <p class="note">
+            <b>Dark templates meet clients that force light.</b> Ship the wordmark as live
+            text rather than as an image, so it can inherit a colour instead of becoming a
+            white rectangle. Give the badge a real flattened fill rather than letting it
+            rely on the body behind it. Set <code>background-color</code> on the outer
+            table as well as on the body. Single column, 600px, alt text on everything.
+          </p>
+        </section>
+
+        <!-- 9 ------------------------------------------------------------ -->
+        <section id="verdict">
+          <div class="sec__head">
+            <p class="label">Do &amp; don't</p>
+            <h2>The mistakes this system invites</h2>
+            <p>
+              Every one of these looks reasonable on its own and breaks the identity in
+              place.
+            </p>
+          </div>
+
+          <div class="verdicts">
+            <div class="verdict verdict--do">
+              <h3>Do</h3>
+              <ul>
+                <li>Give a layout one bright element and let grey carry the rest.</li>
+                <li>Reach for an object that already exists before drawing a new one.</li>
+                <li>Set times, counts and codes in Cousine so columns hold still.</li>
+                <li>Use the red wash where a red surface is genuinely needed.</li>
+                <li>Leave more air between blocks than the layout tool suggests.</li>
+                <li>Keep the badge's footprint identical on and off the air.</li>
+                <li>Move footers and unsubscribe links up to <code>--muted</code>.</li>
+              </ul>
+            </div>
+            <div class="verdict verdict--dont">
+              <h3>Don't</h3>
+              <ul>
+                <li>Fill a button with solid <code>--live</code>.</li>
+                <li>Use red for emphasis, for a price, or for a heading.</li>
+                <li>Add a sixth grey, a gradient accent, or a second signal colour.</li>
+                <li>Set the wordmark in capitals, space the suffix off, or lock it up with a symbol.</li>
+                <li>Animate the meter or the record where there is no audio to report.</li>
+                <li>Set a paragraph in <code>--faint</code>.</li>
+                <li>Add a drop shadow to separate two blocks that only need space.</li>
+                <li>Letterspace lowercase Space Grotesk at body size.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <footer class="brand__foot">
+          <p>
+            The colours, the ratios and the sizes on this page are read out of
+            <code>src/tokens.css</code> as it loads, and the objects are drawn by
+            <code>src/shared.css</code>. The type scale and the section rhythm are the
+            only figures typed in by hand, because they live in rules rather than in
+            variables. If anything here disagrees with the stylesheets, the stylesheets
+            are right.
+          </p>
+          <p class="brand__ways">
+            <a href="/">What chunky.fm is</a> · <a href="/how-it-works">How it works</a> ·
+            <a href="/listen">Tune in</a>
+          </p>
+        </footer>
+      </main>
+    </div>
+
+    <script type="module" src="/src/brand/main.ts"></script>
+  </body>
+</html>
