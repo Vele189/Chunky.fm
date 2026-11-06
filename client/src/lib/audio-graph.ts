@@ -190,6 +190,12 @@ export interface StationAudio {
    */
   play(stream: MediaStream | null): void
   close(): void
+  /**
+   * The context underneath, for the audio trace to watch. Safari suspends and
+   * "interrupts" it on a lock screen or a call, and the music stops with it
+   * while the station clock keeps going. Absent on a browser with no Web Audio.
+   */
+  readonly context?: AudioContext
 }
 
 /**
@@ -388,6 +394,7 @@ export function stationAudio(
   }
 
   const stage: StationAudio = {
+    context,
     duck(to: number) {
       ramp(gain, to)
     },

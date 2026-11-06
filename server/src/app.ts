@@ -38,6 +38,7 @@ import { podcastRoutes } from './routes/podcast.js'
 import { queueRoutes } from './routes/queue.js'
 import { uploadRoutes } from './routes/upload.js'
 import { wishesRoutes } from './routes/wishes.js'
+import { traceRoutes } from './routes/trace.js'
 import { Station } from './station.js'
 import { Transition } from './transition.js'
 import { transitionRoutes } from './routes/transition.js'
@@ -465,6 +466,7 @@ export async function buildApp({
   await app.register(playbackRoutes({ config, db, station }))
   await app.register(queueRoutes({ config, db, station }))
   await app.register(wishesRoutes({ config, wishes }))
+  await app.register(traceRoutes({ config }))
   // Last of the routes, so nothing it registers can shadow an API path.
   if (clientBundle !== null) {
     await app.register(clientRoutes({ config, bundle: clientBundle }))
