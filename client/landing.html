@@ -12,7 +12,7 @@
          older links say) on to the app that can redeem it. -->
     <meta
       name="description"
-      content="An independent project exploring music, ideas and the people behind them. A live station where everyone hears the same second of the same song, and where some nights are a conversation with a guest on the mic instead of a set."
+      content="An independent project exploring music, ideas and the people behind them. A live radio station for listening to music together, chosen by hand and talked about as it plays, where some nights are a conversation with a guest instead of a set."
     />
     <!-- Same two vendored faces as the station, from the app's own origin. -->
 
@@ -36,17 +36,17 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="chunky.fm" />
     <meta property="og:url" content="%ORIGIN%/" />
-    <meta property="og:title" content="chunky.fm · everyone hears the same second" />
+    <meta property="og:title" content="chunky.fm · music wasn’t meant to be heard alone" />
     <meta
       property="og:description"
-      content="An independent project exploring music, ideas and the people behind them. Everyone hears the same second of the same song, and some nights it is a conversation instead of a set."
+      content="An independent project exploring music, ideas and the people behind them. Music chosen by hand and heard together, and some nights a conversation instead of a set."
     />
     <meta property="og:image" content="%ORIGIN%/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="chunky.fm — everyone hears the same second of the same song." />
+    <meta property="og:image:alt" content="chunky.fm — music wasn’t meant to be heard alone." />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="theme-color" content="#111110" />
 
     <!-- The same station, said in the one form a machine will not misread.
 
@@ -85,7 +85,7 @@
             "name": "chunky.fm",
             "broadcastDisplayName": "chunky.fm",
             "url": "%ORIGIN%/",
-            "description": "A live internet radio station where everyone listening hears the same second of the same song. One person chooses the records; there is no shuffle, no skipping and no algorithm. Some sessions are a conversation instead: a guest is brought up onto the air and the room listens in and can ask for the mic itself. Sessions happen on announced evenings and the station is deliberately off air in between.",
+            "description": "A live radio station for listening to music together. One person chooses the records; there is no shuffle, no skipping and no algorithm. Some sessions are a conversation instead: a guest is brought up onto the air and the room listens in and can ask for the mic itself. Sessions happen on announced evenings and the station is deliberately off air in between.",
             "inLanguage": "en",
             "areaServed": "Worldwide",
             "isAccessibleForFree": true,
@@ -105,7 +105,7 @@
             "@id": "%ORIGIN%/",
             "url": "%ORIGIN%/",
             "name": "chunky.fm · music wasn’t meant to be heard alone",
-            "description": "An independent project exploring music, ideas and the people behind them. A live station where everyone hears the same second of the same song, and where some nights are a conversation with a guest on the mic instead of a set.",
+            "description": "An independent project exploring music, ideas and the people behind them. A live radio station for listening to music together, chosen by hand and talked about as it plays, where some nights are a conversation with a guest instead of a set.",
             "isPartOf": { "@id": "%ORIGIN%/#website" },
             "about": { "@id": "%ORIGIN%/#station" },
             "primaryImageOfPage": "%ORIGIN%/og.png",
@@ -122,6 +122,20 @@
          of the bundle. Both cases are ones where a stylesheet may not have
          landed either, so this is small enough to inline and asks for nothing. -->
     <style>
+      /* The poster's ink and newsprint, written out because tokens.css has not
+         arrived yet. Without them the prelude is black on white and the page
+         flashes when the bundle repaints it. */
+      body {
+        margin: 0;
+        background: #111110;
+        color: #e9e5da;
+        font-family: 'Cousine', ui-monospace, 'SF Mono', monospace;
+      }
+      .prelude h1,
+      .prelude h2 {
+        font-family: 'Big Shoulders Display', 'Arial Narrow', Impact, sans-serif;
+        text-transform: uppercase;
+      }
       .prelude {
         max-width: 34rem;
         margin: 0 auto;
@@ -180,21 +194,20 @@
 
         <p>
           <strong
-            >chunky.fm is a live internet radio station where everyone listening hears the same
-            second of the same song.</strong
+            >chunky.fm is a live radio station for listening to music together, and building a
+            culture around it.</strong
           >
           One person chooses the records. There is no shuffle, no skipping and no algorithm.
           Sessions happen on announced evenings and end when they end. The station is deliberately
           off air in between.
         </p>
 
-        <h2>Everyone hears the same second</h2>
+        <h2>Listen together</h2>
 
         <p>
-          The room chooses the theme, and the set is put together over the day it plays. When the
-          broadcast begins, every browser tuned in aligns itself to the station’s own clock, so
-          people in different countries are inside the same bar of the same record at the same
-          instant. <a href="/how-it-works">How that is actually done</a> is written down.
+          The room chooses the theme, and the set is put together over the day it plays. Then
+          everyone sits with the same music at the same time, wherever they are, and talks about
+          what they heard. <a href="/how-it-works">How a session works</a> is written down.
         </p>
 
         <h2>The Listening Guide</h2>
@@ -218,7 +231,7 @@
         <p>
           Some sessions are a conversation rather than a set. A guest gets a link and turns up like
           anybody else, is brought up onto the air, and the room hears the question and the answer
-          at the same second. Anyone listening can ask for the mic themselves.
+          together. Anyone listening can ask for the mic themselves.
         </p>
 
         <p>

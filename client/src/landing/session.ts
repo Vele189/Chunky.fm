@@ -337,8 +337,6 @@ export const BEEN_ON: readonly Played[] = [
     artist: 'Radiohead',
     cover: { src: radiohead, album: 'The Bends' },
   },
-  { at: '22:16', title: 'Tonight', artist: 'Sipho Gumede' },
-  { at: '22:10', title: 'Africa', artist: 'D’Angelo' },
 ]
 
 /**

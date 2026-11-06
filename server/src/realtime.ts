@@ -759,7 +759,7 @@ export function attachRealtime({
     // And, straight after it, when the station is next on. The two are one
     // sentence on the off-air screen, and a page that got the first without the
     // second would draw "off the air" and then replace it a frame later.
-    send(socket, scheduleMessage(schedule?.get() ?? null))
+    send(socket, scheduleMessage(schedule?.list() ?? []))
     // Before the music, so a listener arriving mid-break comes in already
     // ducked. The other way round, the first thing they would hear is half a
     // second of a song at full volume under somebody's voice, corrected a
@@ -919,9 +919,10 @@ export function attachRealtime({
     )
     broadcast(transitionMessage(snapshot))
   }
-  const onScheduleChange = (next: ScheduledSession | null) => {
-    log?.info({ announced: next !== null, listeners: wss.clients.size }, 'broadcasting schedule')
-    broadcast(scheduleMessage(next))
+  const onScheduleChange = () => {
+    const upcoming = schedule?.list() ?? []
+    log?.info({ announced: upcoming.length, listeners: wss.clients.size }, 'broadcasting schedule')
+    broadcast(scheduleMessage(upcoming))
   }
 
   // The padding is not the roster, but it is the other half of the same tally,

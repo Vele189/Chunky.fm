@@ -2,16 +2,16 @@ import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import fastifyStatic from '@fastify/static'
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.js'
 import type { SessionKind } from '../db.js'
 import { requireAdmin } from '../lib/auth.js'
 import { POSTER_MAX_BYTES, POSTER_TYPES, sniff } from '../lib/poster.js'
 import { discard, posterFilePath } from '../lib/storage.js'
-import type { Schedule } from '../schedule.js'
+import type { Announcement, Schedule } from '../schedule.js'
 
 /**
- * Announcing the next session, and the poster that goes with it.
+ * Announcing sessions, and the posters that go with them.
  *
  * The read is **open**, and deliberately: the whole point of a poster is to be
  * seen by somebody who is not in the room yet, and the page in front of the
@@ -70,15 +70,135 @@ interface ScheduleDeps {
   schedule: Schedule
 }
 
+/**
+ * What a multipart announcement said, or the refusal to send instead.
+ *
+ * Shared by adding and by editing, which take the same form. A poster that was
+ * read is already on disk by the time this returns; every refusal after that
+ * point unlinks it first, so the caller only has a file to think about when it
+ * gets an announcement back.
+ */
+type Parsed =
+  | {
+      ok: true
+      startsAt: number
+      kind: SessionKind
+      title: string | null
+      /** The new poster's filename, or null when none was sent. */
+      stored: string | null
+      /** Whether a file part arrived that was not empty. */
+      sawFile: boolean
+    }
+  | { ok: false; send: (reply: FastifyReply) => FastifyReply }
+
+async function parseAnnouncement(config: Config, request: FastifyRequest): Promise<Parsed> {
+  let startsAt: number | null = null
+  let stored: string | null = null
+  let sawFile = false
+  let kind: SessionKind = 'set'
+  let title: string | null = null
+
+  try {
+    for await (const part of request.parts({
+      limits: { fileSize: POSTER_MAX_BYTES, files: 1 },
+    })) {
+      if (part.type === 'field' && part.fieldname === 'startsAt') {
+        const parsed = Number(part.value)
+        if (Number.isFinite(parsed)) startsAt = Math.round(parsed)
+        continue
+      }
+      // Anything that is not one of the two known kinds is a set. A poster
+      // announcing the wrong sort of evening is a worse failure than a 400
+      // would be inconvenient, but there is no third thing this could honestly
+      // mean, and the only sender is a form with two buttons.
+      if (part.type === 'field' && part.fieldname === 'kind') {
+        kind = part.value === 'talk' ? 'talk' : 'set'
+        continue
+      }
+      if (part.type === 'field' && part.fieldname === 'title') {
+        title = typeof part.value === 'string' ? toTitle(part.value) : null
+        continue
+      }
+      if (part.type !== 'file') continue
+      sawFile = true
+
+      // An empty file part is how a browser sends "no new poster" when the
+      // input was left alone, so it is a no-op rather than a refusal.
+      const head = await part.file.read(16)
+      if (head === null) {
+        await part.file.resume()
+        sawFile = false
+        continue
+      }
+
+      const declared = POSTER_TYPES[part.mimetype.toLowerCase()]
+      const actual = sniff(Buffer.from(head))
+      if (!actual || (declared && declared !== actual)) {
+        await part.file.resume()
+        return {
+          ok: false,
+          send: (reply) =>
+            reply.code(415).send({
+              error: 'unsupported_poster',
+              message: 'a poster has to be a JPEG, a PNG or a WebP',
+            }),
+        }
+      }
+
+      stored = `${randomUUID()}.${actual}`
+      part.file.unshift(head)
+      await pipeline(part.file, createWriteStream(posterFilePath(config, stored)))
+      if (part.file.truncated) {
+        await discard(posterFilePath(config, stored))
+        return {
+          ok: false,
+          send: (reply) =>
+            reply.code(413).send({
+              error: 'poster_too_large',
+              message: `a poster has to be under ${Math.round(POSTER_MAX_BYTES / 1024 / 1024)} MB`,
+            }),
+        }
+      }
+    }
+  } catch (err) {
+    if (stored) await discard(posterFilePath(config, stored))
+    throw err
+  }
+
+  if (startsAt === null) {
+    if (stored) await discard(posterFilePath(config, stored))
+    return {
+      ok: false,
+      send: (reply) =>
+        reply.code(400).send({ error: 'no_time', message: 'a session needs a time to be announced for' }),
+    }
+  }
+
+  return { ok: true, startsAt, kind, title, stored, sawFile }
+}
+
+/** An id from the address, or null for anything that is not a whole number. */
+function toId(value: string): number | null {
+  return /^\d+$/.test(value) ? Number(value) : null
+}
+
+const NOT_FOUND = { error: 'no_such_session', message: 'that session is not announced' }
+
 export function scheduleRoutes({ config, schedule }: ScheduleDeps): FastifyPluginAsync {
   /**
-   * The announcement as it goes over the wire, which is the same shape the
-   * socket sends: a bare filename, not a URL. Tracks carry `filename` and
-   * `artworkPath` the same way and the client turns both into addresses, so a
-   * poster that arrived pre-addressed would be the one thing in this API that
-   * did it the other way round.
+   * The schedule as it goes over the wire, which is the same shape the socket
+   * sends: the next session, and every announced one soonest first. Posters are
+   * bare filenames, not URLs. Tracks carry `filename` and `artworkPath` the same
+   * way and the client turns both into addresses, so a poster that arrived
+   * pre-addressed would be the one thing in this API that did it the other way
+   * round.
    */
-  const body = () => ({ schedule: schedule.get() })
+  const body = () => ({ schedule: schedule.get(), upcoming: schedule.list() })
+
+  /** Unlink the posters of nights that have passed. A missing file is fine. */
+  const sweep = async () => {
+    for (const poster of schedule.prune()) await discard(posterFilePath(config, poster))
+  }
 
   return async function routes(app: FastifyInstance) {
     // Open, and so is the poster below it. See the note at the top.
@@ -98,7 +218,7 @@ export function scheduleRoutes({ config, schedule }: ScheduleDeps): FastifyPlugi
     })
 
     /**
-     * Announce the next session.
+     * Announce another session.
      *
      * Multipart because a poster comes with it, and one request rather than two
      * because a time with no picture and a picture with no time are both
@@ -107,7 +227,27 @@ export function scheduleRoutes({ config, schedule }: ScheduleDeps): FastifyPlugi
      *
      * The poster is optional on purpose. A time on its own is a real
      * announcement, and it is the one somebody can make from a phone at short
-     * notice. Sending no file *keeps* whatever poster is already up, so
+     * notice.
+     */
+    app.post('/api/schedule', { preHandler: requireAdmin(config) }, async (request, reply) => {
+      const parsed = await parseAnnouncement(config, request)
+      if (!parsed.ok) return parsed.send(reply)
+
+      await sweep()
+      const next: Announcement = {
+        startsAt: parsed.startsAt,
+        poster: parsed.stored,
+        kind: parsed.kind,
+        title: parsed.title,
+      }
+      schedule.add(next)
+      return body()
+    })
+
+    /**
+     * Change one announced session.
+     *
+     * Sending no file *keeps* whatever poster that night already has, so
      * changing the time by an hour does not mean finding the image again.
      *
      * `kind` and `title` are optional in the other direction: absent means a set
@@ -116,94 +256,47 @@ export function scheduleRoutes({ config, schedule }: ScheduleDeps): FastifyPlugi
      * fields a form fills in every time do not, and a rule that quietly kept
      * them would make "clear the title" impossible to express.
      */
-    app.put('/api/schedule', { preHandler: requireAdmin(config) }, async (request, reply) => {
-      let startsAt: number | null = null
-      let stored: string | null = null
-      let sawFile = false
-      let kind: SessionKind = 'set'
-      let title: string | null = null
-
-      try {
-        for await (const part of request.parts({
-          limits: { fileSize: POSTER_MAX_BYTES, files: 1 },
-        })) {
-          if (part.type === 'field' && part.fieldname === 'startsAt') {
-            const parsed = Number(part.value)
-            if (Number.isFinite(parsed)) startsAt = Math.round(parsed)
-            continue
-          }
-          // Anything that is not one of the two known kinds is a set. A poster
-          // announcing the wrong sort of evening is a worse failure than a
-          // 400 would be inconvenient, but there is no third thing this could
-          // honestly mean, and the only sender is a form with two radios.
-          if (part.type === 'field' && part.fieldname === 'kind') {
-            kind = part.value === 'talk' ? 'talk' : 'set'
-            continue
-          }
-          if (part.type === 'field' && part.fieldname === 'title') {
-            title = typeof part.value === 'string' ? toTitle(part.value) : null
-            continue
-          }
-          if (part.type !== 'file') continue
-          sawFile = true
-
-          // An empty file part is how a browser sends "no new poster" when the
-          // input was left alone, so it is a no-op rather than a refusal.
-          const head = await part.file.read(16)
-          if (head === null) {
-            await part.file.resume()
-            sawFile = false
-            continue
-          }
-
-          const declared = POSTER_TYPES[part.mimetype.toLowerCase()]
-          const actual = sniff(Buffer.from(head))
-          if (!actual || (declared && declared !== actual)) {
-            await part.file.resume()
-            return reply.code(415).send({
-              error: 'unsupported_poster',
-              message: 'a poster has to be a JPEG, a PNG or a WebP',
-            })
-          }
-
-          stored = `${randomUUID()}.${actual}`
-          part.file.unshift(head)
-          await pipeline(part.file, createWriteStream(posterFilePath(config, stored)))
-          if (part.file.truncated) {
-            await discard(posterFilePath(config, stored))
-            return reply.code(413).send({
-              error: 'poster_too_large',
-              message: `a poster has to be under ${Math.round(POSTER_MAX_BYTES / 1024 / 1024)} MB`,
-            })
-          }
+    app.put<{ Params: { id: string } }>(
+      '/api/schedule/:id',
+      { preHandler: requireAdmin(config) },
+      async (request, reply) => {
+        const id = toId(request.params.id)
+        const existing = id === null ? null : schedule.find(id)
+        // Read the body before answering either way, so a poster that came with
+        // a request for a night that is not there is not left on the disk.
+        const parsed = await parseAnnouncement(config, request)
+        if (!parsed.ok) return parsed.send(reply)
+        if (id === null || !existing) {
+          if (parsed.stored) await discard(posterFilePath(config, parsed.stored))
+          return reply.code(404).send(NOT_FOUND)
         }
-      } catch (err) {
-        if (stored) await discard(posterFilePath(config, stored))
-        throw err
-      }
 
-      if (startsAt === null) {
-        if (stored) await discard(posterFilePath(config, stored))
-        return reply
-          .code(400)
-          .send({ error: 'no_time', message: 'a session needs a time to be announced for' })
-      }
+        // A poster that was not re-sent is the one already up. `sawFile` tells
+        // a request that left the file input alone apart from one that could
+        // not be read, and only the first of those keeps what is there.
+        const keeping = parsed.stored ?? (parsed.sawFile ? null : existing.poster)
+        const displaced = schedule.update(id, {
+          startsAt: parsed.startsAt,
+          poster: keeping,
+          kind: parsed.kind,
+          title: parsed.title,
+        })
+        if (displaced?.poster) await discard(posterFilePath(config, displaced.poster))
+        return body()
+      },
+    )
 
-      // A poster that was not re-sent is the one already up. `sawFile` tells a
-      // request that left the file input alone apart from one that could not be
-      // read, and only the first of those keeps what is there.
-      const keeping = stored ?? (sawFile ? null : (schedule.get()?.poster ?? null))
-      const displaced = schedule.set({ startsAt, poster: keeping, kind, title })
-      if (displaced.poster) await discard(posterFilePath(config, displaced.poster))
-
-      return body()
-    })
-
-    /** Take it down. The poster goes with it: it was only ever for that night. */
-    app.delete('/api/schedule', { preHandler: requireAdmin(config) }, async () => {
-      const displaced = schedule.clear()
-      if (displaced.poster) await discard(posterFilePath(config, displaced.poster))
-      return body()
-    })
+    /** Take one down. Its poster goes with it: it was only ever for that night. */
+    app.delete<{ Params: { id: string } }>(
+      '/api/schedule/:id',
+      { preHandler: requireAdmin(config) },
+      async (request, reply) => {
+        const id = toId(request.params.id)
+        const displaced = id === null ? null : schedule.remove(id)
+        if (!displaced) return reply.code(404).send(NOT_FOUND)
+        if (displaced.poster) await discard(posterFilePath(config, displaced.poster))
+        return body()
+      },
+    )
   }
 }

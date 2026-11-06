@@ -109,7 +109,13 @@ export type AirMessage = AirSnapshot & { type: 'air' }
  */
 export interface ScheduleMessage {
   type: 'schedule'
+  /** The next session: the first of `upcoming`, or null when it is empty. */
   schedule: ScheduledSession | null
+  /**
+   * Every announced session still worth showing, soonest first. The console
+   * edits from it; the page in front of the station lists it.
+   */
+  upcoming: ScheduledSession[]
 }
 
 /**
@@ -572,8 +578,8 @@ export function airMessage(snapshot: AirSnapshot): AirMessage {
   return { type: 'air', ...snapshot }
 }
 
-export function scheduleMessage(next: ScheduleMessage['schedule']): ScheduleMessage {
-  return { type: 'schedule', schedule: next }
+export function scheduleMessage(upcoming: ScheduledSession[]): ScheduleMessage {
+  return { type: 'schedule', schedule: upcoming[0] ?? null, upcoming }
 }
 
 export function micMessage(snapshot: MicSnapshot): MicMessage {

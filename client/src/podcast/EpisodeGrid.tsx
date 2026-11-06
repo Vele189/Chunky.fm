@@ -9,10 +9,11 @@ import {
 import { TiltCard, TiltItem, TiltPoster } from './TiltCard.js'
 
 /**
- * The archive, as a wall of posters.
+ * The archive, as a wall of posters, each one pinned up as a printed card.
  *
  * Each card is Aceternity's 3D Card Effect (see `TiltCard.tsx`) wrapped around
- * one episode: the poster on the card's own surface, the title and the meta
+ * one episode: the poster on a sheet of newsprint with its corner folded over,
+ * the same card the landing page's archive draws, and the title and the meta
  * line lifted in front of it, so pointing at a card pushes its words toward the
  * reader while the artwork stays put.
  *
@@ -72,10 +73,6 @@ export function EpisodeGrid({ episodes, onOpen }: EpisodeGridProps) {
                   alt={episode.title}
                   eager={index < EAGER_CARDS}
                 />
-                {/* A wash from the foot of the poster, so the words below it
-                    have something to sit against whatever the artwork does
-                    down there. Inside the card so it tilts with it. */}
-                <span className="card__wash" aria-hidden="true" />
               </TiltItem>
 
               <TiltItem className="card__title" z={60} as="h2">

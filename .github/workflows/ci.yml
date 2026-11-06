@@ -171,6 +171,25 @@ jobs:
           grep -q 'How chunky.fm works' <<<"$page" || { echo "not the explaining page"; exit 1; }
           grep -q 'application/ld+json' <<<"$page" || { echo "no schema on it"; exit 1; }
 
+      # The design written down, which unlike /how-it-works does carry a bundle:
+      # its whole subject is the two faces and the objects in shared.css, so it
+      # imports them. Checked for that bundle by name for the reason the landing
+      # page is — the fallback answering with the station would still look like
+      # a page — and for the `noindex`, which is the half of keeping this out of
+      # a search result that does not depend on robots.txt being fetched.
+      - name: /brand is the design, and is not offered to a crawler
+        run: |
+          page=$(curl -fsS "http://localhost:$WEB_PORT/brand")
+          asset=$(grep -o '/assets/brand-[^"]*\.js' <<<"$page" | head -1)
+          test -n "$asset" || { echo "/brand is not the brand entry"; exit 1; }
+          curl -fsS -o /dev/null "http://localhost:$WEB_PORT$asset"
+          grep -q 'name="robots" content="noindex' <<<"$page" || {
+            echo "/brand does not say noindex"; exit 1
+          }
+          curl -fsS "http://localhost:$WEB_PORT/robots.txt" | grep -q '^Disallow: /brand$' || {
+            echo "robots.txt does not disallow /brand"; exit 1
+          }
+
       # The archive, and one episode under it. Both are the same document, and
       # the second is the assertion that matters: `/podcast/<slug>` is the only
       # prefix rule among the front doors, so it is the only one that can be
@@ -380,6 +399,22 @@ jobs:
           page=$(curl -fsS http://localhost:13000/how-it-works)
           grep -q 'How chunky.fm works' <<<"$page" || { echo "not the explaining page"; exit 1; }
           grep -q 'application/ld+json' <<<"$page" || { echo "no schema on it"; exit 1; }
+
+      # The one document `loadClientBundle` is allowed not to find. It is in
+      # this image, so it must be served; the case where it is absent is a unit
+      # test, because there is no way to build an image without it on purpose.
+      - name: /brand is the design, and is not offered to a crawler
+        run: |
+          page=$(curl -fsS http://localhost:13000/brand)
+          grep -o '/assets/brand-[^"]*\.js' <<<"$page" | head -1 | grep -q . || {
+            echo "/brand is not the brand entry"; exit 1
+          }
+          grep -q 'name="robots" content="noindex' <<<"$page" || {
+            echo "/brand does not say noindex"; exit 1
+          }
+          curl -fsS http://localhost:13000/robots.txt | grep -q '^Disallow: /brand$' || {
+            echo "robots.txt does not disallow /brand"; exit 1
+          }
 
       - name: An address that is nothing is a 404, not the station
         run: |

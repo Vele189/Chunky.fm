@@ -67,6 +67,12 @@ function robots(base: string): string {
     // be inviting somebody to go looking for one. The document says the same
     // thing in a `noindex` of its own; this is the half a crawler reads first.
     'Disallow: /cohost',
+    // The design written down. Not a credential, unlike the line above, and
+    // disallowed for a duller reason: it is a reference about the station
+    // rather than a part of it, and somebody searching for a radio station is
+    // not helped by being offered a swatch list. The document says `noindex`
+    // of its own; this is the half a crawler reads first.
+    'Disallow: /brand',
     // The archive is deliberately *not* disallowed, unlike everything else on
     // this list. It is the one part of the station that is meant to be found by
     // somebody who has never heard of it: public, true on every day of the

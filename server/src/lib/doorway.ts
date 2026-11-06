@@ -29,6 +29,8 @@
  *                       out of its own address bar. A real path rather than a
  *                       fragment because an episode is the one thing here meant
  *                       to be linked to from outside and read by a crawler
+ *   /brand              the design written down, for whoever has to draw
+ *                       something that looks like this without the stylesheet
  *   /*.html             the documents' own filenames, sent to the address the
  *                       canonical links and the sitemap actually name
  *
@@ -66,6 +68,17 @@ export type Doorway =
    * could never have an `og:title` of its own.
    */
   | { kind: 'podcast' }
+  /**
+   * The design, written down. Its own bundle; see `BRAND_PATH`.
+   *
+   * The one document here allowed to be missing. Every other kind names
+   * something a listener or a crawler asks for, and a build that shipped
+   * without one would come up healthy and answer a real address with a 404.
+   * This is an internal reference about the station rather than a part of it,
+   * so a build without it should serve the station and say nothing — which is
+   * what `doorwayHook` does when the bundle has no brand page in it.
+   */
+  | { kind: 'brand' }
   /** Not the doorway's business: a route, an asset, or the app itself. */
   | { kind: 'pass' }
 
@@ -91,6 +104,16 @@ export const CO_HOST_PATH = '/cohost'
 export const PODCAST_PATH = '/podcast'
 
 /**
+ * The address of the brand page, spelled the same in all four copies.
+ *
+ * Nothing in the client imports this one, unlike the three above: no page links
+ * to it and no code routes to it. It is an address somebody is given, the way a
+ * document handed to a designer is given, and the only things that have to
+ * agree about it are the four front doors and robots.txt.
+ */
+export const BRAND_PATH = '/brand'
+
+/**
  * Where a request at the front door goes.
  *
  * Takes the raw URL rather than a parsed path because the query has to survive
@@ -111,6 +134,10 @@ export function doorway(url: string): Doorway {
 
   if (path === HOW_PATH) {
     return { kind: 'how' }
+  }
+
+  if (path === BRAND_PATH) {
+    return { kind: 'brand' }
   }
 
   // The query is deliberately not read. A co-host link carries `?k=<key>` and
@@ -150,6 +177,9 @@ export function doorway(url: string): Doorway {
   }
   if (path === '/podcast.html') {
     return { kind: 'redirect', status: 301, location: PODCAST_PATH }
+  }
+  if (path === '/brand.html') {
+    return { kind: 'redirect', status: 301, location: BRAND_PATH }
   }
   if (path === '/index.html') {
     return { kind: 'redirect', status: 301, location: '/listen' }

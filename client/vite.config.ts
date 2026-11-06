@@ -80,6 +80,8 @@ function origin(): Plugin {
  *                   its own address bar. A real path rather than a fragment
  *                   because this is the one address here meant to be pasted
  *                   into a message and read by a crawler
+ *   /brand          the design written down, for whoever is drawing something
+ *                   that has to look like this and cannot see tokens.css
  *
  * `/listen` needs no rule in either place: Vite's SPA fallback answers it with
  * the station, and nginx names it outright.
@@ -114,6 +116,12 @@ function doorway(): Plugin {
 
     if (path === '/how-it-works') {
       req.url = query === undefined ? '/how-it-works.html' : `/how-it-works.html?${query}`
+      next()
+      return
+    }
+
+    if (path === '/brand') {
+      req.url = query === undefined ? '/brand.html' : `/brand.html?${query}`
       next()
       return
     }
@@ -189,6 +197,12 @@ export default defineConfig({
         // file in public/: it needs `%ORIGIN%` and `%BUILT%` substituted, and
         // public/ is copied byte for byte without going near a plugin.
         how: 'how-it-works.html',
+        // The design, written down. A sixth entry, and unlike `how` it does
+        // carry a bundle: its whole subject is the two faces, the palette and
+        // the objects in shared.css, so it imports them and reads its own
+        // values back out of the computed styles rather than restating any of
+        // them. See `src/brand/main.ts`. Nothing on it talks to the station.
+        brand: 'brand.html',
       },
     },
   },

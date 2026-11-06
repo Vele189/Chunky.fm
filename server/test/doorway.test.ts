@@ -20,6 +20,8 @@ const HOW = '<!doctype html><title>How chunky.fm works</title><h1>How chunky.fm 
 const COHOST = '<!doctype html><title>chunky.fm \u00b7 co-host</title><div id="root"></div>'
 const PODCAST =
   '<!doctype html><title>chunky.fm \u00b7 the podcast</title><div id="root"></div><script src="/assets/podcast-abc.js">'
+const BRAND =
+  '<!doctype html><title>chunky.fm \u00b7 the design, written down</title><script src="/assets/brand-abc.js">'
 const NOT_FOUND = '<!doctype html><title>Not a page</title><h1>Nothing at this address</h1>'
 
 describe('doorway rules', () => {
@@ -152,6 +154,27 @@ describe('the co-host door', () => {
   })
 })
 
+describe('the brand door', () => {
+  it('answers /brand with its own document', () => {
+    expect(doorway('/brand')).toEqual({ kind: 'brand' })
+  })
+
+  it('sends the filename to the address the page actually has', () => {
+    expect(doorway('/brand.html')).toEqual({
+      kind: 'redirect',
+      status: 301,
+      location: '/brand',
+    })
+  })
+
+  it('is not caught by anything looser', () => {
+    // `/branding` is not `/brand`, the same shape as `/welcomely` and
+    // `/cohosting`. The boundary is the whole path, not a prefix of it.
+    expect(doorway('/branding')).toEqual({ kind: 'pass' })
+    expect(doorway('/brand/colour')).toEqual({ kind: 'pass' })
+  })
+})
+
 describe('isStationPath', () => {
   it('names the two paths that are the station', () => {
     expect(isStationPath('/listen')).toBe(true)
@@ -193,6 +216,7 @@ describe('serving the client from the server', () => {
     await fs.writeFile(path.join(clientDir, 'how-it-works.html'), HOW)
     await fs.writeFile(path.join(clientDir, 'cohost.html'), COHOST)
     await fs.writeFile(path.join(clientDir, 'podcast.html'), PODCAST)
+    await fs.writeFile(path.join(clientDir, 'brand.html'), BRAND)
     await fs.writeFile(path.join(clientDir, '404.html'), NOT_FOUND)
     await fs.writeFile(path.join(clientDir, 'assets', 'station-abc.js'), 'console.log(1)')
     harness = await startHarness({ clientDir })
@@ -260,6 +284,16 @@ describe('serving the client from the server', () => {
     }
   })
 
+  it('answers the brand page with its own document', async () => {
+    const res = await harness.app.inject({ method: 'GET', url: '/brand' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/html')
+    expect(res.body).toContain('/assets/brand-abc.js')
+    // Its own bundle, for the reason the archive has one: it imports the
+    // tokens and the shared objects and nothing that talks to the station.
+    expect(res.body).not.toContain('/assets/station-abc.js')
+  })
+
   it('answers an address that is nothing with a page and a 404', async () => {
     // Both halves. It used to be the station with a 200 on it, which told a
     // crawler every typo was a real page and offered it an unlimited supply of
@@ -298,6 +332,44 @@ describe('serving the client from the server', () => {
       ok: true,
     })
     expect((await harness.app.inject({ method: 'GET', url: '/api/tracks' })).statusCode).toBe(200)
+  })
+})
+
+describe('a build from before the brand page existed', () => {
+  // The one document allowed to be missing. Every other kind is something a
+  // listener or a crawler asks for, so a build without one is a client that
+  // did not ship; this is an internal reference, and refusing to boot over a
+  // swatch list would take a broadcast off the air for it.
+  let harness: Harness
+  let clientDir: string
+
+  beforeAll(async () => {
+    clientDir = await fs.mkdtemp(path.join(os.tmpdir(), 'chunky-client-nobrand-'))
+    await fs.mkdir(path.join(clientDir, 'assets'))
+    await fs.writeFile(path.join(clientDir, 'index.html'), INDEX)
+    await fs.writeFile(path.join(clientDir, 'landing.html'), LANDING)
+    await fs.writeFile(path.join(clientDir, 'how-it-works.html'), HOW)
+    await fs.writeFile(path.join(clientDir, 'cohost.html'), COHOST)
+    await fs.writeFile(path.join(clientDir, 'podcast.html'), PODCAST)
+    await fs.writeFile(path.join(clientDir, '404.html'), NOT_FOUND)
+    harness = await startHarness({ clientDir })
+  })
+
+  afterAll(async () => {
+    await harness.cleanup()
+    await fs.rm(clientDir, { recursive: true, force: true })
+  })
+
+  it('comes up, and serves the station as usual', async () => {
+    const res = await harness.app.inject({ method: 'GET', url: '/' })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('/assets/landing-abc.js')
+  })
+
+  it('answers /brand the way it answers an address that is nothing', async () => {
+    const res = await harness.app.inject({ method: 'GET', url: '/brand' })
+    expect(res.statusCode).toBe(404)
+    expect(res.body).toContain('Nothing at this address')
   })
 })
 

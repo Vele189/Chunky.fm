@@ -5,7 +5,7 @@ import type {
   MicSnapshot,
   PlaybackSnapshot,
   QueueEntry,
-  ScheduledSession,
+  ScheduleSnapshot,
   SessionKind,
   Track,
   TransitionSnapshot,
@@ -224,18 +224,21 @@ export class AdminApi {
   }
 
   /**
-   * Announce the next session, or move the one already announced.
+   * Announce a session, alongside any already announced; or, given `id`,
+   * change that one.
    *
-   * One request carrying both, because a time with no poster and a poster with
-   * no time are half-announcements. Leaving `poster` out keeps whatever picture
-   * is already up, so changing the hour does not mean finding the image again;
-   * see the route, which is where that rule actually lives.
+   * One request carrying both time and poster, because a time with no poster
+   * and a poster with no time are half-announcements. On an edit, leaving
+   * `poster` out keeps whatever picture that night already has, so changing the
+   * hour does not mean finding the image again; see the route, which is where
+   * that rule actually lives.
    */
   async announce(
     startsAt: number,
     poster?: File | null,
     said: { kind?: SessionKind; title?: string | null } = {},
-  ): Promise<ScheduledSession | null> {
+    id?: number,
+  ): Promise<ScheduleSnapshot> {
     const body = new FormData()
     body.append('startsAt', String(startsAt))
     // Always sent, both of them, including when they are empty. Unlike the
@@ -246,15 +249,17 @@ export class AdminApi {
     body.append('title', said.title ?? '')
     if (poster) body.append('poster', poster, poster.name)
 
-    const response = await this.#request('PUT', '/api/schedule', { body })
+    const response =
+      id === undefined
+        ? await this.#request('POST', '/api/schedule', { body })
+        : await this.#request('PUT', `/api/schedule/${id}`, { body })
     if (!response.ok) throw await this.#toError(response)
-    return ((await response.json()) as { schedule: ScheduledSession | null }).schedule
+    return (await response.json()) as ScheduleSnapshot
   }
 
-  /** Take the announcement down. The poster goes with it. */
-  async unannounce(): Promise<null> {
-    await this.#json<{ schedule: null }>('DELETE', '/api/schedule')
-    return null
+  /** Take one announced session down. Its poster goes with it. */
+  async unannounce(id: number): Promise<ScheduleSnapshot> {
+    return this.#json<ScheduleSnapshot>('DELETE', `/api/schedule/${id}`)
   }
 
   /** Answers with the state the command produced: a snapshot, not a frame. */

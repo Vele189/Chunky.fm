@@ -56,9 +56,9 @@ export interface SessionRow {
   kind: SessionKind
 }
 
-/** The next session, as announced. One row at most. See the schema note. */
+/** A session announced before it happens. See the schema note. */
 export interface ScheduleRow {
-  id: 1
+  id: number
   starts_at: number
   poster: string | null
   set_at: number
@@ -271,15 +271,16 @@ CREATE TABLE IF NOT EXISTS sessions (
   kind        TEXT    NOT NULL DEFAULT 'set' CHECK (kind IN ('set', 'talk'))
 );
 
--- The next session, announced before it happens. One row, ever: the id = 1
--- check is what makes that a rule the database keeps rather than a convention
--- the code remembers. A station is an evening rather than a calendar, so what
--- is being scheduled is the next one, and setting another replaces it.
+-- Sessions announced before they happen, as many as somebody has planned.
+-- This used to be one row, ever, on the grounds that a station is an evening
+-- rather than a calendar. The page in front of the station now lists what is
+-- coming, so it holds each announced night; the soonest one is still what the
+-- off-air screen and the top bar call "the next session".
 --
 -- Nothing here starts anything. The time is a promise to whoever is reading it;
 -- going on air is still a person pressing a button. See the Schedule class.
 CREATE TABLE IF NOT EXISTS schedule (
-  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
   starts_at   INTEGER NOT NULL,
   -- The poster's filename under the config's posterDir, or null for a time
   -- with no picture behind it.
@@ -294,6 +295,9 @@ CREATE TABLE IF NOT EXISTS schedule (
   -- is what an announcement was until now and is still a real one.
   title       TEXT
 );
+
+-- Read soonest first, which is the only order anything reads it in.
+CREATE INDEX IF NOT EXISTS schedule_starts_at ON schedule (starts_at);
 
 CREATE TABLE IF NOT EXISTS messages (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -505,6 +509,40 @@ const RENAMED_COLUMNS: [table: string, from: string, to: string][] = [
   ['episodes', 'audio_type', 'video_type'],
 ]
 
+/**
+ * The schedule table as it was when it could hold one row.
+ *
+ * `CHECK (id = 1)` was the rule that kept it to one announcement, and SQLite
+ * cannot drop a constraint from a table that exists, so a station from before
+ * the list is rebuilt: a new table in the current shape, the old row copied
+ * into it under the id it already had, and the old one dropped. It runs after
+ * the added columns, so the row it copies has a kind and a title to bring.
+ */
+function unlimitSchedule(db: Db): void {
+  const table = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'schedule'")
+    .get() as { sql: string } | undefined
+  if (!table || !/CHECK\s*\(\s*id\s*=\s*1\s*\)/i.test(table.sql)) return
+
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE schedule_list (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        starts_at   INTEGER NOT NULL,
+        poster      TEXT,
+        set_at      INTEGER NOT NULL,
+        kind        TEXT    NOT NULL DEFAULT 'set' CHECK (kind IN ('set', 'talk')),
+        title       TEXT
+      );
+      INSERT INTO schedule_list (id, starts_at, poster, set_at, kind, title)
+        SELECT id, starts_at, poster, set_at, kind, title FROM schedule;
+      DROP TABLE schedule;
+      ALTER TABLE schedule_list RENAME TO schedule;
+      CREATE INDEX IF NOT EXISTS schedule_starts_at ON schedule (starts_at);
+    `)
+  })()
+}
+
 function migrate(db: Db): void {
   // Renames first: a column cannot be added under a name something else is
   // still using, and on a fresh database neither loop does anything at all.
@@ -520,6 +558,8 @@ function migrate(db: Db): void {
     if (columns.some((existing) => existing.name === column)) continue
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${spec}`)
   }
+
+  unlimitSchedule(db)
 }
 
 export function openDb(dbPath: string): Db {

@@ -1,0 +1,985 @@
+@import '../tokens.css';
+@import '../shared.css';
+@import '../poster/poster.css';
+
+/* chunky.fm: the design, shown to somebody who has to draw with it.
+ *
+ * The rule this file works under is stricter than the landing page's. That one
+ * may not re-specify a colour, a radius or a face; this one may not specify
+ * anything that `shared.css` already draws, at all. The badge below is the
+ * badge, the button is the button, the deck is the deck, the slot is the slot — not a reproduction of any
+ * of them. A brand page whose swatches were a second copy of the palette would
+ * be the exact failure it exists to prevent, and it would fail silently: a
+ * stale hex looks precisely as authoritative as a current one.
+ *
+ * So what is here is arrangement, and one small vocabulary of its own — the
+ * swatch, the specimen, the table, the email mock — for the things that have no
+ * counterpart on the station because the station never has to explain itself.
+ *
+ * The values printed on the page are not here either. They are read off the
+ * computed styles at load; see `main.ts`.
+ *
+ * Printed like the rest of the app since the poster revamp: ink sheet, square
+ * corners, Big Shoulders Display for headings and Cousine for everything else.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--newsprint);
+  font: 400 15px/1.55 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 900;
+  line-height: 0.9;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--fg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--mark);
+  outline-offset: 3px;
+}
+
+code {
+  padding: 1px 5px;
+  border-radius: var(--poster-radius);
+  background: var(--raised);
+  color: var(--bone);
+  font-family: var(--font-numeric);
+  font-size: 0.86em;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* The uppercase micro-label, which is the one typographic idea this page adds
+   to nothing: the station writes these in the numeric face so they read as
+   annotation rather than as speech, and a reference page is mostly annotation.
+   `em` inside one is the qualifier — "darkest to lightest" — which stays in the
+   same face and drops a shade. */
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0;
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.label em {
+  color: var(--faint);
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+/* --- the shell -------------------------------------------------------------
+ *
+ * An index down the left and one narrow measure on the right. This is a thing
+ * looked *up* rather than read through — somebody is drawing an email and wants
+ * the red — so unlike the landing page there is no rhythm to protect and the
+ * whole contents should be one glance away at any scroll position.
+ */
+
+.brand {
+  display: grid;
+  grid-template-columns: 186px minmax(0, 1fr);
+  gap: 64px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 32px 140px;
+}
+
+.brand__rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  max-height: 100vh;
+  padding-top: 44px;
+  overflow-y: auto;
+}
+
+.brand__rail-mark {
+  font: 900 26px/1 var(--font-display);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.brand__rail-sub {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  box-shadow: 0 1px 0 var(--rule-dark);
+  color: var(--faint);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.brand__rail a {
+  padding: 5px 0;
+  color: var(--bone);
+  font: 700 12px/1.35 var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: color 140ms ease;
+}
+
+.brand__rail a:hover,
+.brand__rail a:focus-visible {
+  color: var(--fg);
+}
+
+/* --- masthead ------------------------------------------------------------ */
+
+.masthead {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding-top: 44px;
+}
+
+.masthead__top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.masthead h1 {
+  max-width: 14ch;
+  font-size: clamp(56px, 8.9vw, 128px);
+  letter-spacing: -0.005em;
+  line-height: 0.86;
+  text-wrap: balance;
+}
+
+.masthead__lede {
+  max-width: 62ch;
+  color: var(--newsprint);
+  font-size: clamp(15px, 1.3vw, 17px);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.masthead__note {
+  max-width: 62ch;
+  padding-top: 4px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+/* --- sections ------------------------------------------------------------ */
+
+section {
+  padding-top: 96px;
+  scroll-margin-top: 24px;
+}
+
+.sec__head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 66ch;
+  margin-bottom: 32px;
+}
+
+.sec__head h2 {
+  font-size: clamp(40px, 5.4vw, 72px);
+  letter-spacing: -0.005em;
+  line-height: 0.86;
+  text-wrap: balance;
+}
+
+.sec__head p {
+  color: var(--smudge-on-ink);
+  text-wrap: pretty;
+}
+
+/* The aside under a specimen. Always the caveat, never the content: if a
+   sentence here were removed the page would still be correct, and that is the
+   test for whether it belongs in one. */
+.note {
+  max-width: 66ch;
+  margin-top: 20px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.note b {
+  color: var(--newsprint);
+  font-weight: 700;
+}
+
+/* --- the rule ------------------------------------------------------------
+ *
+ * Three cells with a hairline between them rather than three cards with gaps.
+ * They are one argument in three parts, and three separate objects would say
+ * they were three separate rules that happen to sit together.
+ */
+
+.rules {
+  display: grid;
+  gap: 1px;
+  border-radius: var(--poster-radius);
+  background: var(--rule-dark);
+  overflow: hidden;
+}
+
+.rules > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 26px var(--card-pad);
+  background: var(--charcoal);
+}
+
+.rules h3 {
+  font-size: 32px;
+  letter-spacing: 0;
+}
+
+.rules p {
+  max-width: 60ch;
+  color: var(--muted);
+}
+
+/* --- swatches -------------------------------------------------------------
+ *
+ * Everything inside one is written by `main.ts` except the sentence about what
+ * the token is for, which is the only part of a swatch that cannot be measured.
+ *
+ * The chip paints the token over the sheet rather than on its own, because the
+ * red wash is translucent and a translucent chip on any other ground would be
+ * showing a colour that exists nowhere in the product.
+ */
+
+.group + .group {
+  margin-top: 36px;
+}
+
+.group .label {
+  margin-bottom: 14px;
+}
+
+/* Five, counted rather than fitted.
+ *
+ * Every group below happens to hold exactly five tokens, so an `auto-fill` that
+ * worked out four at this width left one swatch alone on a second row — which
+ * reads as "and one more", and the fifth is not an afterthought in any of the
+ * three groups. If a group ever gains a sixth this becomes two rows of three,
+ * and the number here is the thing to change. */
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .swatches {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.swatch {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  border-radius: var(--poster-radius);
+  background: var(--charcoal);
+  box-shadow: var(--ring);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--mark);
+  outline-offset: 2px;
+}
+
+/* The ring is not decoration here, it is what makes the darkest swatch exist.
+   `--bg` painted on a card sitting on `--bg` has no edge at all: the chip
+   disappears into the page and the swatch reads as a card with its top cut off.
+   Every chip gets the hairline so the one that needs it is not a special case,
+   and a hairline is what this design already separates things with. */
+.swatch__chip {
+  height: 74px;
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--swatch), var(--swatch));
+  box-shadow: var(--ring);
+}
+
+.swatch__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px 14px;
+}
+
+.swatch__hex {
+  color: var(--fg);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+}
+
+/* The flattened value, on the two tokens that have one. Same face as the hex
+   above it and a shade quieter: it is the same fact for a different medium. */
+.swatch__flat {
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: 11px;
+}
+
+.swatch__var {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.swatch__use {
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* Confirmation lives on the hex itself rather than in a toast, because the hex
+   is the thing that was copied and a toast in the corner is a second place to
+   look. */
+.swatch[data-copied='true'] .swatch__hex::after {
+  content: ' copied';
+  color: var(--ok);
+}
+
+/* --- tables -------------------------------------------------------------- */
+
+.tablewrap {
+  border-radius: var(--poster-radius);
+  box-shadow: var(--ring);
+  overflow-x: auto;
+}
+
+/* Only where a table follows a specimen, which happens once: the type section
+   sets the faces and then tabulates the scale. Everywhere else a table is the
+   first thing after the section head, and that gap is already set. */
+.specimen + .tablewrap {
+  margin-top: 24px;
+}
+
+table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  background: var(--charcoal);
+  font-size: 13px;
+}
+
+th,
+td {
+  padding: 11px 16px;
+  text-align: left;
+  vertical-align: top;
+  box-shadow: 0 1px 0 var(--rule-dark);
+}
+
+th {
+  color: var(--faint);
+  font-family: var(--font-numeric);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+td {
+  color: var(--fg-dim);
+}
+
+/* Tabular figures wherever a column of them has to line up, which is the whole
+   reason Cousine is in this design at all. */
+td.num {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+td.dim {
+  color: var(--muted);
+}
+
+tbody tr:last-child td {
+  box-shadow: none;
+}
+
+/* A ratio that clears the threshold for body text, and one that does not. Warm
+   rather than red on the second: this is a caveat about where a grey may be
+   used, not a fault, and red on this page means one thing. */
+.ratio--pass {
+  color: var(--ok);
+}
+
+.ratio--large {
+  color: var(--warn);
+}
+
+.ratio--fail {
+  color: var(--faint);
+}
+
+/* A dot of the colour being measured, so the row is legible as a colour rather
+   than only as a number. */
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: baseline;
+  background: var(--swatch);
+  box-shadow: var(--ring-strong);
+}
+
+/* --- type specimens ------------------------------------------------------ */
+
+.specimen {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px var(--card-pad);
+  border-radius: var(--poster-radius);
+  background: var(--charcoal);
+  box-shadow: var(--ring);
+}
+
+.specimen + .specimen {
+  margin-top: 12px;
+}
+
+.spec-display {
+  color: var(--ink);
+  font: 900 clamp(48px, 7.4vw, 104px) / 0.86 var(--font-display);
+  letter-spacing: -0.005em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.spec-section {
+  color: var(--fg);
+  font: 700 13px/1.3 var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The one specimen in Space Grotesk, because the chat and the lyrics are the
+   one place the station sets it. */
+.spec-lede {
+  max-width: 40ch;
+  color: var(--fg);
+  font: 400 21px/1.5 var(--font-read);
+}
+
+.spec-body {
+  max-width: 62ch;
+  color: var(--newsprint);
+  line-height: 1.55;
+}
+
+.spec-mono {
+  color: var(--fg);
+  font-family: var(--font-numeric);
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The display face is printed on a newsprint band, the way the landing page
+   prints its headlines on paper as often as on ink. */
+.specimen--paper {
+  background: var(--newsprint);
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.specimen--paper .label,
+.specimen--paper .label em {
+  color: var(--smudge);
+}
+
+.weights {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.weights span {
+  color: var(--fg-dim);
+  font-size: 25px;
+}
+
+.weights--display span {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 32px;
+  text-transform: uppercase;
+}
+
+/* --- shape --------------------------------------------------------------- */
+
+.shapes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.shapes figure {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.shapes__box {
+  height: 76px;
+  background: var(--newsprint);
+}
+
+/* The archive card's folded corner, the same 22px clip as `.kept` on the
+   landing page, with the turned-over paper drawn into the gap. */
+.shapes__box--fold {
+  position: relative;
+  clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%);
+}
+
+.shapes__box--fold::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(to bottom left, transparent 50%, var(--bone) 50%);
+}
+
+.shapes figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shapes b {
+  color: var(--fg);
+  font-family: var(--font-numeric);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.shapes span {
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* --- objects --------------------------------------------------------------
+ *
+ * The stage is a plain surface with the real object standing on it. It has no
+ * styles of its own beyond laying things out, which is the point: anything this
+ * rule added would be a property of the page rather than of the object, and
+ * somebody would copy it into a design.
+ */
+
+.objects {
+  display: grid;
+  gap: 12px;
+}
+
+.obj {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px var(--card-pad);
+  border-radius: var(--poster-radius);
+  background: var(--charcoal);
+  box-shadow: var(--ring);
+}
+
+.obj__stage {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  min-height: 44px;
+}
+
+/* The deck is 340px and its caption should sit beside it rather than under it
+   on anything wide enough, so this one stage aligns to the top. */
+.obj__stage--deck {
+  align-items: flex-start;
+  gap: 26px;
+}
+
+.obj__cap {
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Two slots side by side at the deck photo's 5:4, which is the shape MJ-02
+   arrives in. */
+.obj__stage--slot {
+  align-items: stretch;
+}
+
+.brand__slot {
+  width: min(280px, 100%);
+  aspect-ratio: 5 / 4;
+}
+
+.obj__stage--deck .obj__cap {
+  flex: 1;
+  min-width: 260px;
+}
+
+.obj__cap b {
+  color: var(--newsprint);
+  font-weight: 700;
+}
+
+/* --- the email mock -------------------------------------------------------
+ *
+ * The one block on this page that deliberately does *not* use the tokens.
+ *
+ * Every value in here is written out flat, because that is what the thing it is
+ * standing in for has to be: an email client has no custom properties, no
+ * `rgb() / %` over a parent, and in Outlook's case no `border-radius` either.
+ * A mock drawn with `var(--panel)` would look right on this page and would be
+ * undeliverable, which is the failure this section exists to prevent.
+ *
+ * The literals below are the flattened values the swatches print. They are the
+ * one place in this file where a token is restated, and they are restated on
+ * purpose and only here.
+ */
+
+.mockwrap {
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.mock {
+  width: 600px;
+  background: #111110;
+  color: #e9e5da;
+  font-family: 'Cousine', 'Courier New', monospace;
+}
+
+.mock__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 32px;
+  border-bottom: 1px solid #3a3833;
+}
+
+.mock__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #fb2c36;
+  color: #111110;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 16.5px;
+}
+
+.mock__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #111110;
+}
+
+.mock__pad {
+  padding: 32px;
+}
+
+.mock__kicker {
+  margin-bottom: 14px;
+  color: #a8a397;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mock h3 {
+  margin-bottom: 18px;
+  color: #e9e5da;
+  font: 900 64px/0.86 'Big Shoulders Display', 'Arial Narrow', Impact, sans-serif;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.mock p {
+  color: #e9e5da;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* The thing the email is about, as a newsprint band rather than a card. */
+.mock__panel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 32px;
+  background: #e9e5da;
+  color: #111110;
+}
+
+.mock__sleeve {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  background: #d6d0c1;
+  border: 1px solid #111110;
+}
+
+.mock__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mock__meta b {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mock__meta span {
+  color: #8c877b;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mock__time {
+  font-variant-numeric: tabular-nums;
+}
+
+.mock__cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mock__btn {
+  display: inline-flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 16px;
+  background: #3255a4;
+  color: #e9e5da;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.mock__btn--quiet {
+  background: transparent;
+  border: 1px solid #e9e5da;
+  color: #e9e5da;
+}
+
+.mock__foot {
+  padding: 24px 32px 32px;
+  border-top: 1px solid #3a3833;
+  color: #a8a397;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mock__foot a {
+  color: #e9e5da;
+}
+
+/* --- do and don't -------------------------------------------------------- */
+
+.verdicts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px var(--card-pad);
+  border-radius: var(--poster-radius);
+  background: var(--charcoal);
+  box-shadow: var(--ring);
+}
+
+.verdict h3 {
+  font-size: 40px;
+}
+
+.verdict--do h3 {
+  color: var(--ok);
+}
+
+/* Warm rather than red, for the reason the danger button is a wash: red on this
+   page means the station is on the air, and a column of red bullets would be
+   the loudest thing on a page about not having two loud things. */
+.verdict--dont h3 {
+  color: var(--warn);
+}
+
+.verdict ul {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.verdict li {
+  position: relative;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.verdict li::before {
+  content: '';
+  position: absolute;
+  top: 9px;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--poster-radius);
+}
+
+.verdict--do li::before {
+  background: var(--ok);
+}
+
+.verdict--dont li::before {
+  background: var(--warn);
+}
+
+/* --- foot ---------------------------------------------------------------- */
+
+.brand__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 66ch;
+  margin-top: 110px;
+  padding-top: 28px;
+  box-shadow: 0 -1px 0 var(--rule-dark);
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.brand__ways a {
+  color: var(--bone);
+}
+
+/* --- narrow ---------------------------------------------------------------
+ *
+ * The rail stops being a rail. Sticking a horizontal strip to the top of a
+ * phone screen would spend a fifth of the viewport on navigation for a page
+ * somebody is reading a section of at a time.
+ */
+
+@media (max-width: 900px) {
+  .brand {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 0 24px 100px;
+  }
+
+  .brand__rail {
+    position: static;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    max-height: none;
+    padding-top: 32px;
+  }
+
+  .brand__rail-mark,
+  .brand__rail-sub {
+    width: 100%;
+  }
+
+  .brand__rail-sub {
+    margin-bottom: 4px;
+  }
+
+  .masthead {
+    padding-top: 34px;
+  }
+
+  section {
+    padding-top: 72px;
+  }
+}
+
+@media (max-width: 560px) {
+  .brand {
+    padding: 0 20px 100px;
+  }
+}
