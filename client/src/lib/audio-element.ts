@@ -19,17 +19,26 @@ function cancelPendingSeek(audio: HTMLAudioElement): void {
   }
 }
 
-export function seekTo(audio: HTMLAudioElement, seconds: number): void {
+/**
+ * Pass a function rather than a number when the target is a moving clock.
+ *
+ * A deferred seek can wait a second or more for metadata on a slow link. A
+ * number captured when the seek was asked for is that far stale when it
+ * finally lands, and the drift loop then has to correct the gap with a second
+ * seek. A function is read at the moment the seek actually happens.
+ */
+export function seekTo(audio: HTMLAudioElement, target: number | (() => number)): void {
   cancelPendingSeek(audio)
+  const resolve = typeof target === 'function' ? target : () => target
 
   if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
-    audio.currentTime = seconds
+    audio.currentTime = resolve()
     return
   }
 
   const onLoaded = () => {
     pendingSeeks.delete(audio)
-    audio.currentTime = seconds
+    audio.currentTime = resolve()
   }
   pendingSeeks.set(audio, onLoaded)
   audio.addEventListener('loadedmetadata', onLoaded, { once: true })

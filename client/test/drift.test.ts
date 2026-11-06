@@ -4,8 +4,31 @@ import {
   MAX_RATE_ADJUSTMENT,
   NUDGE_THRESHOLD_S,
   applyCorrection,
+  canCorrect,
   correctionFor,
 } from '../src/lib/drift.js'
+
+describe('canCorrect', () => {
+  const playing = { paused: false, seeking: false, readyState: 4 }
+
+  it('corrects an element that is playing', () => {
+    expect(canCorrect(playing)).toBe(true)
+  })
+
+  it('leaves a paused element alone', () => {
+    expect(canCorrect({ ...playing, paused: true })).toBe(false)
+  })
+
+  it('leaves an element alone while it waits on the network', () => {
+    // The regression: not paused, but currentTime frozen. Correcting it seeks
+    // forward, aborts the fetch, stalls again, and chops the record in chunks.
+    expect(canCorrect({ ...playing, readyState: 2 })).toBe(false)
+  })
+
+  it('leaves an element alone mid-seek', () => {
+    expect(canCorrect({ ...playing, seeking: true })).toBe(false)
+  })
+})
 
 describe('correctionFor', () => {
   it('does nothing when the error is inaudible', () => {
