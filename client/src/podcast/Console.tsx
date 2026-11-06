@@ -1,16 +1,20 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { BackChevron } from './Chevron.js'
+import { FileDrop } from './FileDrop.js'
 import { refusalMessage } from '../lib/admin.js'
 import {
   type AdminEpisode,
   type EpisodeApi,
   type EpisodeStatus,
   type UploadProgress,
+  TRANSCRIPT_MAX_LENGTH,
   episodePath,
   formatBytes,
   formatDate,
   formatLength,
-  uploadAudio,
+  uploadVideo,
 } from '../lib/episodes.js'
+import { parseTranscript } from '../lib/transcript.js'
 import { useAdminSession } from '../hooks/useAdminSession.js'
 
 /**
@@ -26,15 +30,49 @@ import { useAdminSession } from '../hooks/useAdminSession.js'
  * would be competing with an episode somebody could legitimately name "Admin".
  *
  * The poster is checked here as well as at the server, and that is not
- * belt-and-braces for its own sake: an episode upload is an audio file that may
- * be eighty megabytes, and finding out after all of it has crossed a phone's
- * connection that the poster was 1080x1080 is a genuinely bad minute. The
+ * belt-and-braces for its own sake: an episode upload is a video file that may
+ * be a gigabyte, and finding out after all of it has crossed somebody's
+ * connection that the thumbnail was the wrong shape is a genuinely bad quarter
+ * of an hour. The
  * server still refuses — this is the form being honest, not the rule.
  */
 
-/** The one size a poster may be. Mirrors `routes/podcast.ts`; keep in step. */
+/**
+ * What each picture has to be. Mirrors `routes/podcast.ts`; keep in step.
+ *
+ * Two of them, because an episode carries two: the portrait card the collection
+ * draws, at one exact size, and the 16:9 still the player shows, at a ratio
+ * with a floor. The note over `checkImage` on the server says why neither is a
+ * crop of the other.
+ */
 const POSTER_WIDTH = 1080
 const POSTER_HEIGHT = 1350
+const THUMB_RATIO = 16 / 9
+const THUMB_TOLERANCE = 0.01
+const THUMB_MIN_WIDTH = 1280
+
+/**
+ * What is wrong with this picture, or null if nothing is.
+ *
+ * The same rules the server applies, in the same order, said in the same words
+ * — this is the form being honest about what will happen rather than a second
+ * opinion. The server still has the last word.
+ */
+function complaintAbout(
+  what: 'poster' | 'thumbnail',
+  size: { width: number; height: number },
+): string | null {
+  if (what === 'poster') {
+    return size.width === POSTER_WIDTH && size.height === POSTER_HEIGHT
+      ? null
+      : `it has to be exactly ${POSTER_WIDTH}x${POSTER_HEIGHT}`
+  }
+  if (Math.abs(size.width / size.height - THUMB_RATIO) > THUMB_RATIO * THUMB_TOLERANCE) {
+    return 'it has to be 16:9'
+  }
+  if (size.width < THUMB_MIN_WIDTH) return `it has to be at least ${THUMB_MIN_WIDTH} wide`
+  return null
+}
 
 /**
  * A poster's real dimensions, read in the browser before anything is sent.
@@ -71,6 +109,49 @@ async function posterSize(file: File): Promise<{ width: number; height: number }
     }
     image.src = url
   })
+}
+
+/**
+ * A chosen transcript file, read and looked over before it is sent anywhere.
+ *
+ * Read here rather than posted as a file part, and that is a decision worth
+ * stating: an episode upload already carries one file (the poster) through a
+ * multipart parser configured for exactly one, and a transcript is text — a few
+ * hundred kilobytes of it — which travels perfectly well as a field. It also
+ * means the console can *say something about it* before it is sent, which is
+ * the same courtesy the poster gets.
+ *
+ * What it says is what the player will make of it, using the player's own
+ * parser: how many lines carry a time, and where the last one falls. A file
+ * with no timestamps in it is not refused — it is still the words that were
+ * said, and the page lays it out as paragraphs — but somebody who thought they
+ * were uploading a timed transcript should find out here rather than from a
+ * pane that does not move.
+ */
+async function readTranscript(file: File): Promise<{ text: string; note: string } | { error: string }> {
+  let text: string
+  try {
+    text = await file.text()
+  } catch {
+    return { error: 'that file could not be read' }
+  }
+  if (text.trim() === '') return { error: 'that transcript is empty' }
+  if (text.length > TRANSCRIPT_MAX_LENGTH) {
+    return {
+      error: `that transcript is ${text.length.toLocaleString('en')} characters; the limit is ${TRANSCRIPT_MAX_LENGTH.toLocaleString('en')}`,
+    }
+  }
+
+  const cues = parseTranscript(text)
+  if (cues.length === 0) {
+    return { text, note: 'no timestamps in it — it will be shown as plain paragraphs' }
+  }
+  const last = cues[cues.length - 1]?.timeMs ?? 0
+  const named = new Set(cues.map((cue) => cue.speaker).filter(Boolean)).size
+  return {
+    text,
+    note: `${cues.length.toLocaleString('en')} timed lines${named > 0 ? `, ${named} speakers` : ''}, up to ${formatLength(last)}`,
+  }
 }
 
 /** `<input type="date">` wants `yyyy-mm-dd` in the *local* calendar. */
@@ -133,7 +214,7 @@ export function Console({ api, onBack }: ConsoleProps) {
     return (
       <section className="console console--signin">
         <button type="button" className="console__back" onClick={onBack}>
-          <span aria-hidden="true">&larr;</span> All episodes
+          <BackChevron /> All episodes
         </button>
         <h1 className="console__heading">The archive</h1>
         <form
@@ -178,7 +259,7 @@ export function Console({ api, onBack }: ConsoleProps) {
     <section className="console">
       <div className="console__bar">
         <button type="button" className="console__back" onClick={onBack}>
-          <span aria-hidden="true">&larr;</span> All episodes
+          <BackChevron /> All episodes
         </button>
         <h1 className="console__heading">The archive</h1>
         <button type="button" className="console__signout" onClick={session.signOut}>
@@ -232,30 +313,32 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
   // render that started it, which is the one that has already gone.
   const cancelling = useRef<AbortController | null>(null)
   const [title, setTitle] = useState('')
-  const [notes, setNotes] = useState('')
   const [guests, setGuests] = useState('')
   const [episodeNumber, setEpisodeNumber] = useState('')
   const [publishedAt, setPublishedAt] = useState(() => toDateInput(Date.now()))
   const [status, setStatus] = useState<EpisodeStatus>('draft')
+  /** A line under each file the moment it is chosen, not after the upload. */
+  const [videoNote, setVideoNote] = useState<string | null>(null)
   const [posterNote, setPosterNote] = useState<string | null>(null)
+  const [thumbNote, setThumbNote] = useState<string | null>(null)
 
-  /** Say something about the poster the moment it is chosen, not after upload. */
-  const inspect = useCallback(async (file: File | undefined) => {
-    if (!file) {
-      setPosterNote(null)
-      return
-    }
-    const size = await posterSize(file)
-    if (!size) {
-      setPosterNote('could not read that image here; the station will have the last word')
-      return
-    }
-    setPosterNote(
-      size.width === POSTER_WIDTH && size.height === POSTER_HEIGHT
-        ? `${size.width}x${size.height} — good`
-        : `${size.width}x${size.height} — has to be ${POSTER_WIDTH}x${POSTER_HEIGHT}`,
-    )
-  }, [])
+  /** Say something about a picture the moment it is chosen, not after upload. */
+  const inspect = useCallback(
+    async (what: 'poster' | 'thumbnail', file: File | undefined) => {
+      const say = what === 'poster' ? setPosterNote : setThumbNote
+      if (!file) {
+        say(null)
+        return
+      }
+      const size = await posterSize(file)
+      if (!size) {
+        say('could not read that image here; the station will have the last word')
+        return
+      }
+      say(`${size.width}x${size.height} — ${complaintAbout(what, size) ?? 'good'}`)
+    },
+    [],
+  )
 
   const submit = useCallback(
     async (event: FormEvent) => {
@@ -265,33 +348,42 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
 
       const data = new FormData(element)
       const poster = data.get('poster')
-      const audio = data.get('audio')
-      if (!(audio instanceof File) || audio.size === 0) {
-        onError('choose an audio file')
+      const thumbnail = data.get('thumbnail')
+      const video = data.get('video')
+      if (!(video instanceof File) || video.size === 0) {
+        onError('choose a video file')
         return
       }
       if (!(poster instanceof File) || poster.size === 0) {
         onError('choose a poster')
         return
       }
-
-      // The same check the server makes, made here so eighty megabytes of audio
-      // does not cross a phone's connection before the poster is refused.
-      const size = await posterSize(poster)
-      if (size && (size.width !== POSTER_WIDTH || size.height !== POSTER_HEIGHT)) {
-        onError(
-          `that poster is ${size.width}x${size.height}; it has to be ${POSTER_WIDTH}x${POSTER_HEIGHT}`,
-        )
+      if (!(thumbnail instanceof File) || thumbnail.size === 0) {
+        onError('choose a thumbnail')
         return
+      }
+
+      // Both, and the same checks the server makes, made here so a gigabyte of
+      // video does not cross somebody's connection before a picture is refused.
+      for (const [what, file] of [
+        ['poster', poster],
+        ['thumbnail', thumbnail],
+      ] as const) {
+        const size = await posterSize(file)
+        const complaint = size && complaintAbout(what, size)
+        if (complaint) {
+          onError(`that ${what} is ${size.width}x${size.height}; ${complaint}`)
+          return
+        }
       }
 
       const at = fromDateInput(publishedAt)
       if (at !== null) data.set('publishedAt', String(at))
       else data.delete('publishedAt')
 
-      // The audio is not part of this form any more. It goes to the store in
+      // The video is not part of this form any more. It goes to the store in
       // its own chunked upload first, and what the form carries is the receipt.
-      data.delete('audio')
+      data.delete('video')
 
       setBusy(true)
       onError(null)
@@ -299,7 +391,7 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
       cancelling.current = controller
 
       try {
-        const finished = await uploadAudio(api, audio, {
+        const finished = await uploadVideo(api, video, {
           onProgress: setProgress,
           signal: controller.signal,
         })
@@ -314,11 +406,12 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
         await api.create(data)
         element.reset()
         setTitle('')
-        setNotes('')
         setGuests('')
         setEpisodeNumber('')
         setStatus('draft')
+        setVideoNote(null)
         setPosterNote(null)
+        setThumbNote(null)
         onDone()
       } catch (err) {
         if (controller.signal.aborted) {
@@ -346,17 +439,6 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           required
-        />
-      </label>
-
-      <label className="console__field">
-        <span>Show notes</span>
-        <textarea
-          name="notes"
-          rows={5}
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-          placeholder="What this one is about. Blank lines become paragraphs."
         />
       </label>
 
@@ -392,25 +474,42 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
         </label>
       </div>
 
+      {/* The two files, side by side and both droppable. There were three: a
+          transcript used to be chosen here as well, and it is gone from this
+          form because it is the one thing that is never ready at upload time —
+          a machine transcription takes as long as the conversation did. It
+          arrives afterwards, from the row control on the right, which is how it
+          arrived in practice anyway. */}
       <div className="console__row">
-        <label className="console__field">
-          <span>Audio (mp3, wav, flac, m4a&hellip;)</span>
-          <input name="audio" type="file" accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg" required />
-        </label>
+        <FileDrop
+          name="video"
+          label="Video"
+          accept="video/*,.mp4,.mov,.m4v,.webm,.mkv"
+          required
+          hint="mp4, mov or webm — or press to choose"
+          onFile={(file) => setVideoNote(file ? formatBytes(file.size) : null)}
+          note={videoNote}
+        />
 
-        <label className="console__field">
-          <span>
-            Poster &mdash; {POSTER_WIDTH}&times;{POSTER_HEIGHT}
-          </span>
-          <input
-            name="poster"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            required
-            onChange={(event) => void inspect(event.target.files?.[0])}
-          />
-          {posterNote && <small className="upload__poster-note">{posterNote}</small>}
-        </label>
+        <FileDrop
+          name="poster"
+          label="Poster — the card in the collection"
+          accept="image/jpeg,image/png,image/webp"
+          required
+          hint={`portrait, exactly ${POSTER_WIDTH}×${POSTER_HEIGHT}`}
+          onFile={(file) => void inspect('poster', file)}
+          note={posterNote}
+        />
+
+        <FileDrop
+          name="thumbnail"
+          label="Thumbnail — the still on the video"
+          accept="image/jpeg,image/png,image/webp"
+          required
+          hint={`16:9, at least ${THUMB_MIN_WIDTH} wide`}
+          onFile={(file) => void inspect('thumbnail', file)}
+          note={thumbNote}
+        />
       </div>
 
       <div className="console__row console__row--end">
@@ -467,31 +566,29 @@ function UploadForm({ api, busy, setBusy, onDone, onError }: UploadFormProps) {
   )
 }
 
-/** What the encode did to an episode, in one short line. */
+/** What this station made of an episode's file, in one short line. */
 function TranscodeNote({ episode }: { episode: AdminEpisode }) {
   if (episode.transcodeStatus === 'pending') {
-    return <span className="row__encoding">encoding…</span>
+    return <span className="row__encoding">checking the file…</span>
   }
   if (episode.transcodeStatus === 'failed') {
     return (
       <span className="row__encode-failed" title={episode.transcodeError ?? undefined}>
-        serving the master &mdash; encode failed
+        serving the master &mdash; it may start slowly
       </span>
     )
   }
-  // The number this whole feature exists for: what a listener downloads,
-  // against what was uploaded.
-  const saved =
-    episode.masterBytes > 0 && episode.audioBytes < episode.masterBytes
-      ? Math.round((1 - episode.audioBytes / episode.masterBytes) * 100)
-      : 0
+  // What a listener downloads. A remux is the same size as what went in, so
+  // there is no saving to report any more — only, when the two keys differ, the
+  // fact that this episode needed rewriting to start quickly at all.
+  const rewritten = episode.videoBytes !== episode.masterBytes
   return (
     <span className="row__sizes">
-      {formatBytes(episode.audioBytes)}
-      {saved > 0 && (
+      {formatBytes(episode.videoBytes)}
+      {rewritten && (
         <>
           {' '}
-          <span className="row__saved">&minus;{saved}% from {formatBytes(episode.masterBytes)}</span>
+          <span className="row__saved">rewritten to start quickly</span>
         </>
       )}
     </span>
@@ -505,6 +602,94 @@ interface EpisodeListProps {
   setBusy: (busy: boolean) => void
   onChanged: () => void
   onError: (message: string | null) => void
+}
+
+/**
+ * Giving an episode its words, after the fact.
+ *
+ * The ordinary way a transcript arrives, and the reason this is a row control
+ * rather than only a field on the upload form: an episode goes up on the night
+ * it is finished, and the transcription is done afterwards — a machine one
+ * takes as long as the conversation did, and then somebody reads it through.
+ * An archive where the only chance to add one was at upload time would be an
+ * archive whose existing episodes could never have any.
+ *
+ * A label wrapping a hidden file input rather than a button, because the
+ * browser will not open a file picker for anything else, and because a `<label>`
+ * is already a real control for the keyboard and for a screen reader. It reads
+ * "Transcript" when there is none and carries a tick when there is, and the
+ * clear button only exists in the second case — a transcript uploaded against
+ * the wrong episode has to be removable, and nothing else here can remove it.
+ */
+function TranscriptControl({
+  api,
+  episode,
+  busy,
+  act,
+  onError,
+}: {
+  api: EpisodeApi
+  episode: AdminEpisode
+  busy: boolean
+  act: (run: () => Promise<unknown>) => Promise<void>
+  onError: (message: string | null) => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+
+  const chose = useCallback(
+    async (file: File | undefined) => {
+      // Cleared here rather than after the request, so choosing the same file
+      // twice — which is what somebody does after fixing it — fires `change`
+      // again. A file input does not, if its value has not changed.
+      if (input.current) input.current.value = ''
+      if (!file) return
+      const read = await readTranscript(file)
+      if ('error' in read) {
+        onError(read.error)
+        return
+      }
+      await act(() => api.update(episode.id, { transcript: read.text }))
+    },
+    [act, api, episode.id, onError],
+  )
+
+  return (
+    <span className="row__transcript">
+      <label
+        className="row__toggle"
+        title={
+          episode.hasTranscript
+            ? 'Replace the transcript for this episode'
+            : 'Add a transcript to this episode'
+        }
+      >
+        {episode.hasTranscript ? 'Transcript ✓' : 'Transcript'}
+        <input
+          ref={input}
+          className="row__file"
+          type="file"
+          accept=".txt,.vtt,.srt,.md,text/plain"
+          disabled={busy}
+          onChange={(event) => void chose(event.target.files?.[0])}
+        />
+      </label>
+
+      {episode.hasTranscript && (
+        <button
+          type="button"
+          className="row__clear"
+          disabled={busy}
+          title="Take the transcript off this episode"
+          onClick={() => {
+            if (!window.confirm(`Take the transcript off "${episode.title}"?`)) return
+            void act(() => api.update(episode.id, { transcript: null }))
+          }}
+        >
+          clear
+        </button>
+      )}
+    </span>
+  )
 }
 
 function EpisodeList({ episodes, api, busy, setBusy, onChanged, onError }: EpisodeListProps) {
@@ -554,6 +739,14 @@ function EpisodeList({ episodes, api, busy, setBusy, onChanged, onError }: Episo
               View
             </a>
 
+            <TranscriptControl
+              api={api}
+              episode={episode}
+              busy={busy}
+              act={act}
+              onError={onError}
+            />
+
             <button
               type="button"
               className="row__toggle"
@@ -575,11 +768,11 @@ function EpisodeList({ episodes, api, busy, setBusy, onChanged, onError }: Episo
               disabled={busy}
               onClick={() => {
                 // A native confirm rather than a modal of our own. This is the
-                // one irreversible control on the page — it deletes the audio
+                // one irreversible control on the page — it deletes the video
                 // as well as the row — and a bespoke dialog here would be
                 // effort spent making a thing look nicer that should mostly be
                 // making somebody stop.
-                if (!window.confirm(`Delete "${episode.title}"? The audio goes too.`)) return
+                if (!window.confirm(`Delete "${episode.title}"? The video goes too.`)) return
                 void act(() => api.remove(episode.id))
               }}
             >

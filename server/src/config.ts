@@ -11,7 +11,7 @@ export interface Config {
   /** Session posters. Public, unlike the audio and the artwork: see `Schedule`. */
   posterDir: string
   /**
-   * The podcast archive: episode audio, and the posters that go with it.
+   * The podcast archive: episode video, and the posters that go with it.
    *
    * Under the storage volume like everything else, and deliberately *not* under
    * `audioDir` — which is the library, and the library is emptied every time a
@@ -25,7 +25,7 @@ export interface Config {
    * somebody who is not in the room and has no key to present. See
    * `routes/podcast.ts`.
    */
-  episodeAudioDir: string
+  episodeVideoDir: string
   episodePosterDir: string
   /** Uploads land here first and are only moved once they parse as audio. */
   tmpDir: string
@@ -78,8 +78,18 @@ export interface Config {
    * archive will accept: it is checked when the upload is *begun*, from a
    * number the client states, rather than by counting bytes as they arrive.
    *
-   * Two gigabytes. An hour of 24-bit/48k stereo WAV is about 1 GB, which is the
-   * largest thing anybody sensibly hands a podcast, and this is that with room.
+   * Five gigabytes, and it was two, which was a number carried over from an
+   * archive of audio and is short for one of video: an hour of 1080p at 8 Mbps
+   * is 3.6 GB, and a phone recording at its default settings is worse than
+   * that. Refusing a two-hour conversation at the door because of a limit
+   * nobody chose is the wrong failure.
+   *
+   * Nothing here holds a file of that size — the browser PUTs it to R2 in 8 MiB
+   * parts and this process never sees one — so the ceiling is a rule about what
+   * the archive accepts rather than about what the container can carry. What it
+   * does bound is the storage bill and, when a file needs rewriting, the volume:
+   * see the free-space check in `lib/publish.ts`, which refuses the rewrite
+   * rather than filling the disk a live radio station is running from.
    */
   maxEpisodeBytes: number
   /**
@@ -104,7 +114,7 @@ export interface Config {
     accessKeyId: string
     secretAccessKey: string
     /**
-     * Where a listener actually fetches audio from: the bucket's public custom
+     * Where a listener actually fetches video from: the bucket's public custom
      * domain, so Cloudflare's edge serves the bytes and answers the Range
      * requests a scrubbing player makes.
      *
@@ -327,8 +337,8 @@ function coHostKeyFrom(adminPassword: string): string {
 
 const DEFAULT_MAX_UPLOAD_BYTES = 150 * 1024 * 1024
 
-/** See `Config.maxEpisodeBytes`. An hour of 24-bit stereo WAV, with room. */
-const DEFAULT_MAX_EPISODE_BYTES = 2 * 1024 * 1024 * 1024
+/** See `Config.maxEpisodeBytes`. An hour of 1080p at a generous bitrate. */
+const DEFAULT_MAX_EPISODE_BYTES = 5 * 1024 * 1024 * 1024
 
 /**
  * R2, from the environment. All five or none; see `Config.r2`.
@@ -454,7 +464,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // with the library, so that what is archive and what is tonight is legible
     // from `ls` alone. Whoever is looking at a full disk at midnight should not
     // have to read this file to find out which directory is safe to empty.
-    episodeAudioDir: path.join(storageDir, 'episodes', 'audio'),
+    episodeVideoDir: path.join(storageDir, 'episodes', 'video'),
     episodePosterDir: path.join(storageDir, 'episodes', 'posters'),
     tmpDir: path.join(storageDir, 'tmp'),
     dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(storageDir, 'chunky.sqlite'),

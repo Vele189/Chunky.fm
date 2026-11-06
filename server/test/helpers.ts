@@ -162,7 +162,7 @@ export async function startHarness(
     audioDir: path.join(storageDir, 'audio'),
     artworkDir: path.join(storageDir, 'artwork'),
     posterDir: path.join(storageDir, 'posters'),
-    episodeAudioDir: path.join(storageDir, 'episodes', 'audio'),
+    episodeVideoDir: path.join(storageDir, 'episodes', 'video'),
     episodePosterDir: path.join(storageDir, 'episodes', 'posters'),
     tmpDir: path.join(storageDir, 'tmp'),
     dbPath: ':memory:',

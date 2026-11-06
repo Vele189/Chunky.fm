@@ -4,12 +4,12 @@ import type { MediaStore } from './store.js'
 /**
  * An episode as it goes over the wire.
  *
- * camelCase where the row is snake_case, and `audioUrl` **whole** rather than a
+ * camelCase where the row is snake_case, and `videoUrl` **whole** rather than a
  * bare filename — which is the one place this API departs from the shape
  * `toTrack` uses, and the departure is forced rather than chosen.
  *
  * Everything else here is served by this app, so a filename is enough and the
- * client builds the address: `/api/audio/${track.filename}`. An episode's audio
+ * client builds the address: `/api/audio/${track.filename}`. An episode's video
  * is not. On a station with R2 configured it is served from a Cloudflare
  * hostname this app does not own and cannot construct a rule for, and on one
  * without it is served from here — so the *only* thing that knows the address
@@ -32,22 +32,46 @@ export interface Episode {
   publishedAt: number
   status: EpisodeStatus
   durationMs: number
-  /** Where the audio actually is. Absolute on R2, app-relative on disk. */
-  audioUrl: string
+  /** Where the video actually is. Absolute on R2, app-relative on disk. */
+  videoUrl: string
   /** What that file is, so a player is not left sniffing. */
-  audioType: string
+  videoType: string
   /** How big it is, so the page can say so before somebody starts an hour. */
-  audioBytes: number
+  videoBytes: number
   /**
-   * Whether the small serving copy exists yet.
+   * Whether what is served has been checked over yet.
    *
-   * Public, and it earns its place: between the master landing and the encode
-   * finishing there are minutes during which the episode plays *from the
-   * master*, which on a phone is a very large download. A player that knows can
-   * say so rather than silently spending somebody's data.
+   * Public, and it earns its place: an episode whose index has not been moved
+   * to the front cannot start until the whole file has come down, and on a
+   * phone that is an hour of video before the first frame. A player that knows
+   * can say so rather than appearing to have hung.
    */
   transcodeStatus: TranscodeStatus
+  /** The portrait card in the collection. A basename; the client builds the URL. */
   poster: string | null
+  /**
+   * The 16:9 still the player shows before the first frame decodes.
+   *
+   * Null on a row uploaded before an episode carried two pictures, which the
+   * player reads as "no poster attribute" — a black frame until the video has
+   * enough of itself to draw one, rather than a portrait poster stretched into
+   * a shape it was never cut for.
+   */
+  thumbnail: string | null
+  /**
+   * Whether there is a transcript to fetch, rather than the transcript.
+   *
+   * An hour of talk is a hundred kilobytes of text, and the archive route hands
+   * back sixty episodes at once: carrying the words here would make the grid —
+   * a page of pictures and titles — a six-megabyte response so that one reader
+   * in twenty can press a button. So the episode says *that there is one* and
+   * `GET /api/episodes/:slug/transcript` says what it is, asked for only when
+   * somebody opens it.
+   *
+   * A boolean rather than a length or a URL: the page's only question is
+   * whether to draw the toggle at all.
+   */
+  hasTranscript: boolean
   uploadedAt: number
 }
 
@@ -69,11 +93,13 @@ export function toEpisode(row: EpisodeRow, store: MediaStore): Episode {
     publishedAt: row.published_at,
     status: row.status,
     durationMs: row.duration_ms,
-    audioUrl: store.publicUrl(row.audio_key),
-    audioType: row.audio_type,
-    audioBytes: row.audio_bytes,
+    videoUrl: store.publicUrl(row.video_key),
+    videoType: row.video_type,
+    videoBytes: row.video_bytes,
     transcodeStatus: row.transcode_status,
     poster: row.poster,
+    thumbnail: row.thumbnail,
+    hasTranscript: row.transcript !== null && row.transcript !== '',
     uploadedAt: row.uploaded_at,
   }
 }
@@ -112,6 +138,27 @@ export const NOTES_MAX_LENGTH = 8_000
 
 /** One line naming who was on. Not a list of credits. */
 export const GUESTS_MAX_LENGTH = 200
+
+/**
+ * How long a transcript may be.
+ *
+ * Two hundred thousand characters, which is not a round guess: talk runs at
+ * roughly nine hundred characters a minute, so this is about four hours of
+ * conversation with the speaker labels and the timestamps on top of it — well
+ * past the longest thing this archive is ever going to hold, and still bounded.
+ *
+ * The ceiling exists twice over. This is a column in a row that is read every
+ * time the console lists the archive, and it is a multipart *field*, which
+ * busboy holds in memory whole; the parser's own limit is a megabyte (see the
+ * multipart registration in app.ts), and 200k characters cannot exceed that
+ * even if every one of them is three bytes of UTF-8.
+ *
+ * Unlike the notes, going over is refused rather than truncated. A transcript
+ * cut off at the ceiling would look complete and simply stop in the middle of
+ * an answer, which is a worse thing to discover in six months than an upload
+ * that would not go through today.
+ */
+export const TRANSCRIPT_MAX_LENGTH = 200_000
 
 /**
  * The addresses an episode may not claim, because the page already means
@@ -163,6 +210,35 @@ export function toNotes(value: string): string | null {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
     .slice(0, NOTES_MAX_LENGTH)
+  return clean.length > 0 ? clean : null
+}
+
+/**
+ * A transcript as it goes into the database, or null for an episode with none.
+ *
+ * Barely touched, and that is deliberate: this is somebody's transcription tool
+ * output and every line of it is load-bearing, so unlike the notes there is no
+ * collapsing of blank runs and no reflowing. Three things happen. Line endings
+ * are normalised, because a file written on Windows and one written on a Mac
+ * must parse the same way in the browser; the control characters that are not
+ * newline or tab go, for the reason they go everywhere else in this file — this
+ * ends up in the markup of a public page; and a BOM is dropped, which a text
+ * file exported from a word processor routinely opens with and which would
+ * otherwise sit in front of the first timestamp and stop it being one.
+ *
+ * Length is *not* enforced here. The route refuses an over-long transcript with
+ * its actual size named, because silently returning a shortened one is exactly
+ * the failure this is trying to avoid; see `TRANSCRIPT_MAX_LENGTH`.
+ */
+export function toTranscript(value: string): string | null {
+  const clean = value
+    .replace(/^\ufeff/, '')
+    .replace(/\r\n?/g, '\n')
+    // Newline and tab spared by name; a transcript's own indentation is the
+    // only thing here that ever means anything.
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]+/g, '')
+    .trim()
   return clean.length > 0 ? clean : null
 }
 

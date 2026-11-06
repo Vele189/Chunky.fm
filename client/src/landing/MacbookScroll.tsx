@@ -135,8 +135,24 @@ const KEYS: readonly (readonly Key[])[] = [
  * needs a ratio. CSS cannot divide one length by another; this can.
  */
 const BIGGEST = 17
-const PER_VIEWPORT = 0.015
 const SMALLEST = 6
+
+/**
+ * How many `em` across the open screen is. See `.macbook__screen`.
+ *
+ * The unit is worked out from this and the width the section actually has, so
+ * the machine is drawn as wide as there is room for it and no wider. It used to
+ * be 1.5% of the window, which is a number that happens to be right at a laptop
+ * and is wrong at both ends: on a phone it hit the floor of 6 and drew a toy
+ * two thirds the width of the screen, with the section's own gutters left over
+ * beside it, and it took no account of the 1080px cap the section stops at.
+ *
+ * Measured off the frame rather than the window for that second reason: the
+ * frame is inside the section, so its width is the content width with the
+ * gutters already taken off, at every breakpoint, without this file having to
+ * know what any of them are.
+ */
+const SCREEN_EM = 48
 
 export interface MacbookScrollProps {
   /** What is on the screen. A node rather than an image. See above. */
@@ -176,7 +192,8 @@ export function MacbookScroll({ screen, title, className = '' }: MacbookScrollPr
 
     const onResize = () => {
       setStill(motionless.matches)
-      setUnit(Math.min(BIGGEST, Math.max(SMALLEST, window.innerWidth * PER_VIEWPORT)))
+      const room = frame.current?.clientWidth ?? window.innerWidth
+      setUnit(Math.min(BIGGEST, Math.max(SMALLEST, room / SCREEN_EM)))
       onScroll()
     }
 

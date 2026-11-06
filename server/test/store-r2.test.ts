@@ -81,9 +81,9 @@ describe.skipIf(!available)('the R2 backend, against a real S3 API', () => {
 
   it('addresses an object at the public base, not at the API', async () => {
     // What a listener is handed. It must be the CDN hostname rather than the
-    // S3 endpoint: the whole point of R2 here is that audio does not come
+    // S3 endpoint: the whole point of R2 here is that video does not come
     // through this server, and a URL pointing at the API would quietly undo it.
-    expect(storeFor().publicUrl('audio/abc.m4a')).toBe('https://media.example.test/audio/abc.m4a')
+    expect(storeFor().publicUrl('video/abc.mp4')).toBe('https://media.example.test/video/abc.mp4')
   })
 
   it('carries a multi-part upload end to end, through presigned URLs', async () => {
@@ -93,7 +93,7 @@ describe.skipIf(!available)('the R2 backend, against a real S3 API', () => {
     const data = Buffer.alloc(PART_SIZE * 2 + 1024, 7)
     const key = `masters/${createHash('sha256').update(data).digest('hex')}.wav`
 
-    const begun = await store.createUpload(key, 'audio/wav')
+    const begun = await store.createUpload(key, 'video/mp4')
     expect(begun.uploadId).toBeTruthy()
     expect(partCountFor(data.length)).toBe(3)
 
@@ -141,7 +141,7 @@ describe.skipIf(!available)('the R2 backend, against a real S3 API', () => {
     // complete ones.
     const store = storeFor()
     const key = 'masters/abandoned.wav'
-    const begun = await store.createUpload(key, 'audio/wav')
+    const begun = await store.createUpload(key, 'video/mp4')
 
     const url = await store.partUrl(begun.key, begun.uploadId, 1)
     const res = await fetch(url, { method: 'PUT', body: Buffer.alloc(PART_SIZE, 3) })
@@ -153,8 +153,8 @@ describe.skipIf(!available)('the R2 backend, against a real S3 API', () => {
 
   it('puts and removes an object outright, which is what the encode does', async () => {
     const store = storeFor()
-    const key = 'audio/encoded.m4a'
-    await store.put(key, Buffer.from('not really aac'), 'audio/mp4')
+    const key = 'video/rewritten.mp4'
+    await store.put(key, Buffer.from('not really h264'), 'video/mp4')
     expect(await store.size(key)).toBe(14)
     await store.remove(key)
     expect(await store.size(key)).toBeNull()
@@ -163,6 +163,6 @@ describe.skipIf(!available)('the R2 backend, against a real S3 API', () => {
   it('answers null for an object that is not there', async () => {
     // Rather than throwing, which is what the upload path relies on to decide
     // whether an assembly actually produced anything.
-    expect(await storeFor().size('nothing/at/all.m4a')).toBeNull()
+    expect(await storeFor().size('nothing/at/all.mp4')).toBeNull()
   })
 })

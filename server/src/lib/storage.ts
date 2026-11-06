@@ -8,7 +8,7 @@ export async function ensureStorageDirs(config: Config): Promise<void> {
       config.audioDir,
       config.artworkDir,
       config.posterDir,
-      config.episodeAudioDir,
+      config.episodeVideoDir,
       config.episodePosterDir,
       config.tmpDir,
     ].map((dir) => fs.mkdir(dir, { recursive: true })),
@@ -37,7 +37,7 @@ export function posterFilePath(config: Config, poster: string): string {
  * the second lock on that rather than the first.
  */
 export function episodeAudioFilePath(config: Config, filename: string): string {
-  return path.join(config.episodeAudioDir, path.basename(filename))
+  return path.join(config.episodeVideoDir, path.basename(filename))
 }
 
 /** An episode's poster. See `episodeAudioFilePath`. */
