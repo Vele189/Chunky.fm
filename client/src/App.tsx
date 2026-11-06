@@ -27,6 +27,7 @@ import { useServerClock } from './hooks/useServerClock.js'
 import { type SyncTrails, useSyncTrails } from './hooks/useSyncTrails.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
+import { useAudioTrace } from './hooks/useAudioTrace.js'
 import { useGuestVoice } from './hooks/useGuestVoice.js'
 import { useIceServers, useVoiceReceiver } from './hooks/useVoice.js'
 import { seekTo } from './lib/audio-element.js'
@@ -350,10 +351,33 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     routeToClock.current = clock.handleMessage
   }, [clock.handleMessage])
 
+  // Reports this page's audio events to the server log. See `lib/audio-trace.ts`.
+  const trace = useAudioTrace({
+    audioRef,
+    secondRef,
+    stage: stage.current,
+    state,
+    joined,
+    synced: clock.synced,
+    serverNow: clock.serverNow,
+    offsetMs: clock.offsetMs,
+    rttMs: clock.rttMs,
+    nickname: joined ? nickname : null,
+  })
+
   const [drift, setDrift] = useState<{ correction: Correction; diff: number } | null>(null)
   const onCorrection = useCallback(
-    (correction: Correction, diff: number) => setDrift({ correction, diff }),
-    [],
+    (correction: Correction, diff: number) => {
+      setDrift({ correction, diff })
+      // A seek is the audible kind, and the one that chops a record.
+      if (correction.kind === 'seek') {
+        trace.record('drift-seek', {
+          expected: Math.round(correction.toSeconds * 1000) / 1000,
+          diff: Math.round(diff * 1000) / 1000,
+        })
+      }
+    },
+    [trace],
   )
 
   // Remembered here rather than in the sync view, so arriving at `#sync`

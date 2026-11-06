@@ -855,7 +855,24 @@ export function attachRealtime({
 
   const onChange = (snapshot: PlaybackSnapshot) => {
     log?.info(
-      { trackId: snapshot.track?.id ?? null, listeners: wss.clients.size },
+      {
+        trackId: snapshot.track?.id ?? null,
+        // Enough to line a listener's `audio` trace up against: where the
+        // station put 0:00, how long it believes the record is, and the
+        // window of whatever is fading out under it.
+        startedAt: snapshot.startedAt,
+        pausedAt: snapshot.pausedAt,
+        serverTime: snapshot.serverTime,
+        durationMs: snapshot.track?.durationMs ?? null,
+        outgoing: snapshot.outgoing
+          ? {
+              trackId: snapshot.outgoing.track.id,
+              startedAt: snapshot.outgoing.startedAt,
+              endsAt: snapshot.outgoing.endsAt,
+            }
+          : null,
+        listeners: wss.clients.size,
+      },
       'broadcasting playback state',
     )
     broadcast(stateMessage(snapshot))
