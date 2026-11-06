@@ -13,6 +13,7 @@ import type {
   PlaybackSnapshot,
   QueueEntry,
   ScheduledSession,
+  ScheduleSnapshot,
   ServerMessage,
   SocketRefusal,
   StateMessage,
@@ -73,6 +74,11 @@ export interface Station {
    * is not about tonight. See `ScheduleMessage`.
    */
   schedule: ScheduledSession | null
+  /**
+   * Every announced session, soonest first; `schedule` is the head of it. Only
+   * the console reads the whole list, to edit one night of several.
+   */
+  upcoming: ScheduledSession[]
   /**
    * Whether somebody is talking over the music, and how far it drops while
    * they are. Null until the first `mic` frame, which arrives in the connect
@@ -182,8 +188,8 @@ export interface Station {
   applyPadding(count: number): void
   /** Fold in what `POST /api/session` just answered. See `applyState`. */
   applyAir(snapshot: AirSnapshot): void
-  /** Fold in what `PUT /api/schedule` just answered. See `applyState`. */
-  applySchedule(next: ScheduledSession | null): void
+  /** Fold in what a write to `/api/schedule` just answered. See `applyState`. */
+  applySchedule(next: ScheduleSnapshot): void
   /**
    * Fold in what `POST /api/mic` just answered. See `applyState`, and note that
    * this one earns it more than the others: the talk button is held down, and a
@@ -225,6 +231,7 @@ export function useStation(
   const [me, setMe] = useState<number | null>(null)
   const [decks, setDecks] = useState<boolean | null>(null)
   const [schedule, setSchedule] = useState<ScheduledSession | null>(null)
+  const [upcoming, setUpcoming] = useState<ScheduledSession[]>([])
   const [mic, setMic] = useState<MicSnapshot | null>(null)
   const [floor, setFloor] = useState<FloorSnapshot | null>(null)
   const [coHost, setCoHost] = useState<CoHostSnapshot | null>(null)
@@ -252,6 +259,7 @@ export function useStation(
     setAir(null)
     // And its own next evening.
     setSchedule(null)
+    setUpcoming([])
     // And its own answer to whether anybody is talking over it.
     setMic(null)
     // And its own answer to who is allowed to. The hands go with it: a list of
@@ -283,7 +291,12 @@ export function useStation(
         if (message.type === 'air') {
           setAir({ live: message.live, since: message.since, kind: message.kind })
         }
-        if (message.type === 'schedule') setSchedule(message.schedule)
+        if (message.type === 'schedule') {
+          setSchedule(message.schedule)
+          // Older stations sent the next session alone; a list of it is what
+          // that meant.
+          setUpcoming(message.upcoming ?? (message.schedule ? [message.schedule] : []))
+        }
         if (message.type === 'mic') {
           setMic({ live: message.live, duckTo: message.duckTo, since: message.since })
         }
@@ -340,11 +353,14 @@ export function useStation(
   const applyPadding = useCallback((count: number) => setPadding(count), [])
   const applyAir = useCallback((snapshot: AirSnapshot) => setAir(snapshot), [])
   /**
-   * Fold in what `PUT /api/schedule` just answered, the way `applyAir` folds in
+   * Fold in what a write to `/api/schedule` just answered, the way `applyAir` folds in
    * a session change: the socket is about to carry the same thing, and the
    * console should not sit unchanged for a round trip.
    */
-  const applySchedule = useCallback((next: ScheduledSession | null) => setSchedule(next), [])
+  const applySchedule = useCallback((next: ScheduleSnapshot) => {
+    setSchedule(next.schedule)
+    setUpcoming(next.upcoming)
+  }, [])
   const applyMic = useCallback((snapshot: MicSnapshot) => setMic(snapshot), [])
   const applyFloor = useCallback((snapshot: FloorSnapshot) => setFloor(snapshot), [])
   const applyCoHost = useCallback((snapshot: CoHostSnapshot) => setCoHost(snapshot), [])
@@ -362,6 +378,7 @@ export function useStation(
     me,
     decks,
     schedule,
+    upcoming,
     mic,
     floor,
     coHost,

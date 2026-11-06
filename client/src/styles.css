@@ -56,9 +56,10 @@ h2 {
  * transform keeps every part of it where it belongs at the smaller size. The
  * room under the photo is the part of the record that hangs below it.
  *
- * On a phone the photo goes and the record is the first thing on the screen
- * again, at its own size, because a picture above it there would push it and
- * the title off the first screen. */
+ * On a phone the collage stays, smaller: the photo fills the column and the
+ * record is scaled down further, so the two together still leave the title
+ * close to the first screen. The record is pulled in from the right edge
+ * there, since a phone has no margin for it to hang into. */
 .stage-art {
   position: relative;
   width: 380px;
@@ -92,17 +93,12 @@ h2 {
 
 @media (max-width: 720px) {
   .stage-art {
-    padding-bottom: 0;
-  }
-
-  .stage-photo {
-    display: none;
+    padding-bottom: 72px;
   }
 
   .stage-art .deck {
-    position: static;
-    transform: none;
-    box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
+    right: 4px;
+    transform: scale(0.48) rotate(-3deg);
   }
 }
 
@@ -1781,6 +1777,56 @@ h2 {
 .schedule__preview strong {
   color: var(--fg-dim);
   font-weight: 600;
+}
+
+/* The announced nights, soonest first, above the form. One row each: when and
+   what on the left, its two buttons on the right. The one being edited is
+   marked with a press-blue rule, so the form below it is plainly about that
+   night and not a new one. */
+.schedule__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  box-shadow: var(--ring);
+}
+
+.schedule__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.schedule__item + .schedule__item {
+  border-top: var(--rule) solid var(--rule-dark);
+}
+
+.schedule__item--on {
+  box-shadow: inset 3px 0 0 var(--press);
+}
+
+.schedule__item-what {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.schedule__item-what strong {
+  color: var(--fg);
+  font-weight: 700;
+}
+
+.schedule__item-what span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .off-air__headline,

@@ -347,10 +347,12 @@ describe('announcing the next session', () => {
   }
 
   it('carries the kind and the title beside the time', async () => {
-    respond = () => json({ schedule: null })
+    respond = () => json({ schedule: null, upcoming: [] })
     await api().announce(1_700_500_000_000, null, { kind: 'talk', title: 'Sipho' })
 
     expect(calls[0]?.url).toBe('/api/schedule')
+    // Adding, not replacing: there can be several nights announced.
+    expect(calls[0]?.init.method).toBe('POST')
     expect(fields(calls[0]?.init.body)).toEqual({
       startsAt: '1700500000000',
       kind: 'talk',
@@ -358,11 +360,22 @@ describe('announcing the next session', () => {
     })
   })
 
+  it('edits one night by its id, and takes one down by it', async () => {
+    respond = () => json({ schedule: null, upcoming: [] })
+    await api().announce(1_700_500_000_000, null, {}, 7)
+    expect(calls[0]?.url).toBe('/api/schedule/7')
+    expect(calls[0]?.init.method).toBe('PUT')
+
+    await api().unannounce(7)
+    expect(calls[1]?.url).toBe('/api/schedule/7')
+    expect(calls[1]?.init.method).toBe('DELETE')
+  })
+
   it('sends both of them even when they are empty', async () => {
     // Unlike the poster, these are not kept across an edit at the station, so a
     // form that left them out would announce a set with no title every time
     // somebody moved the hour of a conversation.
-    respond = () => json({ schedule: null })
+    respond = () => json({ schedule: null, upcoming: [] })
     await api().announce(1_700_500_000_000)
     expect(fields(calls[0]?.init.body)).toEqual({
       startsAt: '1700500000000',

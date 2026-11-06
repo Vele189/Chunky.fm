@@ -41,6 +41,7 @@ import type {
   ServerMessage,
   QueueEntry,
   ScheduledSession,
+  ScheduleSnapshot,
   SessionKind,
   StateMessage,
   TransitionSnapshot,
@@ -74,10 +75,10 @@ export interface AdminPanelProps {
    */
   air: AirSnapshot | null
   /**
-   * The next session, announced, or null when nothing is. The one thing on this
-   * panel that outlives the session it is set during: see `ScheduleCard`.
+   * Every announced session, soonest first. The one thing on this panel that
+   * outlives the session it is set during: see `ScheduleCard`.
    */
-  schedule: ScheduledSession | null
+  upcoming: ScheduledSession[]
   queue: QueueEntry[] | null
   /**
    * Who is really in the room, or null before the first roster.
@@ -160,7 +161,7 @@ export interface AdminPanelProps {
   applyQueue(entries: QueueEntry[]): void
   applyPadding(count: number): void
   applyAir(snapshot: AirSnapshot): void
-  applySchedule(next: ScheduledSession | null): void
+  applySchedule(next: ScheduleSnapshot): void
   applyMic(snapshot: MicSnapshot): void
   /** Fold in what `POST /api/floor` just answered. See `applyState`. */
   applyFloor(snapshot: FloorSnapshot): void
@@ -184,7 +185,7 @@ export interface AdminPanelProps {
 export function AdminPanel({
   state,
   air,
-  schedule,
+  upcoming,
   queue,
   listeners,
   padding,
@@ -231,7 +232,7 @@ export function AdminPanel({
       api={api}
       state={state}
       air={air}
-      schedule={schedule}
+      upcoming={upcoming}
       queue={queue}
       listeners={listeners}
       padding={padding}
@@ -328,7 +329,7 @@ interface ControlsProps {
   api: AdminApi
   state: StateMessage | null
   air: AirSnapshot | null
-  schedule: ScheduledSession | null
+  upcoming: ScheduledSession[]
   queue: QueueEntry[] | null
   listeners: Listener[] | null
   padding: number
@@ -357,7 +358,7 @@ interface ControlsProps {
   applyQueue(entries: QueueEntry[]): void
   applyPadding(count: number): void
   applyAir(snapshot: AirSnapshot): void
-  applySchedule(next: ScheduledSession | null): void
+  applySchedule(next: ScheduleSnapshot): void
   applyMic(snapshot: MicSnapshot): void
   applyFloor(snapshot: FloorSnapshot): void
   onSignOut: () => void
@@ -367,7 +368,7 @@ function Controls({
   api,
   state,
   air,
-  schedule,
+  upcoming,
   queue,
   listeners,
   padding,
@@ -735,12 +736,17 @@ function Controls({
               about a night that has not, and it is the one thing here nobody
               needs to reach during a set. */}
           <ScheduleCard
-            schedule={schedule}
+            upcoming={upcoming}
             busy={busy}
-            onAnnounce={(startsAt, poster, said) =>
-              run(async () => applySchedule(await api.announce(startsAt, poster, said)))
+            onAnnounce={(startsAt, poster, said, id, done) =>
+              run(async () => {
+                applySchedule(await api.announce(startsAt, poster, said, id))
+                // Only once it has gone up: a refused poster leaves the form as
+                // it was, so whatever was typed is still there to fix.
+                done()
+              })
             }
-            onTakeDown={() => run(async () => applySchedule(await api.unannounce()))}
+            onTakeDown={(id) => run(async () => applySchedule(await api.unannounce(id)))}
           />
         </div>
 
@@ -1784,7 +1790,7 @@ interface Announced {
 }
 
 /**
- * The next session, announced before it happens.
+ * Sessions announced before they happen: the list, and a form for one night.
  *
  * The one control on this panel that is not about tonight. Everything else here
  * drives a broadcast that is happening or is about to; this writes down a night
@@ -1796,55 +1802,139 @@ interface Announced {
  * card's to take back: a clock that opened the station by itself would do it
  * into an empty queue and an empty room more often than not.
  *
+ * Several nights can be announced at once, and the page in front of the
+ * station lists them all. Each has its own Edit and Take down; the form below
+ * the list adds a new one unless one is being edited.
+ */
+function ScheduleCard({
+  upcoming,
+  busy,
+  onAnnounce,
+  onTakeDown,
+}: {
+  upcoming: ScheduledSession[]
+  busy: boolean
+  onAnnounce(
+    startsAt: number,
+    poster: File | null,
+    said: Announced,
+    id: number | undefined,
+    done: () => void,
+  ): void
+  onTakeDown(id: number): void
+}) {
+  /*
+   * Which night the form is changing, or null for a new one.
+   *
+   * Held as an id rather than a copy of the session, and looked up in the list
+   * on every render, so a second console that moves or takes down the same
+   * night is followed here instead of being argued with. A night that has gone
+   * from the list drops the form back to a new announcement.
+   */
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const editing = upcoming.find((session) => session.id === editingId) ?? null
+
+  return (
+    <section className="card card--schedule">
+      <header className="card__head">
+        <h2 className="card__title">Upcoming sessions</h2>
+        {editing && (
+          <button
+            type="button"
+            className="card__more"
+            disabled={busy}
+            onClick={() => setEditingId(null)}
+            data-testid="schedule-new"
+          >
+            New instead
+          </button>
+        )}
+      </header>
+
+      {/* Soonest first, as the page in front of the station lists them. The
+          first is the one the off-air screen and the top bar call "next". */}
+      {upcoming.length > 0 && (
+        <ol className="schedule__list" data-testid="schedule-list">
+          {upcoming.map((session) => (
+            <li
+              key={session.id}
+              className={`schedule__item${session.id === editingId ? ' schedule__item--on' : ''}`}
+            >
+              <span className="schedule__item-what">
+                <strong>{nextSessionLabel(session.startsAt, Date.now())}</strong>
+                <span>
+                  {kindPromise(session.kind)}
+                  {session.title ? `, ${session.title}` : ''}
+                </span>
+              </span>
+              <button
+                type="button"
+                className="card__more"
+                disabled={busy}
+                aria-pressed={session.id === editingId}
+                onClick={() => setEditingId(session.id === editingId ? null : session.id)}
+                data-testid="schedule-edit"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className="card__more"
+                disabled={busy}
+                onClick={() => {
+                  if (session.id === editingId) setEditingId(null)
+                  onTakeDown(session.id)
+                }}
+                data-testid="schedule-clear"
+              >
+                Take down
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {/* Keyed on the night, so choosing another one (or a new one) starts the
+          form again from what that night says, rather than from whatever was
+          last typed into it for a different evening. */}
+      <ScheduleForm
+        key={editing?.id ?? 'new'}
+        session={editing}
+        busy={busy}
+        onAnnounce={(startsAt, poster, said) =>
+          onAnnounce(startsAt, poster, said, editing?.id, () => setEditingId(null))
+        }
+      />
+    </section>
+  )
+}
+
+/**
+ * The form for one night: a new one when `session` is null, that one when not.
+ *
  * The poster is optional and separate from the time in the one way that
- * matters: leaving the file alone and changing the hour keeps the picture. An
- * admin moving a session by an hour from a phone should not have to find the
- * image again.
+ * matters: on an edit, leaving the file alone and changing the hour keeps the
+ * picture. An admin moving a session by an hour from a phone should not have to
+ * find the image again.
  *
  * The kind and the title are not treated that way, and the difference is worth
  * knowing: they are sent on every announcement, empty or not, so clearing a
  * title clears it. Only the file is expensive enough to be worth a rule.
  */
-function ScheduleCard({
-  schedule,
+function ScheduleForm({
+  session,
   busy,
   onAnnounce,
-  onTakeDown,
 }: {
-  schedule: ScheduledSession | null
+  session: ScheduledSession | null
   busy: boolean
   onAnnounce(startsAt: number, poster: File | null, said: Announced): void
-  onTakeDown(): void
 }) {
-  // Seeded from what is announced, and re-seeded when that changes underneath,
-  // so a second tab setting a time does not leave this field lying about it.
-  const [when, setWhen] = useState(() => (schedule ? toLocalInput(schedule.startsAt) : ''))
+  const [when, setWhen] = useState(() => (session ? toLocalInput(session.startsAt) : ''))
   const [poster, setPoster] = useState<File | null>(null)
   const [over, setOver] = useState(false)
-  const [kind, setKind] = useState<SessionKind>(() => schedule?.kind ?? 'set')
-  const [title, setTitle] = useState(() => schedule?.title ?? '')
-  const announced = schedule?.startsAt ?? null
-  useEffect(() => {
-    setWhen(announced === null ? '' : toLocalInput(announced))
-    setPoster(null)
-  }, [announced])
-
-  /*
-   * The other two fields follow whatever is announced, on their own signal.
-   *
-   * Separate from the effect above because they change without the time
-   * changing: renaming a night or turning it from a set into a conversation
-   * leaves `startsAt` exactly where it was, and folding these into that effect
-   * would leave the two fields showing the last thing this tab typed while the
-   * station held something else. Keyed on the values themselves so that a
-   * second console, or a take-down, is followed here too.
-   */
-  const announcedKind = schedule?.kind ?? null
-  const announcedTitle = schedule?.title ?? null
-  useEffect(() => {
-    setKind(announcedKind ?? 'set')
-    setTitle(announcedTitle ?? '')
-  }, [announcedKind, announcedTitle])
+  const [kind, setKind] = useState<SessionKind>(() => session?.kind ?? 'set')
+  const [title, setTitle] = useState(() => session?.title ?? '')
 
   // What a picked file looks like, before it has been anywhere. Revoked on the
   // way out: an object URL pins the file in memory until it is let go, and an
@@ -1861,161 +1951,145 @@ function ScheduleCard({
   // The picked file wins over what is up: it is what pressing Update will
   // announce, and showing the old one there would be the panel arguing with
   // the button under it.
-  const shown = preview ?? posterUrl(schedule)
+  const shown = preview ?? posterUrl(session)
+  const verb = session ? 'Update' : 'Announce'
 
   return (
-    <section className="card card--schedule">
-      <header className="card__head">
-        <h2 className="card__title">Next session</h2>
-        {schedule && (
-          <button
-            type="button"
-            className="card__more"
-            disabled={busy}
-            onClick={onTakeDown}
-            data-testid="schedule-clear"
-          >
-            Take down
-          </button>
-        )}
-      </header>
+    <form
+      className="schedule__form"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (startsAt !== null) onAnnounce(startsAt, poster, { kind, title })
+      }}
+    >
+      {/* The poster is both the preview and the way to change it: the whole
+          rectangle is the target, the same way the upload zone above is, and
+          a picture that can be dropped on is more obviously replaceable than
+          a picture with a file input under it.
 
-      <form
-        className="schedule__form"
-        onSubmit={(event) => {
+          A label wrapping a real input rather than a div with a handler,
+          because that is what gives it a keyboard and a screen reader. */}
+      <label
+        className={`poster${over ? ' poster--over' : ''}${shown ? ' poster--set' : ''}`}
+        onDragOver={(event) => {
           event.preventDefault()
-          if (startsAt !== null) onAnnounce(startsAt, poster, { kind, title })
+          setOver(true)
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(event) => {
+          event.preventDefault()
+          setOver(false)
+          // Images only, and quietly: a dragged folder or a stray mp3 is a
+          // slip, not something worth an error about a file nobody meant.
+          const picked = [...event.dataTransfer.files].find((file) =>
+            file.type.startsWith('image/'),
+          )
+          if (picked) setPoster(picked)
         }}
       >
-        {/* The poster is both the preview and the way to change it: the whole
-            rectangle is the target, the same way the upload zone above is, and
-            a picture that can be dropped on is more obviously replaceable than
-            a picture with a file input under it.
-
-            A label wrapping a real input rather than a div with a handler,
-            because that is what gives it a keyboard and a screen reader. */}
-        <label
-          className={`poster${over ? ' poster--over' : ''}${shown ? ' poster--set' : ''}`}
-          onDragOver={(event) => {
-            event.preventDefault()
-            setOver(true)
-          }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(event) => {
-            event.preventDefault()
-            setOver(false)
-            // Images only, and quietly: a dragged folder or a stray mp3 is a
-            // slip, not something worth an error about a file nobody meant.
-            const picked = [...event.dataTransfer.files].find((file) =>
-              file.type.startsWith('image/'),
-            )
-            if (picked) setPoster(picked)
-          }}
-        >
-          {shown ? (
-            <img className="poster__art" src={shown} alt="" />
-          ) : (
-            <span className="poster__badge" aria-hidden="true">
-              <img src={uploadIcon} alt="" width={22} height={22} />
-            </span>
-          )}
-          <span className="poster__hint">
-            {poster
-              ? `${poster.name}. Press ${schedule ? 'Update' : 'Announce'} to put it up.`
-              : shown
-                ? 'Drop a new poster, or click to replace'
-                : 'Drop a poster here, or click to browse'}
+        {shown ? (
+          <img className="poster__art" src={shown} alt="" />
+        ) : (
+          <span className="poster__badge" aria-hidden="true">
+            <img src={uploadIcon} alt="" width={22} height={22} />
           </span>
-          {/* Said once, here, rather than discovered from a 415 after the
-              upload. 1080x1350 is Instagram's portrait post, which is the shape
-              whoever runs the decks already has one in. */}
-          <span className="poster__spec">1080&times;1350 reads best. Under 8 MB.</span>
-          <input
-            type="file"
-            className="dropzone__input"
-            accept="image/jpeg,image/png,image/webp"
-            // Named explicitly, or it inherits the whole of the label's copy as
-            // its accessible name.
-            aria-label="Choose a poster"
-            data-testid="schedule-poster"
-            onChange={(event) => {
-              const picked = event.target.files?.[0] ?? null
-              event.target.value = '' // so the same file can be picked twice
-              setPoster(picked)
-            }}
-          />
-        </label>
-
-        <label className="schedule__field">
-          <span className="schedule__label">When</span>
-          <input
-            type="datetime-local"
-            className="gate__input"
-            value={when}
-            onChange={(event) => setWhen(event.target.value)}
-            data-testid="schedule-when"
-          />
-        </label>
-
-        {/* What kind of night is being promised. On the poster rather than only
-            on the night itself, because the two are announced to different
-            people at different times: this one is read by somebody deciding
-            whether to turn up, and "a conversation" and "a set" are not the
-            same decision. It is also independent of what actually gets started
-            on the night; a plan is not a session. */}
-        <div className="schedule__field">
-          <span className="schedule__label" id="schedule-kind-label">
-            What
-          </span>
-          <div className="schedule__kinds" role="group" aria-labelledby="schedule-kind-label">
-            {(['set', 'talk'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={`golive__kind${kind === option ? ' golive__kind--on' : ''}`}
-                data-testid={`schedule-kind-${option}`}
-                aria-pressed={kind === option}
-                onClick={() => setKind(option)}
-              >
-                {kindLabel(option)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <label className="schedule__field">
-          <span className="schedule__label">Called</span>
-          <input
-            type="text"
-            className="gate__input"
-            value={title}
-            maxLength={SCHEDULE_TITLE_MAX_LENGTH}
-            placeholder={kind === 'talk' ? 'Who is coming on' : 'The theme, if there is one'}
-            onChange={(event) => setTitle(event.target.value)}
-            data-testid="schedule-title"
-          />
-        </label>
-
-        <button type="submit" className="button" disabled={busy || startsAt === null}>
-          {schedule ? 'Update' : 'Announce'}
-        </button>
-
-        {/* The sentence a listener will actually read, checked against the
-            field rather than against what was saved: the point of showing it is
-            to catch a date typed as next year before it is announced. It says
-            the whole line now, because the kind and the title go on the same
-            poster and a preview of one third of it is a preview of nothing. */}
-        {startsAt !== null && (
-          <p className="schedule__preview" data-testid="schedule-preview">
-            Listeners see:{' '}
-            <strong>
-              {kindPromise(kind)}
-              {title.trim() ? `, ${title.trim()}` : ''}. {nextSessionLabel(startsAt, Date.now())}
-            </strong>
-          </p>
         )}
-      </form>
-    </section>
+        <span className="poster__hint">
+          {poster
+            ? `${poster.name}. Press ${verb} to put it up.`
+            : shown
+              ? 'Drop a new poster, or click to replace'
+              : 'Drop a poster here, or click to browse'}
+        </span>
+        {/* Said once, here, rather than discovered from a 415 after the
+            upload. 1080x1350 is Instagram's portrait post, which is the shape
+            whoever runs the decks already has one in. */}
+        <span className="poster__spec">1080&times;1350 reads best. Under 8 MB.</span>
+        <input
+          type="file"
+          className="dropzone__input"
+          accept="image/jpeg,image/png,image/webp"
+          // Named explicitly, or it inherits the whole of the label's copy as
+          // its accessible name.
+          aria-label="Choose a poster"
+          data-testid="schedule-poster"
+          onChange={(event) => {
+            const picked = event.target.files?.[0] ?? null
+            event.target.value = '' // so the same file can be picked twice
+            setPoster(picked)
+          }}
+        />
+      </label>
+
+      <label className="schedule__field">
+        <span className="schedule__label">When</span>
+        <input
+          type="datetime-local"
+          className="gate__input"
+          value={when}
+          onChange={(event) => setWhen(event.target.value)}
+          data-testid="schedule-when"
+        />
+      </label>
+
+      {/* What kind of night is being promised. On the poster rather than only
+          on the night itself, because the two are announced to different
+          people at different times: this one is read by somebody deciding
+          whether to turn up, and "a conversation" and "a set" are not the
+          same decision. It is also independent of what actually gets started
+          on the night; a plan is not a session. */}
+      <div className="schedule__field">
+        <span className="schedule__label" id="schedule-kind-label">
+          What
+        </span>
+        <div className="schedule__kinds" role="group" aria-labelledby="schedule-kind-label">
+          {(['set', 'talk'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={`golive__kind${kind === option ? ' golive__kind--on' : ''}`}
+              data-testid={`schedule-kind-${option}`}
+              aria-pressed={kind === option}
+              onClick={() => setKind(option)}
+            >
+              {kindLabel(option)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="schedule__field">
+        <span className="schedule__label">Called</span>
+        <input
+          type="text"
+          className="gate__input"
+          value={title}
+          maxLength={SCHEDULE_TITLE_MAX_LENGTH}
+          placeholder={kind === 'talk' ? 'Who is coming on' : 'The theme, if there is one'}
+          onChange={(event) => setTitle(event.target.value)}
+          data-testid="schedule-title"
+        />
+      </label>
+
+      <button type="submit" className="button" disabled={busy || startsAt === null}>
+        {verb}
+      </button>
+
+      {/* The sentence a listener will actually read, checked against the
+          field rather than against what was saved: the point of showing it is
+          to catch a date typed as next year before it is announced. It says
+          the whole line now, because the kind and the title go on the same
+          poster and a preview of one third of it is a preview of nothing. */}
+      {startsAt !== null && (
+        <p className="schedule__preview" data-testid="schedule-preview">
+          Listeners see:{' '}
+          <strong>
+            {kindPromise(kind)}
+            {title.trim() ? `, ${title.trim()}` : ''}. {nextSessionLabel(startsAt, Date.now())}
+          </strong>
+        </p>
+      )}
+    </form>
   )
 }
 

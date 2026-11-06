@@ -397,14 +397,14 @@ a {
   }
 }
 
-/* --- tonight's running order -------------------------------------------------- */
+/* --- upcoming sessions ------------------------------------------------------- */
 
-.tonight__head {
+.sessions__head {
   display: grid;
   gap: 12px;
 }
 
-.tonight__title {
+.sessions__title {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -421,7 +421,6 @@ a {
 
 .order__row {
   display: grid;
-  grid-template-columns: 72px 40px minmax(0, 1fr) minmax(0, 0.6fr);
   align-items: center;
   gap: 16px 24px;
   padding: 10px 0;
@@ -429,22 +428,15 @@ a {
   font-size: 13px;
 }
 
+/* Date, time, what, poster. The date is the widest thing a reader scans for,
+   so it leads, set in the display face like a date on a gig poster. */
+.sessions__row {
+  grid-template-columns: 112px 64px minmax(0, 1fr) 40px;
+}
+
 .order__time {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-}
-
-.order__sleeve {
-  width: 40px;
-  height: 40px;
-  object-fit: cover;
-  /* Printed rather than shown: the sleeves are full-colour scans, and a row
-     of them in their own colours would out-shout the type. */
-  filter: grayscale(1) contrast(1.25);
-}
-
-.order__sleeve--none {
-  background: var(--rule-dark);
 }
 
 .order__title {
@@ -453,25 +445,61 @@ a {
   text-transform: uppercase;
 }
 
-.order__artist {
-  color: var(--smudge-on-ink);
-  letter-spacing: 0.04em;
+.sessions__date {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font: 900 24px/1 var(--font-display);
   text-transform: uppercase;
 }
 
-.tonight__note {
+.sessions__day {
+  color: var(--mark);
+}
+
+.sessions__poster {
+  width: 40px;
+  height: 50px;
+  object-fit: cover;
+}
+
+.sessions__poster--none {
+  background: var(--rule-dark);
+}
+
+.sessions__none {
+  margin: 0;
+  padding: 24px 0;
+  border-top: var(--rule) solid var(--rule-dark);
+  border-bottom: var(--rule) solid var(--rule-dark);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sessions__note {
   max-width: 62ch;
   color: var(--smudge-on-ink);
 }
 
 @media (max-width: 640px) {
-  .order__row {
-    grid-template-columns: 52px 40px minmax(0, 1fr);
+  .sessions__row {
+    grid-template-columns: minmax(0, 1fr) 40px;
+    gap: 4px 16px;
   }
 
-  .order__artist {
-    grid-column: 3;
-    margin-top: -12px;
+  .sessions__date {
+    grid-column: 1;
+  }
+
+  .sessions__row .order__time,
+  .sessions__row .order__title {
+    grid-column: 1;
+  }
+
+  .sessions__poster {
+    grid-column: 2;
+    grid-row: 1 / span 3;
   }
 }
 

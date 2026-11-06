@@ -306,6 +306,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     applyPadding,
     applyAir,
     schedule,
+    upcoming,
     applySchedule,
     mic,
     applyMic,
@@ -762,7 +763,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
             applyCoHost={applyCoHost}
             applyTransition={applyTransition}
             applyAir={applyAir}
-            schedule={schedule}
+            upcoming={upcoming}
             applySchedule={applySchedule}
             mic={mic}
             applyMic={applyMic}

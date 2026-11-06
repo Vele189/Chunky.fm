@@ -10,9 +10,10 @@ import { PODCAST_PATH } from '../lib/episodes.js'
 import type { ScheduledSession } from '../lib/protocol.js'
 import { stationUrl } from '../lib/routes.js'
 import { nextSessionShort } from '../lib/schedule.js'
+import { posterUrl } from '../lib/protocol.js'
 import { ASSETS, coverFor } from '../poster/assets.js'
-import { NextSession, promiseOf, useNextSession } from './NextSession.js'
-import { BEEN_ON, WISHES } from './session.js'
+import { NextSession, promiseOf, useSchedule } from './NextSession.js'
+import { WISHES } from './session.js'
 import { Slot } from '../poster/Slot.js'
 import { type ArchiveCard, useArchive } from './useArchive.js'
 import { useStill } from './useStill.js'
@@ -26,10 +27,9 @@ import { useStill } from './useStill.js'
  * for somebody who cannot get in yet.
  *
  * Two things on it are true and the rest is an invented evening. The true ones
- * are the next announced session (`useNextSession`, an open read) and the
- * archive (`useArchive`, another). The running order, the wishes and the copy
- * describe a night the way it goes, and the running order says it is a sample,
- * because a list of records with times beside it otherwise reads as tonight.
+ * are the announced sessions (`useSchedule`, an open read) and the archive
+ * (`useArchive`, another). The wishes and the copy describe a night the way it
+ * goes.
  *
  * The look comes from the Figma page "revamp — poster": newsprint and ink in
  * solid bands, one condensed display face, monospace for everything that is a
@@ -43,7 +43,7 @@ import { useStill } from './useStill.js'
  * asked to.
  */
 export function Landing() {
-  const next = useNextSession()
+  const { next, upcoming } = useSchedule()
 
   return (
     <div className="poster">
@@ -52,7 +52,7 @@ export function Landing() {
       <main>
         <Hero />
         <NextSession next={next} />
-        <Tonight />
+        <Upcoming sessions={upcoming} />
         <Creed />
         <Archive />
         <Asked />
@@ -84,7 +84,7 @@ const PODCAST = PODCAST_PATH
  * between two that only scroll it.
  */
 const NAV = [
-  { name: 'Tonight', link: '#tonight' },
+  { name: 'Upcoming', link: '#sessions' },
   { name: 'Archive', link: '#archive' },
   { name: 'The DJ', link: '#dj' },
   { name: 'Podcast', link: PODCAST },
@@ -131,7 +131,7 @@ function Ticker({ next }: { next: ScheduledSession | null }) {
   const still = useStill()
   const said = next
     ? ['Next session', nextSessionShort(next.startsAt, Date.now()), promiseOf(next), 'Same link as always']
-    : ['One room', 'One clock', 'Everyone on the same second', 'No algorithm']
+    : ['Music is a culture', 'Listen together', 'Chosen by hand', 'No algorithm']
   const run = (
     <>
       {[...said, ...said].map((phrase, index) => (
@@ -172,8 +172,8 @@ function Hero() {
         <p className="kicker kicker--paper">A live radio station for a small room</p>
         <h1 className="hero__headline">Music deserves more than an algorithm.</h1>
         <p className="hero__blurb">
-          The room chooses the theme. I spend the day curating the story. When the broadcast
-          begins, everyone hears the same song at the same moment.
+          The room chooses the theme. I spend the day curating the story. Then we sit with the
+          music together, and talk about what we heard.
         </p>
         {/* Two, and not the same offer. The first is the station, which is dark
             more often than it is on; the second is the archive, which never is.
@@ -193,56 +193,85 @@ function Hero() {
 }
 
 /**
- * An evening, as a running order.
+ * Every announced session, soonest first.
  *
- * `BEEN_ON` is kept latest-first, the way the station's own history reads.
- * A running order goes the other way, so it is turned round here rather than
- * stored twice.
+ * True, like the next-session band above it: these are the nights somebody
+ * has actually set in the console, read from the same open `GET /api/schedule`.
+ * The band is the next one at poster size; this is the list a person scans to
+ * decide which evening to keep free, so it carries the date as well as the
+ * time, which a single "Saturday at 21:00" does not need.
  *
- * It is labelled as a sample in the heading's kicker. A list of records with
- * times beside them, under the word "tonight", is otherwise a claim about
- * tonight that this page cannot make.
+ * Unlike the band it stays on the page when nothing is announced, and says so.
+ * The bar links here, and a link to a section that is not there would be the
+ * page breaking on the very days it has to work.
  */
-const ORDER = [...BEEN_ON].sort((a, b) => a.at.localeCompare(b.at))
-
-function Tonight() {
+function Upcoming({ sessions }: { sessions: ScheduledSession[] }) {
   return (
-    <section className="band band--ink tonight" id="tonight">
-      <div className="tonight__head">
-        <p className="kicker kicker--paper">A sample evening</p>
-        <h2 className="display tonight__title">
-          <span>Tonight’s</span> <span>running order</span>
+    <section className="band band--ink sessions" id="sessions">
+      <div className="sessions__head">
+        <p className="kicker kicker--paper">On the calendar</p>
+        <h2 className="display sessions__title">
+          <span>Upcoming</span> <span>sessions</span>
         </h2>
       </div>
 
-      <ol className="order">
-        {ORDER.map((play) => (
-          <li className="order__row" key={`${play.at}-${play.title}`}>
-            <span className="order__time">{play.at}</span>
-            {play.cover ? (
-              <img
-                className="order__sleeve"
-                src={play.cover.src}
-                alt=""
-                width={40}
-                height={40}
-                loading="lazy"
-                decoding="async"
-              />
-            ) : (
-              <span className="order__sleeve order__sleeve--none" aria-hidden="true" />
-            )}
-            <span className="order__title">{play.title}</span>
-            <span className="order__artist">{play.artist}</span>
-          </li>
-        ))}
-      </ol>
+      {sessions.length > 0 ? (
+        <ol className="order" data-testid="upcoming-sessions">
+          {sessions.map((session) => (
+            <Session key={session.id} session={session} />
+          ))}
+        </ol>
+      ) : (
+        <p className="sessions__none" data-testid="upcoming-none">
+          Nothing is announced yet. When the next night is set, it goes up here first.
+        </p>
+      )}
 
-      <p className="tonight__note">
-        One person chooses the records. No shuffle, no skipping. The real running order is on the
-        station while it is on.
+      <p className="sessions__note">
+        One person chooses the records, around one question a night. No shuffle, no skipping.
       </p>
     </section>
+  )
+}
+
+/**
+ * One announced night, as a row: the date, the time, what it is, and its poster
+ * if it has one.
+ *
+ * The date and the time are the reader's own, from the browser, because the
+ * question being answered is "which of my evenings". The poster is shown in its
+ * own colours: it is whoever runs the night saying what it is, not a sleeve
+ * standing in a row of sleeves.
+ */
+function Session({ session }: { session: ScheduledSession }) {
+  const at = new Date(session.startsAt)
+  const day = at.toLocaleDateString(undefined, { weekday: 'short' })
+  const date = at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const art = posterUrl(session)
+
+  return (
+    <li className="order__row sessions__row">
+      <time className="sessions__date" dateTime={at.toISOString()}>
+        <span className="sessions__day">{day}</span>
+        <span>{date}</span>
+      </time>
+      <span className="order__time">{time}</span>
+      <span className="order__title">{promiseOf(session)}</span>
+      {art ? (
+        <img
+          className="sessions__poster"
+          src={art}
+          alt={`Poster for ${promiseOf(session)}`}
+          width={40}
+          height={50}
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <span className="sessions__poster sessions__poster--none" aria-hidden="true" />
+      )}
+    </li>
   )
 }
 
@@ -251,14 +280,14 @@ function Creed() {
   return (
     <section className="band band--paper creed">
       <div className="creed__words">
-        <h2 className="display creed__headline">One room. One clock. Same second.</h2>
+        <h2 className="display creed__headline">Listen together. Talk about it. Come back.</h2>
         <p className="creed__body">
-          Every browser tuned in lines itself up to the station’s own clock, so people in different
-          countries are inside the same bar of the same record at the same instant. The words are on
-          screen, a room is talking around them, and anyone can put a hand up for the mic.
+          chunky.fm is about building a culture around music: songs chosen with care, heard with
+          other people, and talked about while they play. Bring a question, a request or just your
+          ears. Anyone in the room can put a hand up and say something.
         </p>
         <a className="button button--outline" href="/how-it-works">
-          How that is done
+          How a session works
         </a>
       </div>
       <Stickers />
@@ -498,8 +527,8 @@ function Join({ next }: { next: ScheduledSession | null }) {
         </a>
       </div>
       <p className="join__note">
-        The station is on when somebody is running it. If it isn’t, the page will say so. Leave it
-        open and it will come back on by itself, or listen to a night that already happened.
+        Sessions happen live, on the nights above. Between them, the podcast keeps the ones worth
+        hearing again.
       </p>
     </section>
   )
@@ -517,7 +546,7 @@ function Foot() {
         <a href="/how-it-works">How it works</a>
         <a href={DECKS}>Run the decks</a>
       </nav>
-      <p className="foot__line">One link. One song. Everyone on the same second.</p>
+      <p className="foot__line">Music worth sharing, heard together.</p>
     </footer>
   )
 }
@@ -538,7 +567,7 @@ function TuneBar({ next }: { next: ScheduledSession | null }) {
       <span className="tunebar__status">
         {next
           ? `Next session · ${nextSessionShort(next.startsAt, Date.now())}`
-          : 'On when somebody is running it'}
+          : 'Live on announced nights'}
       </span>
       <a className="tunebar__go" href={TUNE_IN}>
         Tune in <Arrow />

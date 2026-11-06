@@ -183,16 +183,15 @@
   height: 88px;
   border-radius: 50%;
   object-fit: cover;
-  /* Printed like the sleeves on the landing page's running order: grey and
-     hard, so a full-colour scan does not out-shout the type around it. */
-  filter: grayscale(1) contrast(1.25);
+  /* In its own colours. The landing page prints its sleeves grey because a
+     row of them would out-shout the type; here there is one, and it is the
+     record that is playing, so it is the one bit of colour the deck has. */
   box-shadow: 0 0 0 var(--rule) var(--ink);
 }
 
 /* No sleeve: a plain paper label, the cream centre of a white-label pressing. */
 .deck__label--blank {
   background: var(--bone);
-  filter: none;
 }
 
 /* The post through the middle. Above the label and outside the record, because

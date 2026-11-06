@@ -442,6 +442,8 @@ export function refusalAbout(
  * over HTTP without a key, which is what lets the landing page draw it.
  */
 export interface ScheduledSession {
+  /** Which announcement this is, so the console can edit one night of several. */
+  id: number
   startsAt: number
   poster: string | null
   /**
@@ -458,8 +460,17 @@ export interface ScheduledSession {
 
 export interface ScheduleMessage {
   type: 'schedule'
+  /** The next session: the first of `upcoming`, or null when it is empty. */
   schedule: ScheduledSession | null
+  /** Every announced session still worth showing, soonest first. */
+  upcoming: ScheduledSession[]
 }
+
+/**
+ * The schedule as `GET /api/schedule` and every admin write answer it, which is
+ * the socket frame without its `type`.
+ */
+export type ScheduleSnapshot = Omit<ScheduleMessage, 'type'>
 
 export type ServerMessage =
   | YouMessage

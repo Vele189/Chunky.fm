@@ -93,6 +93,17 @@ describe('opening a database written by an older station', () => {
     db.close()
   })
 
+  it('lets the schedule hold more than the one row it used to be limited to', () => {
+    const db = openDb(aged())
+    // The old row comes across under the id it had.
+    expect(db.prepare('SELECT id, starts_at FROM schedule').all()).toEqual([
+      { id: 1, starts_at: 3000 },
+    ])
+    db.prepare('INSERT INTO schedule (starts_at, poster, set_at) VALUES (?, ?, ?)').run(4000, null, 1)
+    expect(db.prepare('SELECT COUNT(*) AS n FROM schedule').get()).toEqual({ n: 2 })
+    db.close()
+  })
+
   it('is safe to open twice, because a deploy is not the first one', () => {
     const file = aged()
     openDb(file).close()

@@ -25,35 +25,55 @@ import { stationUrl } from '../lib/routes.js'
  * just the page it was before.
  */
 
+/** What this page knows about the schedule. Empty until it hears otherwise. */
+export interface Announced {
+  /** The soonest session still worth showing, or null. */
+  next: ScheduledSession | null
+  /** Every announced session still worth showing, soonest first. */
+  upcoming: ScheduledSession[]
+}
+
+const NOTHING: Announced = { next: null, upcoming: [] }
+
 /** The one fetch this page makes. Anything other than an answer is silence. */
-async function fetchSchedule(signal: AbortSignal): Promise<ScheduledSession | null> {
+async function fetchSchedule(signal: AbortSignal): Promise<ScheduledSession[]> {
   try {
     const response = await fetch('/api/schedule', { signal })
-    if (!response.ok) return null
-    const body = (await response.json()) as { schedule?: ScheduledSession | null }
-    return body.schedule ?? null
+    if (!response.ok) return []
+    const body = (await response.json()) as {
+      schedule?: ScheduledSession | null
+      upcoming?: ScheduledSession[]
+    }
+    // A station from before the list sends the next session alone.
+    return body.upcoming ?? (body.schedule ? [body.schedule] : [])
   } catch {
-    return null
+    return []
   }
 }
 
 /**
- * The announcement, if there is a live one, or null.
+ * The announced sessions, and which of them is next.
  *
- * A hook rather than only a section because the poster page says it in three
- * places: the ticker, the section, and the bar at the foot. Three fetches of
- * the same open read would be three chances to disagree, so they share one.
+ * A hook rather than only a section because the poster page says it in four
+ * places: the ticker, the next-session band, the list of upcoming sessions and
+ * the bar at the foot. Four fetches of the same open read would be four
+ * chances to disagree, so they share one.
+ *
+ * Filtered here as well as at the station, by the same six hours, so a page
+ * left open past a night stops promising it without asking again.
  */
-export function useNextSession(): ScheduledSession | null {
-  const [next, setNext] = useState<ScheduledSession | null>(null)
+export function useSchedule(): Announced {
+  const [upcoming, setUpcoming] = useState<ScheduledSession[]>([])
 
   useEffect(() => {
     const stop = new AbortController()
-    void fetchSchedule(stop.signal).then(setNext)
+    void fetchSchedule(stop.signal).then(setUpcoming)
     return () => stop.abort()
   }, [])
 
-  return isUpcoming(next, Date.now()) ? next : null
+  const now = Date.now()
+  const live = upcoming.filter((session) => isUpcoming(session, now))
+  return live.length > 0 ? { next: live[0] ?? null, upcoming: live } : NOTHING
 }
 
 /**
@@ -92,7 +112,7 @@ export function NextSession({ next }: { next: ScheduledSession | null }) {
             deciding to come back, and the listener page will tell them the same
             thing this section just did. */}
         <p className="upcoming__after">
-          Nothing is playing yet. The address is the same one it always is.
+          Nothing is playing yet. Keep the evening free.
         </p>
         <a className="button button--ink" href={stationUrl()}>
           Take me there
