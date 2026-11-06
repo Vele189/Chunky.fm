@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
 } from 'react'
+import { coverFor } from '../poster/assets.js'
+import { Slot } from '../poster/Slot.js'
 
 /**
  * A card that turns to face the pointer, with its contents at different depths.
@@ -202,8 +204,16 @@ export function TiltPoster({
   if (src === null) {
     // An episode with no poster is not supposed to exist — the upload refuses
     // one without it — but a row predating that rule, or a file lost from the
-    // volume, must not render as a broken image icon in a grid.
-    return <div className="tilt__poster tilt__poster--none" aria-hidden="true" key={id} />
+    // volume, must not render as a broken image icon in a grid. It gets the
+    // poster page's labelled MJ-04 box instead, captioned with the episode.
+    return (
+      <Slot
+        asset={coverFor(alt)}
+        className="tilt__poster tilt__poster--none"
+        label={alt}
+        key={id}
+      />
+    )
   }
   return (
     <img

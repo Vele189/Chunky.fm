@@ -1,12 +1,19 @@
-import ndamulelo from '../assets/ndamulelo.webp'
+import bolt from '../assets/poster/stickers/bolt.webp'
+import cassette from '../assets/poster/stickers/cassette.webp'
+import hand from '../assets/poster/stickers/hand.webp'
+import headphones from '../assets/poster/stickers/headphones.webp'
+import lamp from '../assets/poster/stickers/lamp.webp'
+import mic from '../assets/poster/stickers/mic.webp'
+import record from '../assets/poster/stickers/record.webp'
+import star from '../assets/poster/stickers/star.webp'
 import { PODCAST_PATH } from '../lib/episodes.js'
 import type { ScheduledSession } from '../lib/protocol.js'
 import { stationUrl } from '../lib/routes.js'
 import { nextSessionShort } from '../lib/schedule.js'
-import { ASSETS } from './assets.js'
+import { ASSETS, coverFor } from '../poster/assets.js'
 import { NextSession, promiseOf, useNextSession } from './NextSession.js'
 import { BEEN_ON, WISHES } from './session.js'
-import { Slot } from './Slot.js'
+import { Slot } from '../poster/Slot.js'
 import { type ArchiveCard, useArchive } from './useArchive.js'
 import { useStill } from './useStill.js'
 
@@ -132,9 +139,6 @@ function Ticker({ next }: { next: ScheduledSession | null }) {
         // biome-ignore lint/suspicious/noArrayIndexKey: see above
         <span className="ticker__phrase" key={index}>
           {phrase}
-          <span className="ticker__star" aria-hidden="true">
-            ✶
-          </span>
         </span>
       ))}
     </>
@@ -257,8 +261,51 @@ function Creed() {
           How that is done
         </a>
       </div>
-      <Slot asset={ASSETS.stickers} className="creed__stickers" />
+      <Stickers />
     </section>
+  )
+}
+
+/**
+ * MJ-07, the sticker wall: each one cut out of its backing and slapped on at
+ * its own angle, overlapping, the way stickers end up on a studio door.
+ *
+ * Where each sits is fixed, not random, so the wall is the same on every visit
+ * and in every screenshot. `x`, `y` and `w` are percentages of the square, in
+ * paint order: later ones go on top. Decoration only, so the whole wall is
+ * hidden from screen readers and every `alt` is empty.
+ */
+const STICKERS = [
+  { src: record, x: 0, y: 20, w: 40, turn: 8 },
+  { src: star, x: 64, y: 4, w: 34, turn: 12 },
+  { src: lamp, x: 30, y: 0, w: 38, turn: -6 },
+  { src: bolt, x: 76, y: 38, w: 22, turn: -10 },
+  { src: cassette, x: 28, y: 40, w: 46, turn: -4 },
+  { src: headphones, x: 0, y: 60, w: 34, turn: 6 },
+  { src: mic, x: 68, y: 62, w: 20, turn: -14 },
+  { src: hand, x: 32, y: 76, w: 40, turn: 3 },
+]
+
+function Stickers() {
+  return (
+    <div className="creed__stickers" aria-hidden="true">
+      {STICKERS.map((sticker) => (
+        <img
+          key={sticker.src}
+          className="sticker"
+          src={sticker.src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          style={{
+            left: `${sticker.x}%`,
+            top: `${sticker.y}%`,
+            width: `${sticker.w}%`,
+            transform: `rotate(${sticker.turn}deg)`,
+          }}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -332,14 +379,14 @@ function Kept({ card, eager }: { card: ArchiveCard; eager: boolean }) {
 
       {card.poster ? (
         <img
-          className="kept__cover"
+          className="kept__cover kept__cover--poster"
           src={card.poster}
           alt=""
           loading={eager ? 'eager' : 'lazy'}
           decoding="async"
         />
       ) : (
-        <Slot asset={ASSETS.cover} className="kept__cover" />
+        <Slot asset={coverFor(card.title)} className="kept__cover" />
       )}
     </article>
   )
@@ -365,10 +412,9 @@ function Asked() {
 /**
  * Who is on the decks, in his own words.
  *
- * The one photograph on the page that is of a real person, so it has a real
- * `alt` and is not a slot. It is printed like the rest of the poster (grey,
- * hard contrast, a little grain from the CSS) so it sits with the Midjourney
- * pictures rather than looking like the only photo from a different shoot.
+ * The portrait is MJ-05, the photocopied host picture, in the same slot as the
+ * rest of the poster's pictures. The CSS adds the same grey, hard contrast the
+ * photo it replaced had, so the band prints like the others.
  */
 const DJ = [
   'Hi, I’m Ndamulelo.',
@@ -385,15 +431,7 @@ function Dj() {
     <section className="band band--ink dj" id="dj">
       <h2 className="display dj__title">The DJ</h2>
       <div className="dj__row">
-        <img
-          className="dj__face"
-          src={ndamulelo}
-          alt="Ndamulelo"
-          width={880}
-          height={1100}
-          loading="lazy"
-          decoding="async"
-        />
+        <Slot asset={ASSETS.host} className="dj__face" />
         <div className="dj__words">
           {DJ.map((line, index) => (
             // Position is the identity: the lines of one statement, in order.

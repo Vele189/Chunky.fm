@@ -35,8 +35,8 @@ const styles = getComputedStyle(root)
  * The raw text of a custom property, exactly as `tokens.css` wrote it.
  *
  * Custom properties are not resolved by the cascade — `getPropertyValue`
- * returns the token's source text, so `--panel` comes back as the string
- * `rgb(23 23 23 / 70%)` and not as a colour. That is useful for the sizes,
+ * returns the token's source text, so `--live-wash` comes back as the string
+ * `rgb(251 44 54 / 15%)` and not as a colour. That is useful for the sizes,
  * which are printed as written, and useless for the colours, which is what
  * `resolve` below is for.
  */
@@ -78,9 +78,9 @@ function resolve(value: string): Rgba | null {
 /**
  * What a translucent token becomes on a medium that has no alpha.
  *
- * Email clients composite nothing: a fill is a fill. Every panel in this design
- * is a translucency over the sheet, so the value a designer actually needs in
- * their layout tool is this one — the colour the browser is already showing
+ * Email clients composite nothing: a fill is a fill. The poster is almost all
+ * solid colour now, but the red wash is still a translucency over the sheet,
+ * and for it the value a designer actually needs in their layout tool is this one — the colour the browser is already showing
  * them, spelled as something they can type.
  */
 function flatten(colour: Rgba, over: Rgba): Rgba {
@@ -115,7 +115,9 @@ function contrast(a: Rgba, b: Rgba): number {
   return (Math.max(one, other) + 0.05) / (Math.min(one, other) + 0.05)
 }
 
-const SHEET = resolve(token('--bg')) ?? { r: 10, g: 10, b: 10, a: 1 }
+const SHEET = resolve(token('--ink')) ?? { r: 17, g: 17, b: 16, a: 1 }
+/** The light ground. The poster prints on both, so contrast is measured on both. */
+const PAPER = resolve(token('--newsprint')) ?? { r: 233, g: 229, b: 218, a: 1 }
 
 /* --- the swatches ---------------------------------------------------------
  *
@@ -191,21 +193,34 @@ for (const swatch of document.querySelectorAll<HTMLElement>('[data-token]')) {
  *
  * Measured rather than remembered, for the reason the swatches are: a ratio
  * typed into a table is right on the day it is typed. The thresholds are
- * WCAG 2.1 — 4.5:1 for normal text, 3:1 for large — and the point of printing
- * them is the one row that does not clear the first.
+ * WCAG 2.1 — 4.5:1 for normal text, 3:1 for large. Each colour is measured on
+ * ink and on newsprint, because the poster prints bands of both and most of
+ * these colours belong on only one of them.
  */
 
 const MEASURED: readonly string[] = [
-  '--fg',
-  '--fg-soft',
-  '--fg-dim',
-  '--ok',
-  '--muted',
+  '--newsprint',
+  '--bone',
+  '--smudge-on-ink',
+  '--smudge',
+  '--ink',
+  '--press',
+  '--mark',
   '--live-text',
   '--live',
+  '--ok',
   '--warn',
-  '--faint',
 ]
+
+function cleared(ratio: number): string {
+  return ratio >= 7
+    ? 'anything, down to the smallest label'
+    : ratio >= 4.5
+      ? 'anything, including body copy'
+      : ratio >= 3
+        ? 'large text and secondary labels only'
+        : 'not text'
+}
 
 const body = document.querySelector('#contrast-table tbody')
 
@@ -213,12 +228,21 @@ if (body) {
   const rows = MEASURED.map((name) => {
     const raw = token(name)
     const colour = resolve(raw)
-    return colour === null ? null : { name, raw, colour, ratio: contrast(colour, SHEET) }
+    return colour === null
+      ? null
+      : { name, raw, colour, onInk: contrast(colour, SHEET), onPaper: contrast(colour, PAPER) }
   })
     .filter((row): row is NonNullable<typeof row> => row !== null)
-    .sort((a, b) => b.ratio - a.ratio)
+    .sort((a, b) => b.onInk - a.onInk)
 
-  for (const { name, raw, colour, ratio } of rows) {
+  const ratioCell = (ratio: number): HTMLTableCellElement => {
+    const cell = document.createElement('td')
+    cell.className = `num ratio--${ratio >= 4.5 ? 'pass' : ratio >= 3 ? 'large' : 'fail'}`
+    cell.textContent = `${ratio.toFixed(1)} : 1`
+    return cell
+  }
+
+  for (const { name, raw, colour, onInk, onPaper } of rows) {
     const tr = document.createElement('tr')
 
     const swatch = document.createElement('td')
@@ -232,22 +256,16 @@ if (body) {
     which.className = 'dim'
     which.textContent = name
 
-    const figure = document.createElement('td')
-    figure.className = `num ratio--${ratio >= 4.5 ? 'pass' : 'large'}`
-    figure.textContent = `${ratio.toFixed(1)} : 1`
-
+    // The verdict names the ground the colour does better on, since that is
+    // the band it belongs in.
     const verdict = document.createElement('td')
     verdict.className = 'dim'
-    verdict.textContent =
-      ratio >= 7
-        ? 'Anything, down to the smallest label'
-        : ratio >= 4.5
-          ? 'Anything, including body copy'
-          : ratio >= 3
-            ? 'Large text and secondary labels only'
-            : 'Not text at any size'
+    const best = Math.max(onInk, onPaper)
+    const ground = onInk >= onPaper ? 'on ink' : 'on newsprint'
+    const said = best < 3 ? 'not text on either ground' : `${cleared(best)}, ${ground}`
+    verdict.textContent = said.charAt(0).toUpperCase() + said.slice(1)
 
-    tr.append(swatch, which, figure, verdict)
+    tr.append(swatch, which, ratioCell(onInk), ratioCell(onPaper), verdict)
     body.append(tr)
   }
 }
@@ -264,19 +282,22 @@ for (const cell of document.querySelectorAll<HTMLElement>('[data-token-value]'))
  *
  * The colour inside one is pulled out with a match rather than by parsing the
  * shadow, because the only part of it that changes between the two is the
- * alpha, and the rest — `inset 0 0 0 1px` — is the same sentence twice.
+ * colour, and the rest — `inset 0 0 0 1px` — is the same sentence twice. Hex or
+ * `rgb()`, since the rings have been written both ways.
  */
+const RING_COLOUR = /#[0-9a-f]{3,8}\b|rgba?\([^)]*\)/i
+
 for (const el of document.querySelectorAll<HTMLElement>('[data-ring]')) {
   const name = el.dataset.ring
   if (name === undefined) continue
-  const found = token(name).match(/rgba?\([^)]*\)/)
+  const found = token(name).match(RING_COLOUR)
   if (found) el.textContent = found[0]
 }
 
 for (const el of document.querySelectorAll<HTMLElement>('[data-flat-ring]')) {
   const name = el.dataset.flatRing
   if (name === undefined) continue
-  const found = token(name).match(/rgba?\([^)]*\)/)
+  const found = token(name).match(RING_COLOUR)
   const colour = found ? resolve(found[0]) : null
   if (colour) el.textContent = hex(flatten(colour, SHEET))
 }

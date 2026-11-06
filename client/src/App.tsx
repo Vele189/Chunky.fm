@@ -12,6 +12,8 @@ import {
 import { AdminPanel } from './AdminPanel.js'
 import { CallIn } from './CallIn.js'
 import { Lyrics } from './Lyrics.js'
+import { ASSETS } from './poster/assets.js'
+import { Slot } from './poster/Slot.js'
 import { Sidebar } from './Sidebar.js'
 import { Topbar } from './Topbar.js'
 import { deafened, handRefusal } from './lib/hand.js'
@@ -832,6 +834,13 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
           // the note further down.
           <div className="station__columns">
             <section className="column column--stage">
+              {/* The deck while there is something on it or coming, and the same
+                  room emptied (MJ-08) while the station is off air. */}
+              <Slot
+                asset={track || tuning ? ASSETS.deck : ASSETS.offAir}
+                className="stage-photo slot--dark"
+                eager
+              />
               <Deck artwork={artwork} spinning={onAir} />
 
               {tuning ? (

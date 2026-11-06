@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type Episode, episodeThumbnailUrl, formatDate, subtitleFor } from '../lib/episodes.js'
+import { coverFor } from '../poster/assets.js'
+import { Slot } from '../poster/Slot.js'
 import { BackChevron } from './Chevron.js'
 import { Controls } from './Controls.js'
 import { Transcript } from './Transcript.js'
@@ -281,7 +283,13 @@ export function Player({ episode, onBack }: PlayerProps) {
             is otherwise silent about: the wait before a slow file starts. It is
             deliberately not the poster the collection draws; that one is
             portrait, and portrait in this frame is two black bands. */}
-        <div className="player__stage" ref={stage}>
+        <div className="player__stage" ref={stage} data-still={poster ? 'own' : 'none'}>
+          {/* No still of its own yet: the labelled MJ-04 box sits behind the
+              video, so the frame is a picture-shaped space rather than a black
+              rectangle until the first frame is decoded and paints over it. */}
+          {!poster && (
+            <Slot asset={coverFor(episode.title)} className="player__still slot--dark" label={episode.title} />
+          )}
           <video
             ref={video}
             className="player__video"

@@ -1,0 +1,77 @@
+/* chunky.fm: the poster's shared pieces.
+ *
+ * The picture placeholder every page draws while its Midjourney image is still
+ * being made, and the few type treatments that make a page read as printed.
+ * Every page that has a Slot imports this, so a slot on the station and a slot
+ * on the landing page are the same box. Values only from tokens.css.
+ */
+
+.slot {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  object-fit: cover;
+}
+
+.slot-picture {
+  display: contents;
+}
+
+.slot--empty {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(to top right, transparent calc(50% - 0.5px), var(--rule-light) 50%, transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom right, transparent calc(50% - 0.5px), var(--rule-light) 50%, transparent calc(50% + 0.5px)),
+    var(--bone);
+}
+
+.slot__tab {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--newsprint);
+  color: var(--ink);
+  font: 700 11px/1.3 var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.slot__hint {
+  font-weight: 400;
+  color: var(--smudge);
+}
+
+/* A placeholder printed on ink rather than bone, for a slot that sits inside a
+   dark band and would otherwise be the brightest thing on the page. */
+.slot--dark.slot--empty {
+  background:
+    linear-gradient(to top right, transparent calc(50% - 0.5px), var(--rule-dark) 50%, transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom right, transparent calc(50% - 0.5px), var(--rule-dark) 50%, transparent calc(50% + 0.5px)),
+    var(--charcoal);
+}
+
+.slot--dark .slot__tab {
+  background: var(--ink);
+  color: var(--newsprint);
+}
+
+/* Headline set: the display face, heavy and in capitals. Never a sentence. */
+.poster-display {
+  font-family: var(--font-display);
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 0.86;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+
+/* Label set: monospace capitals, tracked out. Buttons, times, names. */
+.poster-label {
+  font: 700 12px/1.3 var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

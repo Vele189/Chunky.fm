@@ -1,4 +1,4 @@
-import type { Asset } from './assets.js'
+import { type Asset, PHONE } from './assets.js'
 
 /**
  * A picture, or the box it will go in.
@@ -32,7 +32,7 @@ export function Slot({
   const classes = className ? `slot ${className}` : 'slot'
 
   if (asset.src) {
-    return (
+    const img = (
       <img
         className={`${classes} slot--filled`}
         src={asset.src}
@@ -40,6 +40,16 @@ export function Slot({
         loading={eager ? 'eager' : 'lazy'}
         decoding="async"
       />
+    )
+    // A phone crop, when there is one, goes through `<picture>` so a phone
+    // downloads only its own file. The wrapper is `display: contents`, so the
+    // slot's classes on the img still place it as if it stood alone.
+    if (!asset.phone) return img
+    return (
+      <picture className="slot-picture">
+        <source media={PHONE} srcSet={asset.phone} />
+        {img}
+      </picture>
     )
   }
 

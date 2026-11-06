@@ -26,7 +26,7 @@ Writes public/og.png (1200x630) and public/apple-touch-icon.png (180x180).
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 # The station's own values, from src/tokens.css. Nothing here invents a colour.
 BG = "#0a0a0a"
@@ -80,54 +80,72 @@ def wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, wid
     return lines
 
 
+# The poster revamp's values, from the "poster" block of src/tokens.css.
+INK = "#111110"
+PRESS = "#3255a4"
+
+FONTS = ROOT / "src" / "assets" / "fonts"
+# MJ-06a, the riso record with an empty left half for the type. Kept as a
+# source file rather than in public/, because only this card is published.
+BACKDROP = ROOT / "assets-src" / "poster" / "mj-06a-og.jpg"
+
+
+def poster_face(file: str, size: int, style: str | None = None) -> ImageFont.FreeTypeFont:
+    """The page's own faces. FreeType reads the vendored woff2 directly."""
+    font = ImageFont.truetype(str(FONTS / file), size)
+    if style:
+        font.set_variation_by_name(style)
+    return font
+
+
 def card() -> Image.Image:
-    image = Image.new("RGB", (WIDTH, HEIGHT), BG)
+    """The link preview, printed like the poster: type on the riso record."""
+    image = Image.open(BACKDROP).convert("RGB").resize((WIDTH, HEIGHT), Image.LANCZOS)
     draw = ImageDraw.Draw(image)
 
-    margin = 96
+    margin = 72
 
-    # The lamp, and the one thing on here that is the station's own red. It is
-    # what the badge on the deck looks like, so somebody who has been on the
-    # station once recognises the card before they have read it.
-    lamp_y = margin + 6
+    # The on-air lamp: still the only red, as on the page.
+    lamp_y = margin + 4
     draw.ellipse([margin, lamp_y, margin + 18, lamp_y + 18], fill=LIVE)
-    lamp = face("Bold", 26)
-    draw.text((margin + 34, lamp_y - 4), "LIVE RADIO", font=lamp, fill=DIM)
+    label = poster_face("Cousine-700.woff2", 24)
+    draw.text((margin + 32, lamp_y - 4), "LIVE RADIO", font=label, fill=INK)
 
-    # The wordmark. `.fm` in the dimmer ink, exactly as the page draws it.
-    mark = face("Black", 132)
-    tld = face("Black", 132)
-    y = 196
-    draw.text((margin, y), "chunky", font=mark, fill=FG)
-    draw.text((margin + draw.textlength("chunky", font=mark), y), ".fm", font=tld, fill="#8a8a8a")
+    # The wordmark, in the display face at its heaviest.
+    mark = poster_face("BigShouldersDisplay.woff2", 168, "Black")
+    draw.text((margin, 128), "CHUNKY.FM", font=mark, fill=INK)
 
-    # The sentence. The same one that is the page's description and the first
-    # line of its prose: three places, one claim.
-    body = face("Regular", 40)
-    lines = wrap(
-        draw,
-        "Everyone hears the same second of the same song.",
-        body,
-        WIDTH - margin * 2,
-    )
-    y = 386
-    for line in lines:
-        draw.text((margin, y), line, font=body, fill=DIM)
-        y += 54
+    # The sentence: the page's description and its first line of prose.
+    body = poster_face("SpaceGrotesk.woff2", 38, "Medium")
+    y = 336
+    for line in wrap(draw, "Everyone hears the same second of the same song.", body, 500):
+        draw.text((margin, y), line, font=body, fill=INK)
+        y += 50
 
-    # And the part that says it is a person rather than a service.
-    quiet = face("Regular", 30)
-    draw.text(
-        (margin, HEIGHT - margin - 24),
-        "One room  ·  one person on the decks  ·  no algorithm",
-        font=quiet,
-        fill="#7a7a7a",
-    )
-
-    # A hairline off the bottom edge, so the card has a floor on a white
-    # background as well as on a dark one.
-    draw.rectangle([0, HEIGHT - 4, WIDTH, HEIGHT], fill=RAISED)
+    # Nothing along the bottom: the record runs off that edge, and type over
+    # it would be blue on blue.
     return image
+
+
+def printed(image: Image.Image) -> Image.Image:
+    """The card in a palette: 1.4 MB as full colour, about a third as this.
+
+    Two inks on paper lose nothing to a palette. A palette chosen from the whole
+    card would drop the lamp, which is a few hundred pixels of the only red, so
+    the backdrop's own colours are taken first and then ramps from the paper
+    to each colour the type is drawn in, for its anti-aliased edges.
+    """
+    base = image.quantize(colors=200, method=Image.Quantize.MEDIANCUT)
+    colours = base.getpalette()[: 200 * 3]
+    paper = image.getpixel((WIDTH // 4, HEIGHT - 40))
+    for ink in (INK, LIVE):
+        target = ImageColor.getrgb(ink)
+        for step in range(1, 19):
+            t = step / 18
+            colours += [round(p + (c - p) * t) for p, c in zip(paper, target)]
+    palette = Image.new("P", (1, 1))
+    palette.putpalette(colours + [0] * (768 - len(colours)))
+    return image.quantize(palette=palette, dither=Image.Dither.NONE)
 
 
 def touch_icon() -> Image.Image:
@@ -146,7 +164,7 @@ def touch_icon() -> Image.Image:
 def main() -> None:
     PUBLIC.mkdir(exist_ok=True)
     out = PUBLIC / "og.png"
-    card().save(out, "PNG", optimize=True)
+    printed(card()).save(out, "PNG", optimize=True)
     print(f"  {out.relative_to(ROOT)}  {out.stat().st_size // 1024} kB")
 
     icon = PUBLIC / "apple-touch-icon.png"

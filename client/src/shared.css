@@ -1,6 +1,10 @@
 @import './tokens.css';
 
-/* chunky.fm: the objects both pages draw.
+/* chunky.fm: the objects both pages draw, printed as poster.
+ *
+ * Square corners and solid ink, like everything else since the revamp. The
+ * only round things left are the ones that are round in life: the record, its
+ * label, the spindle, and a dot.
  *
  * The turntable, the LIVE badge and the level meter are the station's face: the
  * listener page puts them at the top of the deck column, and the landing page
@@ -24,11 +28,11 @@
   max-width: 100%;
   aspect-ratio: 1;
   padding: 20px;
-  border-radius: 28px;
-  background: linear-gradient(135deg, #404040 0%, #262626 50%, #171717 100%);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 10%),
-    0 25px 50px rgb(0 0 0 / 25%);
+  /* A printed box rather than a lit plinth: one flat charcoal plate with a
+     rule round it, no gradient and no drop shadow. */
+  border-radius: var(--poster-radius);
+  background: var(--charcoal);
+  box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
 }
 
 .deck__well {
@@ -36,9 +40,9 @@
   display: grid;
   flex: 1;
   place-items: center;
-  border-radius: 16px;
-  background: var(--card);
-  box-shadow: var(--ring);
+  border-radius: var(--poster-radius);
+  background: var(--ink);
+  box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
 }
 
 /* The platter the record sits on, and the frame of reference the light lives
@@ -52,12 +56,10 @@
   max-width: 100%;
   max-height: 100%;
   aspect-ratio: 1;
-  border-radius: var(--pill);
-  background: radial-gradient(circle closest-side at 50% 50%, #333333 0%, #1e1e1e 72%, #101010 100%);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 8%),
-    inset 0 2px 6px rgb(0 0 0 / 50%),
-    0 14px 34px rgb(0 0 0 / 50%);
+  /* Round because a platter is. --pill is square now, so this says 50%. */
+  border-radius: 50%;
+  background: var(--charcoal);
+  box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
 }
 
 /*
@@ -89,7 +91,7 @@
    */
   width: 92%;
   height: 92%;
-  border-radius: var(--pill);
+  border-radius: 50%;
   /*
    * `closest-side` on every layer, and it is load-bearing rather than tidiness:
    * a radial gradient defaults to `farthest-corner`, so on a square element
@@ -110,18 +112,17 @@
    * grooves at all.
    */
   background:
-    radial-gradient(circle closest-side at 50% 50%, transparent 0 93%, #0e0e0e 93%),
-    radial-gradient(circle closest-side at 50% 50%, #111111 0 39%, transparent 39%),
+    radial-gradient(circle closest-side at 50% 50%, transparent 0 93%, var(--ink) 93%),
+    radial-gradient(circle closest-side at 50% 50%, var(--ink) 0 39%, transparent 39%),
     repeating-radial-gradient(
       circle closest-side at 50% 50%,
-      rgb(255 255 255 / 6%) 0 1px,
-      rgb(255 255 255 / 0%) 1px 3px
+      rgb(233 229 218 / 9%) 0 1px,
+      rgb(233 229 218 / 0%) 1px 3px
     ),
-    radial-gradient(circle closest-side at 50% 50%, #161616 0%, #0b0b0b 66%, #050505 100%);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 9%),
-    inset 0 0 22px rgb(0 0 0 / 70%),
-    0 4px 14px rgb(0 0 0 / 55%);
+    var(--ink);
+  /* Printed flat: a rule at the rim instead of the lit edge and the shadow it
+     used to cast. */
+  box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
   /* Where the design left it. The animation below takes over from here. */
   transform: rotate(95.82deg);
 }
@@ -153,22 +154,24 @@
   width: 92%;
   height: 92%;
   margin: auto;
-  border-radius: var(--pill);
+  border-radius: 50%;
   pointer-events: none;
+  /* Quieter than it was: on a printed page the lamp is a faint pass of paper
+     colour, not a gloss. */
   background:
     linear-gradient(
       118deg,
       transparent 22%,
-      rgb(255 255 255 / 9%) 38%,
-      rgb(255 255 255 / 16%) 46%,
-      rgb(255 255 255 / 3%) 55%,
+      rgb(233 229 218 / 5%) 38%,
+      rgb(233 229 218 / 9%) 46%,
+      rgb(233 229 218 / 2%) 55%,
       transparent 70%
     ),
     linear-gradient(
       298deg,
       transparent 28%,
-      rgb(255 255 255 / 7%) 45%,
-      rgb(255 255 255 / 1%) 53%,
+      rgb(233 229 218 / 4%) 45%,
+      rgb(233 229 218 / 1%) 53%,
       transparent 66%
     );
 }
@@ -178,18 +181,18 @@
   z-index: 1;
   width: 88px;
   height: 88px;
-  border-radius: var(--pill);
+  border-radius: 50%;
   object-fit: cover;
-  /* A paper label sitting on the vinyl: a dark seam where it meets the record,
-     then the faintest lift off it. */
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 65%),
-    0 0 0 2px rgb(255 255 255 / 7%),
-    0 2px 6px rgb(0 0 0 / 45%);
+  /* Printed like the sleeves on the landing page's running order: grey and
+     hard, so a full-colour scan does not out-shout the type around it. */
+  filter: grayscale(1) contrast(1.25);
+  box-shadow: 0 0 0 var(--rule) var(--ink);
 }
 
+/* No sleeve: a plain paper label, the cream centre of a white-label pressing. */
 .deck__label--blank {
-  background: linear-gradient(135deg, #e5e5e5 0%, #a1a1a1 100%);
+  background: var(--bone);
+  filter: none;
 }
 
 /* The post through the middle. Above the label and outside the record, because
@@ -200,11 +203,9 @@
   z-index: 2;
   width: 9px;
   height: 9px;
-  border-radius: var(--pill);
-  background: linear-gradient(150deg, #6b6b6b 0%, #2a2a2a 60%, #171717 100%);
-  box-shadow:
-    0 0 0 1.5px rgb(0 0 0 / 70%),
-    0 1px 2px rgb(0 0 0 / 60%);
+  border-radius: 50%;
+  background: var(--smudge);
+  box-shadow: 0 0 0 1.5px var(--ink);
   pointer-events: none;
 }
 
@@ -214,10 +215,9 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  /* Dimmer than --muted, which read as a bright plastic stick laid across the
-     record. An arm is a dark metal tube with a lit edge; the highlight below
-     does the lifting, not the base colour. */
-  color: #6f6f6f;
+  /* Smudge rather than newsprint: a bright stick across the record would be the
+     loudest thing on the deck. The highlight in the SVG does the lifting. */
+  color: var(--smudge);
   pointer-events: none;
 }
 
@@ -247,28 +247,30 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--pill);
-  background: var(--live-wash);
-  box-shadow: inset 0 0 0 1px rgb(251 44 54 / 30%);
-  color: var(--live-text);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16.5px;
+  padding: 4px 8px;
+  /* A printed tab: solid red, square, ink-dark type in monospace capitals. Red
+     is still the only thing on the page that means on the air, so it is the one
+     place it is printed solid. */
+  border-radius: var(--poster-radius);
+  background: var(--live);
+  color: var(--ink);
+  font: 700 11px/16.5px var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .onair__dot {
   width: 8px;
   height: 8px;
-  border-radius: var(--pill);
-  background: var(--live);
+  border-radius: 50%;
+  background: var(--ink);
 }
 
 /* Off the air the badge keeps its shape and loses its colour: the space it
    takes up should not move when the station stops. */
 .onair__badge--off {
-  background: var(--raised);
-  box-shadow: none;
+  background: transparent;
+  box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
   color: var(--muted);
 }
 
@@ -281,8 +283,9 @@
   align-items: center;
   gap: 4px;
   color: var(--faint);
-  font-size: 11px;
-  line-height: 16.5px;
+  font: 700 11px/16.5px var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .onair__where img {
@@ -330,7 +333,7 @@
 .levels__bar {
   flex: none;
   width: 3px;
-  border-radius: var(--pill);
+  border-radius: var(--poster-radius);
   background: var(--fg);
   transform-origin: center;
   /* Flat when nothing is playing: a meter that kept dancing over silence would
@@ -373,17 +376,16 @@
 
 /* --- the wordmark --------------------------------------------------------
  *
- * The station's name, in the two weights the design gives it: the word in
- * white and the suffix in grey. It is a heading on the station and on the
- * doorway, and plain text on the landing page's masthead, so it is styled by
- * class rather than by element. */
+ * The station's name, set the way the landing page's masthead sets it: the
+ * display face, heavy, in capitals, with the suffix in smudge. It is a heading
+ * on the station and on the doorway, so it is styled by class rather than by
+ * element. */
 
 .wordmark {
   flex: none;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.45px;
-  line-height: 27px;
+  font: 900 26px/27px var(--font-display);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
   color: var(--fg);
 }
 
@@ -398,8 +400,12 @@
 
 /* --- buttons ---------------------------------------------------------------
  *
- * One white pill for the thing this control group is for, and quiet ones for
- * everything beside it. Same shape as the listener page's send buttons.
+ * The poster's buttons: square, monospace capitals, tracked out. A plain
+ * `.button` is printed in newsprint on the ink page, for the thing this group
+ * of controls is for; `--quiet` is the outline beside it; `--press` is riso
+ * blue and is only for a control that starts sound. The landing page has its
+ * own copy of these in landing.css (it does not import this file), and the two
+ * are meant to look the same.
  */
 
 .button {
@@ -408,14 +414,19 @@
   justify-content: center;
   gap: 8px;
   height: var(--control);
-  padding: 0 16px;
+  padding: 0 14px;
   border: 0;
-  border-radius: var(--pill);
-  background: var(--fg);
-  color: #171717;
-  font: 600 13px/18px var(--font);
+  border-radius: var(--poster-radius);
+  background: var(--newsprint);
+  color: var(--ink);
+  font: 700 12px/1 var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 
 .button img {
@@ -430,21 +441,34 @@ a.button {
 }
 
 .button:hover:not(:disabled) {
-  background: var(--fg-dim);
+  background: var(--bone);
 }
 
 .button--quiet {
-  background: var(--raised);
-  color: var(--fg-dim);
+  background: transparent;
+  color: var(--newsprint);
+  box-shadow: inset 0 0 0 var(--rule) var(--rule-light);
 }
 
 .button--quiet:hover:not(:disabled) {
-  background: var(--raised-soft);
+  background: var(--newsprint);
+  color: var(--ink);
+}
+
+/* Riso blue: the one colour that means "this makes sound happen". */
+.button--press {
+  background: var(--press);
+  color: var(--newsprint);
+}
+
+.button--press:hover:not(:disabled) {
+  background: var(--press-deep);
 }
 
 .button:disabled {
-  background: var(--raised);
+  background: transparent;
   color: var(--faint);
+  box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
   cursor: not-allowed;
 }
 
@@ -457,7 +481,7 @@ a.button {
 .button--danger {
   background: var(--live-wash);
   color: var(--live-text);
-  box-shadow: var(--ring-strong);
+  box-shadow: inset 0 0 0 var(--rule) var(--live);
 }
 
 .button--danger:hover:not(:disabled) {
