@@ -47,21 +47,62 @@ h2 {
   outline-offset: 3px;
 }
 
-/* The deck's picture (MJ-02), at the top of the record's column. A labelled
-   placeholder until the photo exists; see poster/assets.ts. 5:4 is the
-   prompt's own ratio, and 376px the Figma box. Left out on a phone, where the
-   record is the first thing the screen is for and a picture above it would
-   push it down. */
-.stage-photo {
+/* The deck's picture (MJ-02), at the top of the record's column, with the
+   record pasted on it. 5:4 is the prompt's own ratio, and 380px the Figma box.
+ *
+ * The record sits over the photo's lower corner like a cut-out stuck to a
+ * poster, scaled rather than resized: the deck is drawn in fixed pixels (a
+ * platter, a label and a tonearm that have to stay in proportion), so a
+ * transform keeps every part of it where it belongs at the smaller size. The
+ * room under the photo is the part of the record that hangs below it.
+ *
+ * On a phone the photo goes and the record is the first thing on the screen
+ * again, at its own size, because a picture above it there would push it and
+ * the title off the first screen. */
+.stage-art {
+  position: relative;
   width: 380px;
   max-width: 100%;
+  padding-bottom: 96px;
+}
+
+.stage-photo {
+  width: 100%;
   aspect-ratio: 5 / 4;
   box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
 }
 
+.stage-art .deck {
+  position: absolute;
+  right: -20px;
+  bottom: 0;
+  transform: scale(0.56) rotate(-3deg);
+  transform-origin: bottom right;
+  /* Printed on the photo, so it needs an edge the photo does not give it. */
+  box-shadow:
+    inset 0 0 0 var(--rule) var(--rule-dark),
+    0 0 0 6px var(--ink);
+}
+
+@media (max-width: 1000px) {
+  .stage-art {
+    margin-inline: auto;
+  }
+}
+
 @media (max-width: 720px) {
+  .stage-art {
+    padding-bottom: 0;
+  }
+
   .stage-photo {
     display: none;
+  }
+
+  .stage-art .deck {
+    position: static;
+    transform: none;
+    box-shadow: inset 0 0 0 var(--rule) var(--rule-dark);
   }
 }
 
@@ -476,6 +517,104 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+/* --- the strip at the foot of the window -----------------------------------
+ *
+ * The same bar, in the same place, as the landing page's: newsprint with an ink
+ * rule along its top, press blue on the thing that starts sound. It holds the
+ * mute, so the mute is reachable from every listener view rather than only from
+ * the record's, and it is the one place on a phone a thumb never has to stretch
+ * for. The shell keeps a bar's height clear under itself so nothing scrolls
+ * behind it for good. */
+.station:has(.transport) {
+  padding-bottom: calc(52px + 12px + env(safe-area-inset-bottom, 0px));
+}
+
+.transport {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  height: calc(52px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--newsprint);
+  color: var(--ink);
+  border-top: var(--rule) solid var(--ink);
+  font: 700 12px/1 var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The mute as the bar's first cell: square, the bar's full height, ruled off
+   from what follows it. What it says under the deck is said by the bar here,
+   so the hint stays out of it. */
+.transport .mute {
+  gap: 0;
+}
+
+.transport .mute__button {
+  width: 52px;
+  height: 52px;
+}
+
+.transport .mute__hint {
+  display: none;
+}
+
+.transport__channel {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-left: var(--rule) solid var(--ink);
+  border-right: var(--rule) solid var(--ink);
+  white-space: nowrap;
+}
+
+.transport__now {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 16px;
+}
+
+.transport__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--live);
+}
+
+.transport__what {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.transport__count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 16px;
+  border-left: var(--rule) solid var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .transport__channel,
+  .transport__count-word {
+    display: none;
+  }
+
+  .transport__count {
+    padding: 0 12px;
+  }
+}
+
 /* --- the mute button ------------------------------------------------------ */
 
 .mute {
@@ -859,6 +998,50 @@ h2 {
 .lyrics__line--bright {
   opacity: 1;
   transform: scale(1.02);
+}
+
+/* The words printed on a sheet of newsprint, beside the record and on their
+ * own view: the one light band on the listener page, and the reason it reads
+ * as a poster rather than a dark app with poster type in it.
+ *
+ * Ink on paper, so the quiet lines are ink at low opacity rather than a grey of
+ * their own, and the bright line is simply ink. The mask that fades the top
+ * and bottom works on alpha, so it fades to the paper the same way it faded to
+ * the dark. */
+.column--aside,
+.view--lyrics {
+  padding: 32px;
+  background: var(--newsprint);
+  color: var(--ink);
+}
+
+.column--aside .lyrics__line,
+.view--lyrics .lyrics__line {
+  color: var(--ink);
+  opacity: 0.3;
+}
+
+.column--aside .lyrics__line--bright,
+.view--lyrics .lyrics__line--bright {
+  opacity: 1;
+}
+
+.column--aside .lyrics__untimed,
+.view--lyrics .lyrics__untimed {
+  background: linear-gradient(to bottom, var(--newsprint) 70%, transparent);
+  color: var(--smudge);
+}
+
+.column--aside .lyrics__none,
+.view--lyrics .lyrics__none {
+  color: var(--smudge);
+}
+
+@media (max-width: 720px) {
+  .column--aside,
+  .view--lyrics {
+    padding: 20px 16px;
+  }
 }
 
 /* A timestamped silence (an intro, a solo) shown as a quiet beat mark. */

@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import usersIcon from './assets/icons/users.svg'
 import { AdminPanel } from './AdminPanel.js'
 import { CallIn } from './CallIn.js'
 import { Lyrics } from './Lyrics.js'
@@ -835,13 +836,18 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
           <div className="station__columns">
             <section className="column column--stage">
               {/* The deck while there is something on it or coming, and the same
-                  room emptied (MJ-08) while the station is off air. */}
-              <Slot
-                asset={track || tuning ? ASSETS.deck : ASSETS.offAir}
-                className="stage-photo slot--dark"
-                eager
-              />
-              <Deck artwork={artwork} spinning={onAir} />
+                  room emptied (MJ-08) while the station is off air. The record
+                  is pasted onto the photo rather than stacked under it: stacked,
+                  the two ran to seven hundred pixels and pushed the title off
+                  the first screen, and the title is what this view is for. */}
+              <div className="stage-art">
+                <Slot
+                  asset={track || tuning ? ASSETS.deck : ASSETS.offAir}
+                  className="stage-photo slot--dark"
+                  eager
+                />
+                <Deck artwork={artwork} spinning={onAir} />
+              </div>
 
               {tuning ? (
                 <div className="off-air">
@@ -874,8 +880,6 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                   </div>
 
                   <Waveform live={onAir} />
-
-                  <Mute muted={muted} onToggle={toggleMute} enabled={Boolean(track)} />
                 </div>
               ) : talk ? (
                 // A conversation, with nothing on the decks because there is not
@@ -913,12 +917,6 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                   </div>
 
                   <Waveform live={voices} />
-
-                  {/* Enabled on being tuned in rather than on there being a
-                      track, which is the whole difference: the thing to mute
-                      here arrives over the talk channel, and the button that
-                      asks about a record would be greyed out all evening. */}
-                  <Mute muted={muted} onToggle={toggleMute} enabled={joined && !stranded} />
                 </div>
               ) : (
                 // The station is there and answering; it just isn't playing
@@ -995,6 +993,30 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
             )}
             {route === 'lyrics' && <Lyrics state={state} serverNow={clock.serverNow} />}
           </div>
+        )}
+
+        {/* At the foot of every listener view, not only the record's. The mute
+            used to live under the deck, which meant it was on one screen of
+            six: somebody reading the chat with the room too loud had to go
+            back to the record to turn it down. */}
+        {!admin && joined && !stranded && !closed && (
+          <Transport
+            live={track ? onAir : talk ? broadcasting : false}
+            now={
+              track
+                ? `${track.title} — ${track.artist ?? 'Unknown artist'}`
+                : talk
+                  ? 'The conversation'
+                  : 'Nothing on the decks right now'
+            }
+            listeners={listeners === null ? null : listeners.length + padding}
+            muted={muted}
+            onToggle={toggleMute}
+            // On a record or a conversation, the two things there is sound in.
+            // A talk night enables it on being tuned in rather than on there
+            // being a track: the thing to mute arrives over the talk channel.
+            canMute={Boolean(track) || Boolean(talk)}
+          />
         )}
       </div>
 
@@ -1098,6 +1120,52 @@ function StaleNotice({ state }: { state: Standing }) {
     <p className="stale" data-testid="stale-notice" data-reach={state} role="status">
       {notice}
     </p>
+  )
+}
+
+/**
+ * The strip pinned to the foot of the window: what is on, who is here, and the
+ * mute.
+ *
+ * The same bar the landing page has in the same place, so a thumb learns one
+ * spot for "the sound". A listener cannot pause or seek a live station, so
+ * there is no pause here and no clock; the one control is the one a listener
+ * actually owns, which is whether it comes out of *their* speakers.
+ *
+ * The red dot is the only red in the bar and only while there is sound going
+ * out, for the reason red is anywhere on this station.
+ */
+function Transport({
+  live,
+  now,
+  listeners,
+  muted,
+  onToggle,
+  canMute,
+}: {
+  live: boolean
+  now: string
+  listeners: number | null
+  muted: boolean
+  onToggle(): void
+  canMute: boolean
+}) {
+  return (
+    <aside className="transport" aria-label="Now playing">
+      <Mute muted={muted} onToggle={onToggle} enabled={canMute} />
+      <span className="transport__channel">chunky.fm live</span>
+      <p className="transport__now">
+        {live && <span className="transport__dot" aria-label="On air" />}
+        <span className="transport__what">{now}</span>
+      </p>
+      {listeners !== null && (
+        <p className="transport__count" data-testid="transport-count">
+          <img src={usersIcon} alt="" width={16} height={16} />
+          {listeners}
+          <span className="transport__count-word"> listening</span>
+        </p>
+      )}
+    </aside>
   )
 }
 
