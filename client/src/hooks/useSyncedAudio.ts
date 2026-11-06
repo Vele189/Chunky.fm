@@ -12,6 +12,7 @@ import {
   type Correction,
   DEFAULT_DRIFT_CHECK_INTERVAL_MS,
   applyCorrection,
+  canCorrect,
   correctionFor,
 } from '../lib/drift.js'
 import { expectedPositionSeconds } from '../lib/position.js'
@@ -146,7 +147,9 @@ export function useSyncedAudio({
     // that is already playing correctly, in the middle of the fade.
     const expected = expectedPositionSeconds(state, now)
     if (changed || Math.abs(frontElement.currentTime - expected) > 1) {
-      seekTo(frontElement, expected)
+      // Resolved when the seek lands, not now: a fresh source can take a
+      // second to report metadata, and the clock keeps moving meanwhile.
+      seekTo(frontElement, () => expectedPositionSeconds(state, serverNowRef.current()))
     }
     frontElement.playbackRate = 1
 
@@ -169,7 +172,9 @@ export function useSyncedAudio({
       // ordinary case, it never is: this deck has been playing this record for
       // four minutes and the transition did not move it. The one caller that
       // needs a seek here is a listener who *arrived* mid-fade.
-      if (Math.abs(back.currentTime - where) > 1) seekTo(back, where)
+      if (Math.abs(back.currentTime - where) > 1) {
+        seekTo(back, () => outgoingPositionSeconds(outgoing, serverNowRef.current()))
+      }
       back.playbackRate = 1
       void back.play().catch(() => undefined)
     } else if (back) {
@@ -241,7 +246,8 @@ export function useSyncedAudio({
       const back = elements[otherDeck(decks.front)]
 
       // Nothing to correct against while paused or off air.
-      if (front && current.pausedAt === null && !front.paused) {
+      // Stalled or mid-seek counts as not playing; see `canCorrect`.
+      if (front && current.pausedAt === null && canCorrect(front)) {
         const expected = expectedPositionSeconds(current, now)
         const correction = correctionFor(front.currentTime, expected)
         applyCorrection(front, correction)
@@ -254,7 +260,7 @@ export function useSyncedAudio({
       // reported because the sync readout is about *the station's clock*, and
       // two numbers for one listener would be one number too many.
       const outgoing = fadingNow(current, now)
-      if (back && outgoing && !back.paused) {
+      if (back && outgoing && canCorrect(back)) {
         applyCorrection(
           back,
           correctionFor(back.currentTime, outgoingPositionSeconds(outgoing, now)),

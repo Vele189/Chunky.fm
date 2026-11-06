@@ -61,4 +61,25 @@ export function applyCorrection(audio: HTMLAudioElement, correction: Correction)
   }
 }
 
+/** HTMLMediaElement.HAVE_FUTURE_DATA, spelled out so this runs outside a browser. */
+const HAVE_FUTURE_DATA = 3
+
+/**
+ * Whether an element is actually playing, and so whether its position means
+ * anything to correct against.
+ *
+ * Not paused is not enough. An element waiting on the network is not paused,
+ * but its `currentTime` stands still while the station clock moves on. The
+ * loop then sees the gap grow past the hard-seek threshold and seeks forward.
+ * That seek throws away the bytes in flight and starts a new range request,
+ * which stalls again, which grows the gap again. On a slow link the result is
+ * a record skipped forward in chunks every two seconds. So a stalled or
+ * seeking element is left alone, and corrected once, after it plays again.
+ */
+export function canCorrect(
+  audio: Pick<HTMLMediaElement, 'paused' | 'seeking' | 'readyState'>,
+): boolean {
+  return !audio.paused && !audio.seeking && audio.readyState >= HAVE_FUTURE_DATA
+}
+
 export const DEFAULT_DRIFT_CHECK_INTERVAL_MS = 2_000

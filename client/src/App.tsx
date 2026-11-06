@@ -499,7 +499,9 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     // whose graph is asleep would look like the button not working.
     stage.current?.resume()
     if (audio.paused && state?.track && state.pausedAt === null) {
-      seekTo(audio, expectedPositionSeconds(state, clock.serverNow()))
+      // A function, so the position is read when the seek lands.
+      const at = clock.serverNow
+      seekTo(audio, () => expectedPositionSeconds(state, at()))
       void audio.play().catch(() => undefined)
     }
   }
@@ -559,7 +561,9 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
       // Through seekTo, not currentTime: the click can land before the element
       // has metadata, and a bare assignment is silently dropped there, which
       // is a listener starting at 0:00 while everyone else is at 2:14.
-      seekTo(audio, expectedPositionSeconds(state, clock.serverNow()))
+      // A function, so the position is read when the seek lands.
+      const at = clock.serverNow
+      seekTo(audio, () => expectedPositionSeconds(state, at()))
       void audio.play().catch(() => undefined)
     }
     setJoined(true)

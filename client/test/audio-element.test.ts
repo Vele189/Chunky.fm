@@ -114,6 +114,18 @@ describe('seekTo', () => {
     expect(audio.currentTime).toBe(30)
   })
 
+  it('reads a function target when the deferred seek lands, not when asked', () => {
+    // The clock moves while metadata loads. A number captured up front would
+    // land the listener behind by however long the load took.
+    let clock = 134
+    seekTo(asAudio(audio), () => clock)
+
+    clock = 136.5
+    audio.readyState = 1
+    audio.emit('loadedmetadata')
+    expect(audio.currentTime).toBe(136.5)
+  })
+
   it('drops a pending seek when the source changes', () => {
     // The regression: a deferred seek for the previous track firing against
     // the new track's metadata would drop the listener at 2:14 of a song that
