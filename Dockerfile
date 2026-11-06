@@ -22,8 +22,10 @@ RUN npm ci
 # test/ and scripts/ as well as src/, so they all have to be here or tsc fails
 # on files it was told to include but cannot find.
 COPY client/tsconfig.json client/vite.config.ts ./
+# Every page vite.config.ts names as an input has to be on this line: Vite
+# fails the whole build on one it cannot find (brand.html did exactly that).
 COPY client/index.html client/landing.html client/cohost.html \
-     client/how-it-works.html client/podcast.html ./
+     client/how-it-works.html client/podcast.html client/brand.html ./
 COPY client/src ./src
 COPY client/test ./test
 COPY client/scripts ./scripts
