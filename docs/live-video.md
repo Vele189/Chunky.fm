@@ -1,69 +1,87 @@
-# Live video: streaming a DJ set to the site
+# Live video: streaming a DJ set from an iPhone
 
 ```
-camera + mixer -> OBS -> MediaMTX on a VPS -> HLS -> chunky.fm
+iPhone + mixer audio -> Larix -> MediaMTX on Railway -> HLS -> chunky.fm
 ```
 
-When OBS starts publishing, the station notices within about ten seconds. The
-landing page's hero becomes the video and the station page shows it above the
-deck. When OBS stops, both go back on their own. There is no button.
+When the phone starts publishing, the station notices within about ten seconds.
+The landing page's hero becomes the video and the station page shows it above
+the deck. When the phone stops, both go back on their own. There is no button.
 
 The station asks by fetching the playlist (`server/src/video.ts`), so the two
-machines share no credentials. The video goes straight from the VPS to viewers
-and never passes through Railway.
+services share no credentials.
 
-## 1. The video server (once)
+## The video service
 
-You need a small Linux VPS with Docker and a few TB of monthly bandwidth
-included. At 3 Mbps, 30 viewers use about 40 GB an hour.
+`chunky-video` is a separate Railway service, so a video problem cannot take the
+station down. It is built from `video/Dockerfile` and redeployed with:
 
-1. Point a DNS name at it, such as `live.your-station.example`.
-2. Open ports 80, 443 and 1935.
-3. Copy the `video/` folder to it, then:
-
-   ```sh
-   cp .env.example .env    # fill in VIDEO_DOMAIN and PUBLISH_PASSWORD
-   docker compose up -d
-   ```
-
-## 2. The station (once)
-
-On Railway, set this variable and redeploy:
-
-```
-VIDEO_HLS_URL=https://live.your-station.example/live/index.m3u8
+```sh
+railway up ./video --path-as-root --service chunky-video
 ```
 
-## 3. OBS (once)
+| | |
+|---|---|
+| Viewers fetch from | `https://chunky-video-production.up.railway.app` (port 8888) |
+| The phone sends to | `centerbeam.proxy.rlwy.net:18983` (TCP proxy to port 1935) |
+| Publish password | `MTX_AUTHINTERNALUSERS_1_PASS` on the service |
 
-Settings -> Stream, Service: Custom
+Read the password with:
 
-- **Server:** `rtmp://live.your-station.example`
-- **Stream key:** `live?user=dj&pass=YOUR_PUBLISH_PASSWORD`
+```sh
+railway variable list --service chunky-video
+```
 
-Settings -> Output, Output Mode: Advanced
+## Connecting the station (once)
 
-- **Encoder:** x264 or your GPU's H.264 encoder (not HEVC or AV1)
-- **Rate control:** CBR, 2500-3500 Kbps
-- **Keyframe interval:** 2 seconds
+The station service needs this variable, and the code from this branch deployed:
 
-Settings -> Video: 1280x720, 30 fps. Audio: 48 kHz, stereo, AAC.
+```
+VIDEO_HLS_URL=https://chunky-video-production.up.railway.app/live/index.m3u8
+```
 
-Add the camera as a Video Capture Device, and the mixer's output through an
-audio interface as an Audio Input Capture. Mute Desktop Audio and any camera
-mic, so the only thing viewers hear is the mix.
+## The iPhone (once)
+
+Install Larix Broadcaster and add a connection:
+
+```
+rtmp://centerbeam.proxy.rlwy.net:18983/live?user=dj&pass=YOUR_PASSWORD
+```
+
+| Setting | Value |
+|---|---|
+| Codec | H.264, not HEVC |
+| Video | 1920x1080, 30 fps, rear main camera |
+| Bitrate | 4500 Kbps; drop to 720p at 2500 Kbps if viewers buffer |
+| Keyframe interval | 2 seconds |
+| Audio | AAC, 48 kHz, stereo, 160 Kbps or more |
+
+Feed the mixer's output in through a USB audio interface and check that the app
+is using that input and not the built-in mic.
 
 ## Going live
 
-Press Start Streaming, then open the site and check it yourself before telling
-anyone. Press Stop Streaming to end.
+Start the stream in Larix, then open the site on another device and check it
+yourself before telling anyone. Stop the stream to end.
+
+Keep the phone on power and on Do Not Disturb. Light yourself well: a phone
+camera in a dark booth looks grainy whatever the resolution.
 
 ## Worth knowing
 
 - **The stream is public.** The landing page shows it to everyone, and
   `STATION_KEY` does not protect it.
-- **The stream key travels unencrypted** over plain RTMP. If it may have leaked,
-  change `PUBLISH_PASSWORD` and restart the video server.
+- **Bandwidth is billed.** Railway charges per GB sent. A 3-hour set at 4.5 Mbps
+  is about 6 GB per viewer, roughly $0.30 at $0.05/GB.
+- **The password travels unencrypted** over plain RTMP. If it may have leaked,
+  change the variable and redeploy the service.
 - **Music rights:** nothing here scans your set, but that does not license it.
   Check what applies to you before playing commercial tracks publicly.
 - **Viewers run several seconds behind you**, so chat replies will lag the music.
+
+## Without Railway
+
+`video/docker-compose.yml` runs the same server on a plain VPS, with Caddy for
+HTTPS. Copy `video/` over, fill in `video/.env` from `.env.example`, and run
+`docker compose up -d`. The phone then uses
+`rtmp://your-domain/live?user=dj&pass=...` with no port.
