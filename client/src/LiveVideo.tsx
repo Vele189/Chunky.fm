@@ -9,7 +9,15 @@ import './live-video.css'
  * only here and only when there is a stream, so a page on a dark night does not
  * pay for it; iPhones have no use for it and play the playlist natively.
  */
-export function LiveVideo({ url, title }: { url: string; title: string }) {
+export function LiveVideo({
+  url,
+  title,
+  controls = true,
+}: {
+  url: string
+  title: string
+  controls?: boolean
+}) {
   const video = useRef<HTMLVideoElement>(null)
   const [muted, setMuted] = useState(true)
 
@@ -66,7 +74,7 @@ export function LiveVideo({ url, title }: { url: string; title: string }) {
         autoPlay
         muted
         playsInline
-        controls
+        controls={controls}
         onVolumeChange={(event) => setMuted(event.currentTarget.muted)}
       />
       <p className="live-video__badge">Live</p>

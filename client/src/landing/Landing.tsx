@@ -17,7 +17,7 @@ import { WISHES } from './session.js'
 import { Slot } from '../poster/Slot.js'
 import { type ArchiveCard, useArchive } from './useArchive.js'
 import { useStill } from './useStill.js'
-import { LiveVideo } from '../LiveVideo.js'
+import { LiveCorner } from '../LiveCorner.js'
 import { useLiveVideo } from '../hooks/useLiveVideo.js'
 
 /**
@@ -51,9 +51,9 @@ export function Landing() {
   return (
     <div className="poster">
       <Bar />
-      <Ticker next={next} live={liveUrl !== null} />
+      <Ticker next={next} />
       <main>
-        {liveUrl ? <LiveHero url={liveUrl} /> : <Hero />}
+        <Hero />
         <NextSession next={next} />
         <Upcoming sessions={upcoming} />
         <Creed />
@@ -64,6 +64,7 @@ export function Landing() {
         <Join next={next} />
       </main>
       <Foot />
+      {liveUrl && <LiveCorner url={liveUrl} />}
       <TuneBar next={next} live={liveUrl !== null} />
     </div>
   )
@@ -121,20 +122,18 @@ function Bar() {
  * The strip of type that runs under the bar.
  *
  * It says the one live thing the page knows, the next session, and otherwise
- * the station's three promises. It says "live" only while the DJ camera is
- * actually on (`useLiveVideo`): a ticker shouting that over a dark room would
- * be the page lying in its biggest type.
+ * the station's three promises. It never says "on air": the corner player is
+ * what says the DJ is on camera, and a ticker shouting it as well would only
+ * have one more thing to get wrong.
  *
  * The text is laid down twice and the track slides by exactly one copy, which
  * is what makes the loop seamless. Only the first copy is read aloud; the
  * second is there for the eye. Under reduced motion the track holds still and
  * reads as a printed band.
  */
-function Ticker({ next, live }: { next: ScheduledSession | null; live: boolean }) {
+function Ticker({ next }: { next: ScheduledSession | null }) {
   const still = useStill()
-  const said = live
-    ? ['Live now', 'On the decks', 'Come in']
-    : next
+  const said = next
     ? ['Next session', nextSessionShort(next.startsAt, Date.now()), promiseOf(next), 'Same link as always']
     : ['Music is a culture', 'Listen together', 'Chosen by hand', 'No algorithm']
   const run = (
@@ -158,21 +157,6 @@ function Ticker({ next, live }: { next: ScheduledSession | null; live: boolean }
         </span>
       </p>
     </div>
-  )
-}
-
-/** The top of the page while the DJ is on camera: the set is the page. */
-function LiveHero({ url }: { url: string }) {
-  return (
-    <section className="live-hero" id="top" data-testid="live-hero">
-      <LiveVideo url={url} title="chunky.fm, live from the decks" />
-      <div className="live-hero__words">
-        <h1 className="live-hero__headline">Live now</h1>
-        <a className="button button--press button--large" href={TUNE_IN}>
-          Join the room <Arrow />
-        </a>
-      </div>
-    </section>
   )
 }
 

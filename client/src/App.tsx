@@ -12,6 +12,7 @@ import {
 import usersIcon from './assets/icons/users.svg'
 import { AdminPanel } from './AdminPanel.js'
 import { CallIn } from './CallIn.js'
+import { LiveCorner } from './LiveCorner.js'
 import { LiveVideo } from './LiveVideo.js'
 import { Lyrics } from './Lyrics.js'
 import { ASSETS } from './poster/assets.js'
@@ -27,6 +28,7 @@ import { usePresence } from './hooks/usePresence.js'
 import { useServerClock } from './hooks/useServerClock.js'
 import { type SyncTrails, useSyncTrails } from './hooks/useSyncTrails.js'
 import { useLiveVideo } from './hooks/useLiveVideo.js'
+import { useMediaQuery } from './hooks/useMediaQuery.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { useAudioTrace } from './hooks/useAudioTrace.js'
@@ -252,6 +254,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
   // one fewer place for the two of them to disagree about what a phone is.
   const [joined, setJoined] = useState(false)
   const liveVideoUrl = useLiveVideo()
+  const wideScreen = useMediaQuery('(min-width: 1200px)')
   // Read once, at mount: what a previous visit left behind is the starting
   // point for the field, not a decision to join. The gesture still has to
   // happen (a browser will not start audio because localStorage had a name in
@@ -721,6 +724,15 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     />
   )
 
+  // The camera does not depend on the decks: somebody can go live from a phone
+  // with the station off air, and this page should still show them.
+  const outage = (
+    <>
+      <Outage state={here} schedule={schedule} />
+      {liveVideoUrl && <LiveCorner url={liveVideoUrl} inRoom />}
+    </>
+  )
+
   return (
     <div className="station">
       <Sidebar
@@ -849,10 +861,10 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
               </section>
             </div>
           ) : (
-            <Outage state={here} schedule={schedule} />
+            outage
           )
         ) : stranded || closed ? (
-          <Outage state={here} schedule={schedule} />
+          outage
         ) : route === 'on-air' ? (
           // The listener page, whole: the deck and what it is playing on the
           // left, the words to it on the right. Every other view below is one
@@ -873,11 +885,10 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
           //
           // The wishes and the clock are gone from here at every width. See
           // the note further down.
-          <div className="station__columns">
+          <div
+            className={`station__columns${liveVideoUrl && wideScreen ? ' station__columns--video' : ''}`}
+          >
             <section className="column column--stage">
-              {liveVideoUrl && (
-                <LiveVideo url={liveVideoUrl} title="chunky.fm, live from the decks" />
-              )}
               {/* The deck while there is something on it or coming, and the same
                   room emptied (MJ-08) while the station is off air. The record
                   is pasted onto the photo rather than stacked under it: stacked,
@@ -1006,6 +1017,13 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
                   sheet. */}
               <Lyrics state={state} serverNow={clock.serverNow} />
             </section>
+
+            {liveVideoUrl && wideScreen && (
+              <section className="column" data-testid="live-column">
+                <LiveVideo url={liveVideoUrl} title="chunky.fm, live from the decks" />
+              </section>
+            )}
+            {liveVideoUrl && !wideScreen && <LiveCorner url={liveVideoUrl} inRoom />}
           </div>
         ) : (
           // One thing, with the whole screen. Nothing here is new data; it is
