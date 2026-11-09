@@ -2,11 +2,15 @@ import { type RefObject, useEffect, useRef } from 'react'
 import type { StationAudio } from '../lib/audio-graph.js'
 import {
   AudioTrace,
+  ChopDetector,
   type ElementContext,
+  describeChop,
+  describeEnvironment,
   postTrace,
   traceEchoRequested,
 } from '../lib/audio-trace.js'
 import { outgoingPositionSeconds } from '../lib/decking.js'
+import { canCorrect, driftPolicyFor } from '../lib/drift.js'
 import { expectedPositionSeconds } from '../lib/position.js'
 import { type StateMessage, audioUrl } from '../lib/protocol.js'
 
@@ -25,6 +29,9 @@ export interface AudioTraceHookOptions {
 
 const FLUSH_MS = 5_000
 const HEARTBEAT_MS = 30_000
+const CHOP_SAMPLE_MS = 500
+/** At most one chop line per deck, and one for the context, in this long. */
+const CHOP_REPORT_MS = 5_000
 /** A clock estimate moving less than this is not news. */
 const CLOCK_NEWS_MS = 25
 
@@ -86,6 +93,32 @@ export function useAudioTrace({
       audio ? [trace.watch(audio, deck, () => contextFor(audio))] : [],
     )
 
+    const chops = decks.flatMap(([deck, audio]) =>
+      audio ? [{ deck, audio, detector: new ChopDetector(), src: audio.getAttribute('src') }] : [],
+    )
+    const chopSample = window.setInterval(() => {
+      const wall = performance.now()
+      for (const chop of chops) {
+        const src = chop.audio.getAttribute('src')
+        if (src !== chop.src) {
+          chop.src = src
+          chop.detector.reset()
+        }
+        chop.detector.sample({
+          wall,
+          position: chop.audio.currentTime,
+          rate: chop.audio.playbackRate,
+          steady: canCorrect(chop.audio),
+        })
+      }
+    }, CHOP_SAMPLE_MS)
+    const chopReport = window.setInterval(() => {
+      for (const { deck, audio, detector } of chops) {
+        const summary = detector.drain()
+        if (summary) trace.recordElement('chop', deck, audio, contextFor(audio), describeChop(summary))
+      }
+    }, CHOP_REPORT_MS)
+
     const beat = window.setInterval(() => {
       for (const [deck, audio] of decks) {
         if (audio && !audio.paused) trace.recordElement('beat', deck, audio, contextFor(audio))
@@ -108,6 +141,8 @@ export function useAudioTrace({
 
     return () => {
       for (const off of unwatch) off()
+      window.clearInterval(chopSample)
+      window.clearInterval(chopReport)
       window.clearInterval(beat)
       window.clearInterval(flush)
       document.removeEventListener('visibilitychange', onVisibility)
@@ -121,11 +156,36 @@ export function useAudioTrace({
   // The audio context: Safari suspends or "interrupts" it, and the music goes with it.
   useEffect(() => {
     const context = stage?.context
-    if (!joined || !context) return
+    if (!joined) return
+    trace.record('env', {
+      detail: describeEnvironment(navigator, context, driftPolicyFor(navigator)),
+    })
+    if (!context) return
     trace.record('context', { detail: context.state })
     const onChange = () => trace.record('context', { detail: context.state })
     context.addEventListener('statechange', onChange)
-    return () => context.removeEventListener('statechange', onChange)
+
+    // The graph's own clock. If this stutters too, the sound is being lost in
+    // Web Audio or the output, and not by the element feeding it.
+    const detector = new ChopDetector()
+    const sample = window.setInterval(() => {
+      detector.sample({
+        wall: performance.now(),
+        position: context.currentTime,
+        rate: 1,
+        steady: context.state === 'running',
+      })
+    }, CHOP_SAMPLE_MS)
+    const report = window.setInterval(() => {
+      const summary = detector.drain()
+      if (summary) trace.record('ctx-chop', { detail: describeChop(summary) })
+    }, CHOP_REPORT_MS)
+
+    return () => {
+      context.removeEventListener('statechange', onChange)
+      window.clearInterval(sample)
+      window.clearInterval(report)
+    }
   }, [joined, stage, trace])
 
   // What the station said, so each element event can be read against it.

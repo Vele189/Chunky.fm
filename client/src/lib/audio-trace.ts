@@ -63,6 +63,7 @@ export const ELEMENT_EVENTS = [
   'stalled',
   'seeking',
   'seeked',
+  'ratechange',
   'pause',
   'ended',
   'emptied',
@@ -206,6 +207,136 @@ export class AudioTrace {
     // A page closing gets one beacon; anything past one batch is lost anyway.
     if (!leaving && this.#buffer.length >= this.#batchSize) this.flush()
   }
+}
+
+/** How far a clock can fall short between two samples before it counts as a freeze. */
+const FREEZE_THRESHOLD_MS = 150
+/** A freeze this soon after a rate change is counted as following it. */
+const NEAR_RATE_CHANGE_MS = 1_000
+/** A gap this long means timers were throttled, so the two samples prove nothing. */
+const TIMER_GAP_MS = 1_500
+
+export interface ChopSummary {
+  freezes: number
+  lostMs: number
+  maxMs: number
+  /** Clocks leaping forward. About as many jumps as freezes suggests coarse reporting. */
+  jumps: number
+  rateChanges: number
+  /** Freezes that came soon after a rate change. */
+  nearRate: number
+  timerGaps: number
+}
+
+export interface ChopSample {
+  /** A monotonic clock, in milliseconds. */
+  wall: number
+  /** The clock being checked, in seconds. */
+  position: number
+  rate: number
+  /** False when the clock is meant to be standing still or to have moved. */
+  steady: boolean
+}
+
+/**
+ * Notices a clock that stopped for a moment.
+ *
+ * A chop with no buffering behind it fires no media event at all: the element
+ * never reports `waiting`, it just loses a few hundred milliseconds. Comparing
+ * how far its position moved against how far the wall clock moved is the only
+ * way the page can see that happen.
+ */
+export class ChopDetector {
+  #last: ChopSample | null = null
+  #lastRateChange = -Infinity
+  #summary = ChopDetector.#empty()
+
+  static #empty(): ChopSummary {
+    return { freezes: 0, lostMs: 0, maxMs: 0, jumps: 0, rateChanges: 0, nearRate: 0, timerGaps: 0 }
+  }
+
+  reset(): void {
+    this.#last = null
+  }
+
+  sample(sample: ChopSample): void {
+    if (!sample.steady) {
+      this.#last = null
+      return
+    }
+    const last = this.#last
+    this.#last = sample
+    if (!last) return
+
+    const summary = this.#summary
+    if (sample.rate !== last.rate) {
+      summary.rateChanges++
+      this.#lastRateChange = sample.wall
+    }
+
+    const elapsed = sample.wall - last.wall
+    if (elapsed > TIMER_GAP_MS) {
+      summary.timerGaps++
+      return
+    }
+
+    const shortfall = elapsed * last.rate - (sample.position - last.position) * 1000
+    if (shortfall > FREEZE_THRESHOLD_MS) {
+      summary.freezes++
+      summary.lostMs += Math.round(shortfall)
+      summary.maxMs = Math.max(summary.maxMs, Math.round(shortfall))
+      if (sample.wall - this.#lastRateChange <= NEAR_RATE_CHANGE_MS) summary.nearRate++
+    } else if (shortfall < -FREEZE_THRESHOLD_MS) {
+      summary.jumps++
+    }
+  }
+
+  /** What happened since the last drain, or null if nothing did. */
+  drain(): ChopSummary | null {
+    const summary = this.#summary
+    this.#summary = ChopDetector.#empty()
+    return summary.freezes || summary.jumps || summary.rateChanges || summary.timerGaps
+      ? summary
+      : null
+  }
+}
+
+export function describeChop(summary: ChopSummary): string {
+  return (
+    `freezes=${summary.freezes} lostMs=${summary.lostMs} maxMs=${summary.maxMs} jumps=${summary.jumps} ` +
+    `rateChanges=${summary.rateChanges} nearRate=${summary.nearRate} timerGaps=${summary.timerGaps}`
+  )
+}
+
+/** Why a `play()` was refused. `NotAllowedError` is the autoplay policy. */
+export function describeError(error: unknown): string {
+  const { name, message } = (error ?? {}) as { name?: string; message?: string }
+  return `${name ?? 'Error'}: ${message ?? String(error)}`.slice(0, 200)
+}
+
+/** Facts about the device and audio output, kept inside the server's 200 characters. */
+export function describeEnvironment(
+  device: {
+    audioSession?: { type?: string }
+    connection?: { effectiveType?: string; downlink?: number }
+    hardwareConcurrency?: number
+  },
+  context: Pick<AudioContext, 'state' | 'sampleRate' | 'baseLatency'> & { outputLatency?: number } | undefined,
+  policy: { nudge: boolean; hardSeekSeconds: number },
+): string {
+  const facts = [
+    `nudge=${policy.nudge}`,
+    `seekAfter=${policy.hardSeekSeconds}`,
+    `session=${device.audioSession?.type ?? 'none'}`,
+    `ctx=${context?.state ?? 'none'}`,
+    `rate=${context?.sampleRate ?? 'none'}`,
+    `base=${context?.baseLatency ?? 'none'}`,
+    `output=${context?.outputLatency ?? 'none'}`,
+    `net=${device.connection?.effectiveType ?? 'unknown'}`,
+    `down=${device.connection?.downlink ?? 'unknown'}`,
+    `cores=${device.hardwareConcurrency ?? 'unknown'}`,
+  ]
+  return facts.join(' ').slice(0, 200)
 }
 
 /** The real transport: fetch normally, a beacon when the page is going away. */

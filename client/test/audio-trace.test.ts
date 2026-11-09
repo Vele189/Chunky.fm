@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { AudioTrace, type TraceBatch, bufferedAhead, srcName } from '../src/lib/audio-trace.js'
+import {
+  AudioTrace,
+  ChopDetector,
+  type TraceBatch,
+  bufferedAhead,
+  describeEnvironment,
+  srcName,
+} from '../src/lib/audio-trace.js'
 
 function recorder(options: Partial<ConstructorParameters<typeof AudioTrace>[0]> = {}) {
   const sent: TraceBatch[] = []
@@ -11,6 +18,54 @@ const ranges = (...pairs: [number, number][]) => ({
   length: pairs.length,
   start: (i: number) => pairs[i]![0],
   end: (i: number) => pairs[i]![1],
+})
+
+describe('ChopDetector', () => {
+  const at = (wall: number, position: number, rate = 1, steady = true) => ({ wall, position, rate, steady })
+
+  it('says nothing about a clock that keeps time', () => {
+    const detector = new ChopDetector()
+    detector.sample(at(0, 10))
+    detector.sample(at(500, 10.5))
+    detector.sample(at(1000, 11))
+    expect(detector.drain()).toBeNull()
+  })
+
+  it('counts a clock that stopped, and ties it to a rate change', () => {
+    const detector = new ChopDetector()
+    detector.sample(at(0, 10))
+    detector.sample(at(500, 10.5, 1.02))
+    detector.sample(at(1000, 10.71, 1.02))
+    expect(detector.drain()).toMatchObject({ freezes: 1, rateChanges: 1, nearRate: 1 })
+    expect(detector.drain()).toBeNull()
+  })
+
+  it('does not call throttled timers a freeze', () => {
+    const detector = new ChopDetector()
+    detector.sample(at(0, 10))
+    detector.sample(at(5000, 10))
+    expect(detector.drain()).toMatchObject({ freezes: 0, timerGaps: 1 })
+  })
+
+  it('ignores anything across a stall or a seek', () => {
+    const detector = new ChopDetector()
+    detector.sample(at(0, 10))
+    detector.sample(at(500, 10, 1, false))
+    detector.sample(at(1000, 90))
+    detector.sample(at(1500, 90.5))
+    expect(detector.drain()).toBeNull()
+  })
+})
+
+describe('describeEnvironment', () => {
+  it('stays inside the length the server accepts', () => {
+    const detail = describeEnvironment(
+      { audioSession: { type: 'x'.repeat(500) } },
+      undefined,
+      { nudge: false, hardSeekSeconds: 3 },
+    )
+    expect(detail.length).toBeLessThanOrEqual(200)
+  })
 })
 
 describe('AudioTrace', () => {

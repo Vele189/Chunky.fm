@@ -28,6 +28,7 @@ import { type SyncTrails, useSyncTrails } from './hooks/useSyncTrails.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { useAudioTrace } from './hooks/useAudioTrace.js'
+import { describeError } from './lib/audio-trace.js'
 import { useGuestVoice } from './hooks/useGuestVoice.js'
 import { useIceServers, useVoiceReceiver } from './hooks/useVoice.js'
 import { seekTo } from './lib/audio-element.js'
@@ -365,6 +366,12 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     nickname: joined ? nickname : null,
   })
 
+  const onPlayFailed = useCallback(
+    (deck: 'a' | 'b', error: unknown) =>
+      trace.record('play-refused', { deck, detail: describeError(error) }),
+    [trace],
+  )
+
   const [drift, setDrift] = useState<{ correction: Correction; diff: number } | null>(null)
   const onCorrection = useCallback(
     (correction: Correction, diff: number) => {
@@ -400,6 +407,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
     serverNow: clock.serverNow,
     synced: clock.synced,
     onCorrection,
+    onPlayFailed,
   })
 
   /**
@@ -526,7 +534,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
       // A function, so the position is read when the seek lands.
       const at = clock.serverNow
       seekTo(audio, () => expectedPositionSeconds(state, at()))
-      void audio.play().catch(() => undefined)
+      void audio.play().catch((error: unknown) => onPlayFailed('a', error))
     }
   }
 
@@ -588,7 +596,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
       // A function, so the position is read when the seek lands.
       const at = clock.serverNow
       seekTo(audio, () => expectedPositionSeconds(state, at()))
-      void audio.play().catch(() => undefined)
+      void audio.play().catch((error: unknown) => onPlayFailed('a', error))
     }
     setJoined(true)
   }

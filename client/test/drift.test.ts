@@ -1,12 +1,39 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_DRIFT_POLICY,
   HARD_SEEK_THRESHOLD_S,
+  IOS_DRIFT_POLICY,
   MAX_RATE_ADJUSTMENT,
   NUDGE_THRESHOLD_S,
   applyCorrection,
   canCorrect,
   correctionFor,
+  driftPolicyFor,
 } from '../src/lib/drift.js'
+
+describe('the iOS drift policy', () => {
+  const iPhone = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', maxTouchPoints: 5 }
+  const iPad = { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', maxTouchPoints: 5 }
+  const mac = { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', maxTouchPoints: 0 }
+  const android = { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8)', maxTouchPoints: 5 }
+
+  it('is chosen for iPhones and iPads only', () => {
+    expect(driftPolicyFor(iPhone)).toBe(IOS_DRIFT_POLICY)
+    expect(driftPolicyFor(iPad)).toBe(IOS_DRIFT_POLICY)
+    expect(driftPolicyFor(mac)).toBe(DEFAULT_DRIFT_POLICY)
+    expect(driftPolicyFor(android)).toBe(DEFAULT_DRIFT_POLICY)
+    expect(driftPolicyFor(undefined)).toBe(DEFAULT_DRIFT_POLICY)
+  })
+
+  it('never changes the playback rate', () => {
+    expect(correctionFor(10.5, 10, IOS_DRIFT_POLICY)).toEqual({ kind: 'none' })
+    expect(correctionFor(10, 12.5, IOS_DRIFT_POLICY)).toEqual({ kind: 'none' })
+  })
+
+  it('still seeks once the record is far enough out', () => {
+    expect(correctionFor(10, 13.5, IOS_DRIFT_POLICY)).toEqual({ kind: 'seek', toSeconds: 13.5 })
+  })
+})
 
 describe('canCorrect', () => {
   const playing = { paused: false, seeking: false, readyState: 4 }
