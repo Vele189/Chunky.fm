@@ -1,0 +1,45 @@
+# The video server: OBS publishes to it, browsers fetch HLS from it.
+# Everything not needed for that is off. Its options are documented in the
+# mediamtx.yml shipped with each release.
+
+logLevel: info
+
+api: false
+metrics: false
+pprof: false
+playback: false
+rtsp: false
+webrtc: false
+srt: false
+
+rtmp: true
+rtmpAddress: :1935
+
+hls: true
+hlsAddress: :8888
+hlsAllowOrigins: ["*"]
+# fmp4 rather than lowLatency: it plays on iPhones without extra setup, and a
+# few seconds of delay costs a DJ set nothing.
+hlsVariant: fmp4
+hlsSegmentCount: 7
+hlsSegmentDuration: 2s
+hlsPartDuration: 200ms
+hlsAlwaysRemux: true
+
+authMethod: internal
+authInternalUsers:
+  # Anybody may watch.
+  - user: any
+    pass:
+    permissions:
+      - action: read
+        path: live
+  # Only OBS may publish. The password comes from MTX_AUTHINTERNALUSERS_1_PASS.
+  - user: dj
+    pass: change-me-through-the-environment
+    permissions:
+      - action: publish
+        path: live
+
+paths:
+  live: {}

@@ -1,0 +1,30 @@
+# Runs on the video VPS, not next to the station. See docs/live-video.md.
+name: chunky-video
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.3
+    environment:
+      MTX_AUTHINTERNALUSERS_1_PASS: ${PUBLISH_PASSWORD:?set PUBLISH_PASSWORD in video/.env}
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "1935:1935"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      VIDEO_DOMAIN: ${VIDEO_DOMAIN:?set VIDEO_DOMAIN in video/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+volumes:
+  caddy_data:

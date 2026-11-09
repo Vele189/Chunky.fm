@@ -1,0 +1,4 @@
+# Fetches and renews the HTTPS certificate on its own.
+{$VIDEO_DOMAIN} {
+	reverse_proxy mediamtx:8888
+}

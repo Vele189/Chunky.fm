@@ -232,6 +232,8 @@ export interface Config {
    * addresses to trust something narrower.
    */
   trustProxy: boolean | string | string[] | number
+  /** The public HLS playlist of the DJ camera, or null for a station without one. */
+  videoHlsUrl: string | null
 }
 
 /**
@@ -442,6 +444,16 @@ function intFromEnv(value: string | undefined, fallback: number, name: string): 
   return parsed
 }
 
+/** Refused at boot, because a typo here would otherwise just never go live. */
+function videoUrlFromEnv(value: string | undefined): string | null {
+  const url = value?.trim()
+  if (!url) return null
+  if (!/^https?:\/\//.test(url) || !URL.canParse(url)) {
+    throw new Error('VIDEO_HLS_URL must be an http(s) URL')
+  }
+  return url
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // Falls back to the same house key the door does, so an unconfigured station
   // has *one* code that opens both. That is a deliberate collapse of two
@@ -488,5 +500,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // sets it. See the root Dockerfile.
     clientDir: env.CLIENT_DIR?.trim() ? path.resolve(env.CLIENT_DIR.trim()) : null,
     trustProxy: trustProxyFromEnv(env.TRUST_PROXY),
+    videoHlsUrl: videoUrlFromEnv(env.VIDEO_HLS_URL),
   }
 }

@@ -26,6 +26,8 @@ services:
       # derived from ADMIN_PASSWORD, so a station always has one to hand out and
       # rotating the password rotates it. Set this to rotate the seat on its own.
       CO_HOST_KEY: ${CO_HOST_KEY:-}
+      # The DJ camera's public playlist. Unset, the station has no video.
+      VIDEO_HLS_URL: ${VIDEO_HLS_URL:-}
       AUDIO_STORAGE_DIR: /data
       HOST: 0.0.0.0
       PORT: "3000"

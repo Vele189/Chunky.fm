@@ -1,0 +1,44 @@
+/* Its own file because the landing page and the station share no stylesheet. */
+.live-video {
+  position: relative;
+  background: #000;
+}
+
+.live-video__picture {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.live-video__badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 4px 10px;
+  background: var(--live);
+  color: #fff;
+  font: 700 13px / 1.2 var(--font-numeric);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.live-video__sound {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 14px 24px;
+  border: 0;
+  background: var(--press);
+  color: #fff;
+  font: 700 16px / 1 var(--font-numeric);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.live-video__sound:hover,
+.live-video__sound:focus-visible {
+  background: var(--press-deep);
+}

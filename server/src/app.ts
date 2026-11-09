@@ -45,6 +45,8 @@ import { transitionRoutes } from './routes/transition.js'
 import { CloudflareTurn } from './turn.js'
 import { Schedule } from './schedule.js'
 import { scheduleRoutes } from './routes/schedule.js'
+import { videoRoutes } from './routes/video.js'
+import { LiveVideo } from './video.js'
 import { WishBook } from './wishes.js'
 
 declare module 'fastify' {
@@ -129,6 +131,8 @@ export interface BuildAppOptions {
   transcode?: boolean
   /** The seam tests mock LRCLIB through; production reaches the real archive. */
   lyricsFetch?: typeof fetch
+  /** What the video server is asked through. Tests answer it themselves. */
+  videoFetch?: typeof fetch
   /** The same, for Cloudflare's relay. See `CloudflareTurn`. */
   turnFetch?: typeof fetch
 }
@@ -163,6 +167,7 @@ export async function buildApp({
   signInRefillMs,
   transcode,
   lyricsFetch,
+  videoFetch,
   turnFetch,
 }: BuildAppOptions): Promise<FastifyInstance> {
   await ensureStorageDirs(config)
@@ -364,6 +369,8 @@ export async function buildApp({
   // a night that has not happened, and ending a broadcast is usually the moment
   // it becomes worth reading.
   const schedule = new Schedule({ db, now: () => playback.now() })
+  const video = new LiveVideo({ url: config.videoHlsUrl, fetchFn: videoFetch })
+  video.start()
 
   const lyrics = new LyricsService({ db, baseUrl: config.lrclibBaseUrl, fetchFn: lyricsFetch })
 
@@ -445,6 +452,7 @@ export async function buildApp({
   await app.register(adminRoutes({ config, signInBurst, signInRefillMs }))
   await app.register(sessionRoutes({ config, air }))
   await app.register(scheduleRoutes({ config, schedule }))
+  await app.register(videoRoutes({ video }))
   await app.register(micRoutes({ config, mic, air, floor }))
   await app.register(floorRoutes({ config, floor, air }))
   await app.register(coHostRoutes({ config, coHost, air }))
@@ -536,6 +544,7 @@ export async function buildApp({
   // the sockets have to be drained *before* Fastify tries to close it. Using
   // onClose here deadlocks shutdown for as long as anyone is listening.
   app.addHook('preClose', async () => {
+    video.stop()
     station.close()
     clearInterval(micSweep)
     // Before the database closes and before the storage directory goes: an
