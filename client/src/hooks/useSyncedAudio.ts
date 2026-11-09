@@ -14,10 +14,13 @@ import {
   applyCorrection,
   canCorrect,
   correctionFor,
+  driftPolicyFor,
 } from '../lib/drift.js'
 import { expectedPositionSeconds } from '../lib/position.js'
 import type { StateMessage } from '../lib/protocol.js'
 import { otherDeck } from '../lib/audio-graph.js'
+
+const driftPolicy = driftPolicyFor(typeof navigator === 'undefined' ? undefined : navigator)
 
 export interface SyncedAudioOptions {
   audioRef: RefObject<HTMLAudioElement | null>
@@ -44,6 +47,8 @@ export interface SyncedAudioOptions {
   synced: boolean
   driftIntervalMs?: number
   onCorrection?: (correction: Correction, diffSeconds: number) => void
+  /** The browser refused to start a deck. Otherwise that refusal is invisible. */
+  onPlayFailed?: (deck: Decking['front'], error: unknown) => void
 }
 
 /**
@@ -76,6 +81,7 @@ export function useSyncedAudio({
   synced,
   driftIntervalMs = DEFAULT_DRIFT_CHECK_INTERVAL_MS,
   onCorrection,
+  onPlayFailed,
 }: SyncedAudioOptions): void {
   // Read through refs in the loops below so neither is torn down and restarted
   // on every render. The drift interval should be genuinely continuous, and
@@ -83,6 +89,7 @@ export function useSyncedAudio({
   const stateRef = useRef(state)
   const serverNowRef = useRef(serverNow)
   const onCorrectionRef = useRef(onCorrection)
+  const onPlayFailedRef = useRef(onPlayFailed)
   /**
    * Which record is on which deck.
    *
@@ -97,6 +104,7 @@ export function useSyncedAudio({
     stateRef.current = state
     serverNowRef.current = serverNow
     onCorrectionRef.current = onCorrection
+    onPlayFailedRef.current = onPlayFailed
   })
 
   useEffect(() => {
@@ -146,7 +154,7 @@ export function useSyncedAudio({
     // `state` re-broadcast during a transition would otherwise seek the record
     // that is already playing correctly, in the middle of the fade.
     const expected = expectedPositionSeconds(state, now)
-    if (changed || Math.abs(frontElement.currentTime - expected) > 1) {
+    if (changed || Math.abs(frontElement.currentTime - expected) > driftPolicy.hardSeekSeconds) {
       // Resolved when the seek lands, not now: a fresh source can take a
       // second to report metadata, and the clock keeps moving meanwhile.
       seekTo(frontElement, () => expectedPositionSeconds(state, serverNowRef.current()))
@@ -156,7 +164,7 @@ export function useSyncedAudio({
     if (state.pausedAt === null) {
       // Rejected when the browser hasn't seen a gesture yet; the join button
       // is that gesture, so by here it normally succeeds.
-      void frontElement.play().catch(() => undefined)
+      void frontElement.play().catch((error: unknown) => onPlayFailedRef.current?.(decks.front, error))
     } else {
       frontElement.pause()
     }
@@ -172,11 +180,11 @@ export function useSyncedAudio({
       // ordinary case, it never is: this deck has been playing this record for
       // four minutes and the transition did not move it. The one caller that
       // needs a seek here is a listener who *arrived* mid-fade.
-      if (Math.abs(back.currentTime - where) > 1) {
+      if (Math.abs(back.currentTime - where) > driftPolicy.hardSeekSeconds) {
         seekTo(back, () => outgoingPositionSeconds(outgoing, serverNowRef.current()))
       }
       back.playbackRate = 1
-      void back.play().catch(() => undefined)
+      void back.play().catch((error: unknown) => onPlayFailedRef.current?.(otherDeck(decks.front), error))
     } else if (back) {
       back.pause()
     }
@@ -249,7 +257,7 @@ export function useSyncedAudio({
       // Stalled or mid-seek counts as not playing; see `canCorrect`.
       if (front && current.pausedAt === null && canCorrect(front)) {
         const expected = expectedPositionSeconds(current, now)
-        const correction = correctionFor(front.currentTime, expected)
+        const correction = correctionFor(front.currentTime, expected, driftPolicy)
         applyCorrection(front, correction)
         onCorrectionRef.current?.(correction, front.currentTime - expected)
       }
@@ -263,7 +271,7 @@ export function useSyncedAudio({
       if (back && outgoing && canCorrect(back)) {
         applyCorrection(
           back,
-          correctionFor(back.currentTime, outgoingPositionSeconds(outgoing, now)),
+          correctionFor(back.currentTime, outgoingPositionSeconds(outgoing, now), driftPolicy),
         )
       }
     }, driftIntervalMs)

@@ -26,17 +26,57 @@ export type Correction =
   | { kind: 'rate'; playbackRate: number }
   | { kind: 'none' }
 
+/** How a browser is allowed to correct drift. */
+export interface DriftPolicy {
+  hardSeekSeconds: number
+  /** Whether small errors may be corrected by changing the playback rate. */
+  nudge: boolean
+}
+
+export const DEFAULT_DRIFT_POLICY: DriftPolicy = {
+  hardSeekSeconds: HARD_SEEK_THRESHOLD_S,
+  nudge: true,
+}
+
+/**
+ * iOS is reported to freeze audio for 200-300ms when `playbackRate` changes.
+ * A freeze adds error, the error asks for another change, and the record
+ * chops. So an iPhone never nudges, and tolerates a few seconds before seeking.
+ */
+export const IOS_DRIFT_POLICY: DriftPolicy = { hardSeekSeconds: 3, nudge: false }
+
+/**
+ * Every browser on iOS is WebKit, so this covers Chrome on an iPhone as well.
+ * iPadOS reports itself as a Mac, and touch points are what give it away.
+ */
+export function isIOS(device: Pick<Navigator, 'userAgent' | 'maxTouchPoints'>): boolean {
+  return (
+    /iPhone|iPad|iPod/.test(device.userAgent) ||
+    (/Macintosh/.test(device.userAgent) && device.maxTouchPoints > 1)
+  )
+}
+
+export function driftPolicyFor(
+  device: Pick<Navigator, 'userAgent' | 'maxTouchPoints'> | undefined,
+): DriftPolicy {
+  return device && isIOS(device) ? IOS_DRIFT_POLICY : DEFAULT_DRIFT_POLICY
+}
+
 /**
  * @param actual   the audio element's current position, in seconds
  * @param expected where the server says it should be, in seconds
  */
-export function correctionFor(actual: number, expected: number): Correction {
+export function correctionFor(
+  actual: number,
+  expected: number,
+  policy: DriftPolicy = DEFAULT_DRIFT_POLICY,
+): Correction {
   const diff = actual - expected
 
-  if (Math.abs(diff) > HARD_SEEK_THRESHOLD_S) {
+  if (Math.abs(diff) > policy.hardSeekSeconds) {
     return { kind: 'seek', toSeconds: expected }
   }
-  if (Math.abs(diff) > NUDGE_THRESHOLD_S) {
+  if (policy.nudge && Math.abs(diff) > NUDGE_THRESHOLD_S) {
     // Ahead of the server (diff > 0) means slow down, hence the subtraction.
     return {
       kind: 'rate',
