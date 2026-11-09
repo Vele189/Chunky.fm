@@ -37,7 +37,7 @@ railway variable list --service chunky-video
 The station service needs this variable, and the code from this branch deployed:
 
 ```
-VIDEO_HLS_URL=https://chunky-video-production.up.railway.app/live/index.m3u8
+VIDEO_HLS_URL=https://chunky-video-production.up.railway.app/live/stream/index.m3u8
 ```
 
 ## The iPhone (once)
@@ -45,8 +45,11 @@ VIDEO_HLS_URL=https://chunky-video-production.up.railway.app/live/index.m3u8
 Install Larix Broadcaster and add a connection:
 
 ```
-rtmp://centerbeam.proxy.rlwy.net:18983/live?user=dj&pass=YOUR_PASSWORD
+rtmp://centerbeam.proxy.rlwy.net:18983/live/stream?user=dj&pass=YOUR_PASSWORD
 ```
+
+Set Target type to Default and leave Login and Password blank: the password is
+in the address, and this server does not use Larix's RTMP authorization.
 
 | Setting | Value |
 |---|---|
@@ -84,4 +87,4 @@ camera in a dark booth looks grainy whatever the resolution.
 `video/docker-compose.yml` runs the same server on a plain VPS, with Caddy for
 HTTPS. Copy `video/` over, fill in `video/.env` from `.env.example`, and run
 `docker compose up -d`. The phone then uses
-`rtmp://your-domain/live?user=dj&pass=...` with no port.
+`rtmp://your-domain/live/stream?user=dj&pass=...` with no port.

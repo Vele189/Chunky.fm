@@ -36,13 +36,14 @@ authInternalUsers:
     pass:
     permissions:
       - action: read
-        path: live
+        path: live/stream
   # Only OBS may publish. The password comes from MTX_AUTHINTERNALUSERS_1_PASS.
   - user: dj
     pass: change-me-through-the-environment
     permissions:
       - action: publish
-        path: live
+        path: live/stream
 
 paths:
-  live: {}
+  # Two parts because Larix refuses an address without an app and a stream.
+  live/stream: {}
