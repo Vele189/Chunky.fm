@@ -12,6 +12,7 @@ import {
 import usersIcon from './assets/icons/users.svg'
 import { AdminPanel } from './AdminPanel.js'
 import { CallIn } from './CallIn.js'
+import { LiveVideo } from './LiveVideo.js'
 import { Lyrics } from './Lyrics.js'
 import { ASSETS } from './poster/assets.js'
 import { Slot } from './poster/Slot.js'
@@ -25,6 +26,7 @@ import { useMediaSession } from './hooks/useMediaSession.js'
 import { usePresence } from './hooks/usePresence.js'
 import { useServerClock } from './hooks/useServerClock.js'
 import { type SyncTrails, useSyncTrails } from './hooks/useSyncTrails.js'
+import { useLiveVideo } from './hooks/useLiveVideo.js'
 import { useStation } from './hooks/useStation.js'
 import { useSyncedAudio } from './hooks/useSyncedAudio.js'
 import { useAudioTrace } from './hooks/useAudioTrace.js'
@@ -249,6 +251,7 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
   // side or stacked is a question the stylesheet answers on its own — which is
   // one fewer place for the two of them to disagree about what a phone is.
   const [joined, setJoined] = useState(false)
+  const liveVideoUrl = useLiveVideo()
   // Read once, at mount: what a previous visit left behind is the starting
   // point for the field, not a decision to join. The gesture still has to
   // happen (a browser will not start audio because localStorage had a name in
@@ -872,6 +875,9 @@ function Station({ route: requested, session }: { route: Route; session: AdminSe
           // the note further down.
           <div className="station__columns">
             <section className="column column--stage">
+              {liveVideoUrl && (
+                <LiveVideo url={liveVideoUrl} title="chunky.fm, live from the decks" />
+              )}
               {/* The deck while there is something on it or coming, and the same
                   room emptied (MJ-08) while the station is off air. The record
                   is pasted onto the photo rather than stacked under it: stacked,

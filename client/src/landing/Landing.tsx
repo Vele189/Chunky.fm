@@ -17,6 +17,8 @@ import { WISHES } from './session.js'
 import { Slot } from '../poster/Slot.js'
 import { type ArchiveCard, useArchive } from './useArchive.js'
 import { useStill } from './useStill.js'
+import { LiveVideo } from '../LiveVideo.js'
+import { useLiveVideo } from '../hooks/useLiveVideo.js'
 
 /**
  * The page in front of the station, printed as a poster.
@@ -44,13 +46,14 @@ import { useStill } from './useStill.js'
  */
 export function Landing() {
   const { next, upcoming } = useSchedule()
+  const liveUrl = useLiveVideo()
 
   return (
     <div className="poster">
       <Bar />
-      <Ticker next={next} />
+      <Ticker next={next} live={liveUrl !== null} />
       <main>
-        <Hero />
+        {liveUrl ? <LiveHero url={liveUrl} /> : <Hero />}
         <NextSession next={next} />
         <Upcoming sessions={upcoming} />
         <Creed />
@@ -61,7 +64,7 @@ export function Landing() {
         <Join next={next} />
       </main>
       <Foot />
-      <TuneBar next={next} />
+      <TuneBar next={next} live={liveUrl !== null} />
     </div>
   )
 }
@@ -118,18 +121,20 @@ function Bar() {
  * The strip of type that runs under the bar.
  *
  * It says the one live thing the page knows, the next session, and otherwise
- * the station's three promises. It never says "on air": this page cannot ask
- * the station whether it is, and a ticker shouting ON AIR over a dark room is
- * the page lying in its biggest type.
+ * the station's three promises. It says "live" only while the DJ camera is
+ * actually on (`useLiveVideo`): a ticker shouting that over a dark room would
+ * be the page lying in its biggest type.
  *
  * The text is laid down twice and the track slides by exactly one copy, which
  * is what makes the loop seamless. Only the first copy is read aloud; the
  * second is there for the eye. Under reduced motion the track holds still and
  * reads as a printed band.
  */
-function Ticker({ next }: { next: ScheduledSession | null }) {
+function Ticker({ next, live }: { next: ScheduledSession | null; live: boolean }) {
   const still = useStill()
-  const said = next
+  const said = live
+    ? ['Live now', 'On the decks', 'Come in']
+    : next
     ? ['Next session', nextSessionShort(next.startsAt, Date.now()), promiseOf(next), 'Same link as always']
     : ['Music is a culture', 'Listen together', 'Chosen by hand', 'No algorithm']
   const run = (
@@ -153,6 +158,21 @@ function Ticker({ next }: { next: ScheduledSession | null }) {
         </span>
       </p>
     </div>
+  )
+}
+
+/** The top of the page while the DJ is on camera: the set is the page. */
+function LiveHero({ url }: { url: string }) {
+  return (
+    <section className="live-hero" id="top" data-testid="live-hero">
+      <LiveVideo url={url} title="chunky.fm, live from the decks" />
+      <div className="live-hero__words">
+        <h1 className="live-hero__headline">Live now</h1>
+        <a className="button button--press button--large" href={TUNE_IN}>
+          Join the room <Arrow />
+        </a>
+      </div>
+    </section>
   )
 }
 
@@ -560,14 +580,16 @@ function Foot() {
  * It says what it knows (when the next session is, if one is announced) and
  * has one thing to press, which takes you to where the sound is.
  */
-function TuneBar({ next }: { next: ScheduledSession | null }) {
+function TuneBar({ next, live }: { next: ScheduledSession | null; live: boolean }) {
   return (
     <aside className="tunebar" aria-label="Tune in">
       <span className="tunebar__channel">chunky.fm</span>
       <span className="tunebar__status">
-        {next
-          ? `Next session · ${nextSessionShort(next.startsAt, Date.now())}`
-          : 'Live on announced nights'}
+        {live
+          ? 'Live now'
+          : next
+            ? `Next session · ${nextSessionShort(next.startsAt, Date.now())}`
+            : 'Live on announced nights'}
       </span>
       <a className="tunebar__go" href={TUNE_IN}>
         Tune in <Arrow />

@@ -183,6 +183,7 @@ export async function startHarness(
     r2: null,
     // Never resolved: the harness stubs the fetch itself. See `lyricsFetch`.
     lrclibBaseUrl: 'http://lrclib.invalid',
+    videoHlsUrl: null,
     // Never read: the harness passes `logger: false`. Present so the shape is
     // the shape production has.
     logLevel: 'silent',

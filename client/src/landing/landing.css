@@ -358,6 +358,34 @@ a {
   gap: 12px;
 }
 
+/* --- live hero ---------------------------------------------------------------- */
+
+.live-hero {
+  display: grid;
+  background: var(--ink);
+  color: var(--newsprint);
+}
+
+.live-hero .live-video__picture {
+  /* Leaves room for the two bars and the line under the picture. */
+  max-height: calc(100svh - 280px);
+  min-height: 200px;
+}
+
+.live-hero__words {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px max(16px, 2.25vw);
+}
+
+.live-hero__headline {
+  font: 900 clamp(40px, 6vw, 88px) / 0.9 var(--font-display);
+  text-transform: uppercase;
+}
+
 /* --- next session ------------------------------------------------------------- */
 
 .upcoming {
